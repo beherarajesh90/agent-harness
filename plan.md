@@ -1336,3 +1336,246 @@ These concise ADRs live in this plan because no separate ADR convention or sourc
 8. Complete desktop UI, reconnect/dedupe, accessibility, failures, inspector, and harness-first polish.
 9. Run clean-clone, security, deterministic, browser, and live-integration verification.
 10. Seed a fresh PR, rehearse corrected sequence, record truthful demo, and finish submission.
+
+# Implementation Checklist and Current State
+
+This is the manual progress tracker for the established ForgeGate plan. Update an item only after its stated evidence exists. It adds no scope or architecture decisions.
+
+Status: `[x]` verified complete, `[ ]` not started, `[~]` in progress, `[?]` blocked or not yet verified.
+
+## Current Implementation State
+
+Last repository verification: 2026-08-25.
+
+- [x] Product, architecture, API, safety, workflow, and demo requirements are documented in this plan.
+- [x] Repository-level branch, PR, Qodo, and merge rules are recorded in `AGENTS.md`.
+- [x] The planning milestone uses and tracks the pushed `docs/forgegate-architecture-plan` branch.
+- [ ] A GitHub PR and Qodo review for the planning branch are not verified from this repository.
+- [ ] No Node/pnpm workspace, application source, Docker configuration, TrueForge configuration, MCP server, payment laboratory, test suite, or UI exists yet.
+- [ ] No package manifest, Compose file, Vitest configuration, or Playwright configuration exists yet.
+- [?] Local Ollama/Qwen connectivity, Qwen agent capability, and WSL2 local sandbox fallback are not verified.
+- [?] Public demo repository configuration, GitHub PAT, Qodo installation, and a real Qodo review are not verified.
+
+## Recurring Milestone PR Gate
+
+Apply this checklist to every meaningful feature/milestone branch, not every individual edit.
+
+- [ ] Branch created from current `master` or an approved integration branch.
+- [ ] Branch scope names one meaningful feature or milestone.
+- [ ] Relevant implementation and regression tests pass locally.
+- [ ] Diff contains no secrets, generated build output, or unrelated cleanup.
+- [ ] Coherent changes are committed with descriptive conventional messages.
+- [ ] Branch is pushed to GitHub.
+- [ ] GitHub PR is opened against `master`.
+- [ ] Qodo review completed on the PR.
+- [ ] Actionable Qodo findings are fixed on the same branch.
+- [ ] Disputed findings have an evidence-backed PR response.
+- [ ] Relevant tests rerun after Qodo-driven changes.
+- [ ] PR is ready for user-directed merge; no merge, branch deletion, or force-push is performed automatically.
+
+## Phase 1 - Workflow and Feasibility
+
+### Repository and runtime foundation
+
+- [ ] Create the strict TypeScript pnpm workspace.
+- [ ] Add `.gitignore` coverage for dependencies, environment files, logs, and build output.
+- [ ] Add baseline lint, typecheck, test, and build commands.
+- [ ] Add Docker Compose topology for ForgeGate, TrueForge, Postgres, and Redis.
+- [ ] Bind all published services to `127.0.0.1`.
+- [ ] Pin tested TrueForge server image, SDK, MCP SDK, and package versions.
+- [ ] Add health checks for ForgeGate and TrueForge.
+- [ ] Prove clean startup through Docker Desktop and WSL2.
+
+### Local model feasibility
+
+- [ ] Start the local Ollama endpoint reachable from TrueForge in WSL2.
+- [ ] Configure Qwen3.5 4B as a TrueForge custom OpenAI-compatible provider.
+- [ ] Verify one normal model response through TrueForge.
+- [ ] Verify schema-valid structured output.
+- [ ] Verify a GitHub MCP read tool call.
+- [ ] Verify one visible subagent result.
+- [ ] Verify a bounded patch/test task produces a usable result.
+- [ ] Record the tested local model ID, endpoint route, context limit, and observed limitations.
+- [ ] Make an explicit fallback decision only if Qwen fails the required harness tasks.
+
+### Sandbox and control feasibility
+
+- [ ] Run TrueForge inside WSL2 and attempt its local sandbox fallback.
+- [ ] Verify sandbox-created and command events reach the TrueForge event stream.
+- [ ] Verify files and commands remain within the disposable workspace.
+- [ ] Verify model, GitHub, and provider credentials do not enter the sandbox.
+- [ ] Verify sandbox cleanup after success, cancellation, and failed provisioning.
+- [ ] Verify the fallback provides sufficient isolation for the demo safety boundary.
+- [ ] Record a fallback decision only if the local sandbox proof fails.
+- [ ] If required, configure Daytona as the selected supported fallback and repeat the same proof.
+
+### Harness proof and external setup
+
+- [ ] Configure bounded GitHub MCP read tools against the chosen public demo repository.
+- [ ] Configure write tools as TrueForge approval-gated.
+- [ ] Verify rejected approval performs zero GitHub mutations.
+- [ ] Verify a session survives browser reconnect and event replay.
+- [ ] Verify a running turn can be cancelled and releases its sandbox.
+- [ ] Install Qodo on the repository before implementation PRs.
+- [ ] Open an implementation PR and verify Qodo publishes a real review.
+
+## Phase 2 - Deterministic Payment Laboratory
+
+- [ ] Implement payment-intent state transitions.
+- [ ] Implement the fake payment provider.
+- [ ] Implement SQLite charge and ledger repositories.
+- [ ] Implement retry worker behavior.
+- [ ] Implement duplicate webhook handling.
+- [ ] Implement idempotency handling.
+- [ ] Implement deterministic fault scheduling.
+- [ ] Implement independent invariant oracle.
+- [ ] Assert primary invariant: one intent has one charge and one ledger entry.
+- [ ] Assert supporting retry, webhook, state-transition, failed-settlement, and reconciliation invariants.
+- [ ] Implement mainline safe behavior fixture.
+- [ ] Verify safe behavior passes 20 consecutive deterministic runs.
+- [ ] Implement unsafe retry fixture.
+- [ ] Verify unsafe fixture fails 20 consecutive runs with identical evidence.
+- [ ] Verify unsafe evidence reports 100 intents, 102 charges, and 100 ledger entries.
+- [ ] Implement `pnpm demo:seed`.
+- [ ] Verify seed creates a fresh `forgegate/demo-<timestamp>` branch from `master`.
+- [ ] Verify seed opens a non-draft real PR without reset, force-push, or branch deletion.
+
+## Phase 3 - Read-only Investigation
+
+### GitHub MCP and policy boundary
+
+- [ ] Implement `get_pull_request`.
+- [ ] Implement `get_pull_request_files`.
+- [ ] Implement `get_file`.
+- [ ] Implement `get_checks`.
+- [ ] Implement `get_qodo_reviews`.
+- [ ] Implement `get_review_comments`.
+- [ ] Validate configured repository allowlist on every tool call.
+- [ ] Validate PR branch prefix, path prefix, expected SHA, file count, and byte limits before every future write.
+
+### Agent and structured evidence
+
+- [ ] Create saved ForgeGate agent specification.
+- [ ] Add ForgeGate skill with evidence hierarchy, stopping rules, and approval policy.
+- [ ] Configure dynamic subagents.
+- [ ] Implement visible invariant analyst subagent.
+- [ ] Implement visible failure-mode analyst subagent.
+- [ ] Require two repository evidence references for each accepted invariant.
+- [ ] Produce `InvariantCandidate` artifacts.
+- [ ] Produce deterministic `ScenarioPlan` artifacts.
+- [ ] Run baseline comparison against `master`.
+- [ ] Check out exact PR SHA in selected sandbox.
+- [ ] Run the generated adversarial scenario and independent oracle.
+- [ ] Produce `ExperimentResult` with SHA, seed, repetitions, observed values, verdict, and artifact links.
+- [ ] Reach a real `BLOCKED` decision for the seeded unsafe PR.
+
+### Event projection and investigation API
+
+- [ ] Implement create-investigation API with repository/PR validation and idempotency handling.
+- [ ] Implement snapshot reconstruction from TrueForge events.
+- [ ] Implement normalized SSE event stream.
+- [ ] Merge model deltas into base events.
+- [ ] Deduplicate by TrueForge event ID and sequence.
+- [ ] Implement `Last-Event-ID` resume behavior.
+- [ ] Implement get-investigation API.
+- [ ] Implement cancel API.
+- [ ] Implement live and readiness health APIs.
+
+## Phase 4 - Repair and Approval
+
+- [ ] Generate a regression test that fails on the unsafe PR head.
+- [ ] Generate the smallest candidate patch inside the selected sandbox.
+- [ ] Produce `PatchProposal` with expected SHA, files, diff, regression result, and experiment evidence.
+- [ ] Re-run regression test and adversarial scenario against the proposal.
+- [ ] Verify repaired scenario produces 1000 intents, 1000 charges, and 1000 ledger entries.
+- [ ] Implement `commit_files` policy guard.
+- [ ] Enforce repository, `forgegate/demo-` branch, `payment-lab/` path, 10-file, and 250 KB limits.
+- [ ] Enforce expected-head-SHA check immediately before write.
+- [ ] Reject force-push, merge, workflow modification, branch deletion, and PR closure.
+- [ ] Render exact diff, SHA, changed files, and risk before approval.
+- [ ] Implement approval API and TrueForge resume with matching tool-call ID.
+- [ ] Verify deny creates zero writes.
+- [ ] Verify allow creates exactly one bounded commit on the existing PR branch.
+- [ ] Verify stale SHA fails closed.
+- [ ] Verify ambiguous GitHub write reads branch state before any retry.
+
+## Phase 5 - Qodo Loop
+
+- [ ] Verify automatic Qodo review starts after generated commit push.
+- [ ] Implement polling/reading of Qodo reviews, comments, and checks.
+- [ ] Normalize Qodo data into `QodoFinding`.
+- [ ] Classify findings as actionable, informational, or disputed.
+- [ ] Retain evidence for every classification.
+- [ ] Generate one actionable-finding repair in selected sandbox.
+- [ ] Rerun full regression and adversarial validation after Qodo repair.
+- [ ] Require fresh approval for any Qodo-driven commit.
+- [ ] Commit at most one Qodo remediation round.
+- [ ] Request/rely on re-review for the follow-up SHA.
+- [ ] Verify latest PR head equals latest tested SHA and completed review target.
+- [ ] Return `READY` only when no actionable Qodo finding or pending approval remains.
+- [ ] Return `BLOCKED` or `UNCERTAIN` for unresolved risk, missing review, or timeout.
+
+## Phase 6 - Desktop Control Room and Reliability
+
+### Harness-first UI
+
+- [ ] Implement repository/PR/SHA/elapsed-time/decision header.
+- [ ] Implement stage progression rail.
+- [ ] Implement live Agent Run panel from real normalized events.
+- [ ] Attribute visible steps to TrueForge, GitHub MCP, subagents, selected sandbox, Qodo, or human.
+- [ ] Show tool name, duration, state, and sanitized argument/result summary.
+- [ ] Show subagent thread lifecycle.
+- [ ] Show sandbox creation, command, exit code, working directory, and bounded output.
+- [ ] Show invariant, scenario, expected/observed values, and evidence links.
+- [ ] Show patch, regression result, changed files, and exact diff summary.
+- [ ] Show Qodo review link, finding status, and agent response.
+- [ ] Show retry/failure/recovery steps.
+- [ ] Distinguish `LIVE` from `REPLAY`; never fabricate activity or hidden reasoning.
+
+### Approval, states, and accessibility
+
+- [ ] Implement dominant approval dialog/card for exact pending GitHub mutation.
+- [ ] Show repository, branch, expected SHA, files, diff summary, and risk in the approval view.
+- [ ] Implement allow, deny, duplicate-response, stale-approval, and cancellation states.
+- [ ] Implement no-PR, connecting, running, blocked, repairing, waiting-for-Qodo, ready, uncertain, error, cancelled, and reconnecting states.
+- [ ] Verify refresh reconstructs a running/replayed session without duplicates.
+- [ ] Verify keyboard-only operation and visible focus.
+- [ ] Verify semantic landmarks/headings and accessible dialog behavior.
+- [ ] Verify live-region announcements for status and approval transitions.
+- [ ] Verify minimum 4.5:1 text contrast and non-color status signals.
+- [ ] Verify reduced-motion support.
+- [ ] Verify desktop layout at 1024px, 1280px, and 1440px.
+
+## Verification, Security, and Demo Readiness
+
+### Automated and integration verification
+
+- [ ] Test invariant oracle and deterministic scheduler.
+- [ ] Test decision rules for `READY`, `BLOCKED`, and `UNCERTAIN`.
+- [ ] Test event reconstruction, delta merging, and deduplication.
+- [ ] Test API validation, idempotency, approval idempotency, and cancellation.
+- [ ] Test all GitHub policy guards and prohibited actions.
+- [ ] Test approval denial produces zero writes.
+- [ ] Test baseline pass, unsafe failure, and repaired pass.
+- [ ] Test Qodo timeout becomes `UNCERTAIN`.
+- [ ] Test browser refresh during execution.
+- [ ] Test desktop keyboard and reduced-motion behavior.
+- [ ] Test no credentials enter the sandbox or browser payloads.
+- [ ] Test all host services bind only to localhost.
+- [ ] Verify clean-clone setup instructions from the public repository.
+
+### Final demo and submission
+
+- [ ] Create a fresh unsafe demo PR.
+- [ ] Confirm its exact head SHA before recording.
+- [ ] Rehearse read-only MCP context retrieval and visible subagent delegation.
+- [ ] Rehearse generated adversarial scenario and duplicate-charge reveal.
+- [ ] Rehearse repair generation, sandbox validation, and exact approval pause.
+- [ ] Rehearse approved bounded commit to the existing PR branch.
+- [ ] Rehearse real Qodo review, response, retest, and final reviewed-SHA gate.
+- [ ] Correct the recorded order to commit before Qodo review.
+- [ ] Use an honest edit or visible wait if Qodo latency exceeds the recording window.
+- [ ] Verify the complete story fits approximately three minutes.
+- [ ] Verify repository README, architecture, security model, and AI-assistance disclosure.
+- [ ] Verify public repository, video, and write-up are ready for submission.
+- [ ] Submit before the hackathon deadline.
