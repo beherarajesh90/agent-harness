@@ -1,54 +1,91 @@
-# ForgeGate — Agent Harness Hackathon Plan
+# ForgeGate End-to-End Project Plan
 
-## 1. Executive Summary
+## 1. Product and Local Architecture
 
-ForgeGate is an invariant-driven production-change verification agent.
+### Outcome
 
-Given a proposed pull request, ForgeGate does not merely review the diff or run the existing test suite. It investigates what must remain true in the application, generates adversarial scenarios designed to violate those business invariants, executes the scenarios in a TrueForge sandbox, produces evidence, and returns a decision:
+ForgeGate evaluates whether a payment-service pull request is safe by:
 
-- `READY` — the tested invariants survived the available experiments.
-- `BLOCKED` — an invariant violation was reproduced.
-- `UNCERTAIN` — the available evidence is insufficient for a safe decision.
+1. Reading a real GitHub PR through MCP.
+2. Discovering evidence-supported business invariants.
+3. Generating adversarial failure scenarios.
+4. Running them in the selected TrueForge sandbox.
+5. Returning `READY`, `BLOCKED`, or `UNCERTAIN`.
+6. Generating a regression test and minimal patch.
+7. Pausing for human approval before committing.
+8. Processing Qodo's review and testing again.
 
-When a failure is found, ForgeGate drafts a regression test and minimal patch, sends the change through Qodo for independent review, processes Qodo’s findings, reruns the tests and adversarial experiment, and requests human approval before writing to GitHub or deploying.
+ForgeGate never merges or deploys automatically.
 
 ### Product promise
 
-> Don’t trust a code change because the tests pass. Let an agent try to break it first.
+> Don't trust a code change because the tests pass. Let an agent try to break it first.
 
-### Product category
+### Fixed stack
 
-Invariant-driven failure discovery and proof for high-risk production changes.
+- Node.js 24 with strict TypeScript.
+- React 19 and Vite.
+- Fastify server.
+- pnpm workspace.
+- TrueForge TypeScript SDK.
+- Official MCP TypeScript SDK and Octokit.
+- Local Qwen3.5 4B through an Ollama OpenAI-compatible endpoint.
+- TrueForge local sandbox fallback under WSL2 as the Phase 1 preference; Daytona only if that feasibility proof fails.
+- `node:sqlite` payment laboratory.
+- Vitest and Playwright.
+- Docker Compose.
+- Postgres and Redis for TrueForge persistence.
 
-### Working name
+### Local model and sandbox decision - 2026-08-25
 
-**ForgeGate**
+- ChatGPT Plus is a ChatGPT application subscription and does not provide API usage, so it is not a ForgeGate model credential.
+- The primary zero-cost model is the locally available Qwen3.5 4B served through Ollama's OpenAI-compatible endpoint and configured as a TrueForge custom provider.
+- TrueForge runs inside WSL2 so the local fallback sees Linux instead of `win32`. Phase 1 must prove that this fallback actually provides the required sandbox events, execution, cleanup, and isolation.
+- TrueForge's current public documentation lists Daytona as the only supported sandbox provider. Therefore local fallback is a feasibility experiment, not a guaranteed capability; Daytona is explored only if the local proof fails.
+- All later OpenAI references describe the replaceable model layer, and all later Daytona references describe the selected TrueForge sandbox, unless a section explicitly discusses those services.
+- Qwen3.5 4B must pass structured output, tool calling, subagent, patch generation, and deterministic workflow checks before feature implementation depends on it. Failure reopens model selection; it does not automatically require OpenAI.
 
-## 2. Hackathon Context
+### Local topology
 
-Official materials:
+```text
+Desktop browser
+      | localhost
+      v
+  ForgeGate
+    |-- React Control Room
+    |-- TrueForge event adapter
+    `-- private GitHub MCP server
+             |
+             |----> GitHub demo repository ----> Qodo
+             |
+             v
+         TrueForge
+           |-- Qwen3.5 4B through Ollama
+           |-- selected sandbox
+           |-- subagents
+           |-- approvals
+           `-- Postgres + Redis
+```
 
-- [Hackathon overview](https://www.wemakedevs.org/hackathons/trueforge)
-- [Schedule](https://www.wemakedevs.org/hackathons/trueforge/schedule)
-- [Rules](https://www.wemakedevs.org/hackathons/trueforge/rules)
-- [Resources](https://www.wemakedevs.org/hackathons/trueforge/resources)
-- [TrueForge documentation](https://trueforge.dev/introduction)
-- [TrueForge repository](https://github.com/truefoundry/trueforge)
-- [Qodo code-review documentation](https://docs.qodo.ai/code-review)
+All containers bind to `127.0.0.1`. Docker Desktop uses its WSL2 Linux backend, avoiding the native Windows TrueForge errors already encountered.
 
-### Event
+Use one public repository containing ForgeGate, its MCP server, agent skill, payment laboratory, unsafe fixture, Docker configuration, tests, and documentation.
 
-- Online hackathon: August 24–30, 2026.
-- Teams: solo or up to four people.
-- Submission deadline: August 30, 2026 at 8:00 PM London time.
-- Required submission: public repository, clear README, approximately three-minute demo video, and short write-up.
-- Project must be built during the hackathon period.
-- AI coding assistants are allowed but must be disclosed.
-- Only authorized tools, accounts, and data may be connected.
+TrueForge remains the source of truth for sessions and events. ForgeGate requires no separate application database.
 
-### Judging criteria
+### Hackathon alignment
 
-The six criteria are equally weighted:
+ForgeGate must visibly demonstrate:
+
+- A real MCP tool reaching GitHub.
+- Agent-generated work executing in an isolated sandbox.
+- Work delegated to visible subagents.
+- A session surviving refresh or reconnect.
+- A human approval pause before every GitHub write.
+- Qodo reviewing real implementation and generated-patch PRs.
+- A clear three-minute failure-to-recovery story.
+
+The six judging criteria remain equally important:
 
 1. Potential impact.
 2. Creativity and originality.
@@ -57,651 +94,1245 @@ The six criteria are equally weighted:
 5. Control and safety.
 6. Presentation.
 
-ForgeGate should make each criterion visible in the product and demo rather than treating the UI as a decorative layer.
+## 2. Interfaces and Agent Behaviour
 
-## 3. Why ForgeGate Instead of Ordinary Code Review
+### HTTP interface
 
-Traditional AI code review asks whether the implementation appears correct.
+- `POST /api/investigations`
+  - Accepts the demo PR URL.
+  - Validates the configured repository.
+  - Creates a TrueForge session and starts ForgeGate.
 
-ForgeGate asks whether the changed system continues to preserve its business guarantees under hostile or unusual conditions.
+- `GET /api/investigations/:sessionId`
+  - Reconstructs the investigation from persisted TrueForge events.
 
-### Distinction
+- `GET /api/investigations/:sessionId/events`
+  - Streams events over SSE.
+  - Supports reconnection through `Last-Event-ID`.
+  - Deduplicates by TrueForge event ID.
 
-| Ordinary code review | ForgeGate |
-|---|---|
-| Reads the diff | Reads the diff, architecture, schemas, tests, and operational context |
-| Finds likely code issues | Discovers candidate business invariants |
-| Suggests tests | Generates adversarial scenarios designed to violate invariants |
-| Reports possible risk | Executes the scenario and produces evidence |
-| May suggest a patch | Produces a regression test and minimal patch |
-| Usually ends at review | Re-runs the experiment and requires approval before writes |
+- `POST /api/investigations/:sessionId/approvals/:approvalId`
+  - Answers an actual pending TrueForge approval.
 
-The differentiator is not “AI-generated tests.” Autonomous testing products already exist. The defensible wedge is executable, evidence-backed verification of business invariants for a proposed change.
+- `POST /api/investigations/:sessionId/cancel`
+  - Cancels the turn and releases its sandbox.
 
-## 4. Target User and Product Value
+- `GET /health/live` and `GET /health/ready`
+  - Report application and dependency health.
 
-### Primary users
+No authentication is needed for the localhost MVP.
 
-- SREs and platform engineers.
-- Backend and database engineers.
-- Release managers.
-- Engineering teams operating payments, billing, inventory, identity, or other high-consequence workflows.
+### Investigation model
 
-### Core user request
+```text
+Status:
+QUEUED | RUNNING | PAUSED | BLOCKED | UNCERTAIN |
+READY | ERROR | CANCELLED
 
-> Can I safely merge or deploy this pull request?
+Stage:
+CONTEXT | INVARIANTS | HYPOTHESES | EXPERIMENT |
+EVIDENCE | REPAIR | QODO | APPROVAL | DECISION
 
-### Product value
+Source:
+SYSTEM | GITHUB | AGENT | SUBAGENT |
+SANDBOX | QODO | HUMAN
+```
 
-- Finds failure modes humans did not explicitly write tests for.
-- Converts business rules into executable safety checks.
-- Reduces the chance of production incidents caused by retries, concurrency, ordering, or partial failure.
-- Gives reviewers evidence instead of a probabilistic risk score.
-- Preserves an audit trail of hypotheses, experiments, findings, fixes, reviews, and approvals.
+### Structured artifacts
 
-## 5. Core Demonstration Domain
+- `InvariantCandidate`
+  - Statement, confidence, and at least two repository evidence references.
+- `ScenarioPlan`
+  - Invariant ID, deterministic seed, injected faults, ordering, and expected outcome.
+- `ExperimentResult`
+  - Tested SHA, expected and observed values, repetitions, verdict, and artifact links.
+- `PatchProposal`
+  - Expected head SHA, changed files, diff, and regression-test result.
+- `QodoFinding`
+  - Review URL, severity, actionability, status, and response.
+- `DecisionReport`
+  - Decision, tested SHA, passed and failed gates, remaining uncertainty, and evidence.
 
-The MVP should use one deliberately small payment service.
+The UI displays actual tool activity, event metadata, and concise agent summaries. It never fabricates or displays hidden model reasoning.
 
-### System model
+### GitHub MCP tools
 
-- Payment API.
-- Payment-provider stub.
-- Payment state machine.
-- Ledger database.
-- Webhook handler.
+Read operations:
+
+- `get_pull_request`
+- `get_pull_request_files`
+- `get_file`
+- `get_checks`
+- `get_qodo_reviews`
+- `get_review_comments`
+
+Approval-gated writes:
+
+- `commit_files`
+- `comment_on_pull_request`
+- `request_qodo_review`
+
+Every write enforces:
+
+- Configured demo repository.
+- Branch prefix `forgegate/demo-`.
+- Path prefix `payment-lab/`.
+- Expected PR head SHA.
+- Maximum 10 files and 250 KB.
+- No force-push, merge, workflow modification, branch deletion, or PR closure.
+
+### Agent workflow
+
+1. Load the PR and exact head SHA.
+2. Delegate to two visible subagents:
+   - Invariant analyst.
+   - Failure-mode analyst.
+3. Require repository evidence for each invariant.
+4. Establish safe behaviour from `master`.
+5. Check out the PR head in the selected TrueForge sandbox.
+6. Generate a deterministic fault scenario.
+7. Execute the payment laboratory and invariant oracle.
+8. Return `BLOCKED` when the violation reproduces.
+9. Generate a regression test and minimal patch.
+10. Rerun tests and the adversarial experiment.
+11. Pause through TrueForge before committing.
+12. Show the exact diff and supporting evidence.
+13. Commit only after local user approval.
+14. Wait for Qodo's real review.
+15. Classify findings as actionable, informational, or disputed.
+16. Address actionable findings.
+17. Rerun tests and experiments on the latest SHA.
+18. Pause before any follow-up commit.
+19. Request Qodo re-review.
+20. Produce the final decision.
+
+### Decision rules
+
+- `BLOCKED`
+  - A reproducible invariant violation exists at the current PR head.
+- `READY`
+  - Required experiments pass.
+  - The tested SHA remains current.
+  - Regression tests pass.
+  - Qodo completed its review.
+  - Actionable findings are resolved.
+  - No approval remains pending.
+- `UNCERTAIN`
+  - Evidence is missing or unsupported.
+  - The PR head changed after testing.
+  - Sandbox, connector, or model execution failed.
+  - Results are flaky or inconsistent.
+  - Qodo did not complete within the configured timeout.
+
+A technical failure never defaults to safe.
+
+## 3. Payment Laboratory and Desktop Control Room
+
+### Payment laboratory
+
+Implement a compact TypeScript payment system with:
+
+- Payment intent state machine.
+- Fake payment provider.
+- SQLite charge and ledger tables.
 - Retry worker.
-- Public test repository containing the application and the proposed pull request.
+- Duplicate webhook handler.
+- Idempotency handling.
+- Deterministic fault scheduler.
+- Independent invariant oracle.
 
 ### Primary invariant
 
-> One payment intent must produce exactly one charge and exactly one ledger entry.
+> One payment intent produces exactly one charge and one ledger entry.
 
 ### Supporting invariants
 
-- A retry must be idempotent.
-- A duplicate webhook must not create a second charge.
-- Payment state must not move backwards.
-- A failed payment must not be recorded as settled.
-- Ledger totals must reconcile with provider charges.
-
-### Proposed bad change
-
-The pull request changes retry behavior and accidentally removes or weakens idempotency handling.
+- A retry remains idempotent.
+- A duplicate webhook cannot create another charge.
+- Payment state cannot move backwards.
+- A failed payment cannot be recorded as settled.
+- Provider charges and ledger entries reconcile.
 
 ### Adversarial scenario
 
 ```text
-payment request
-→ provider timeout
-→ application retry
-→ duplicate webhook
-→ concurrent retry
+provider timeout
+-> retry
+-> duplicate webhook
+-> concurrent retry
 ```
 
-### Expected evidence
-
-```text
-Payment intents: 100
-Provider charges: 101 or 102
-Ledger entries: 100
-Invariant: violated
-Decision: BLOCKED
-```
-
-The experiment must be deterministic enough to reproduce the failure in the demo.
-
-## 6. ForgeGate Agent Workflow
-
-```text
-User asks: “Can I safely deploy PR #42?”
-        ↓
-Load PR and repository context through GitHub MCP
-        ↓
-Map changed components and affected flows
-        ↓
-Discover candidate invariants with evidence
-        ↓
-Generate adversarial hypotheses
-        ↓
-Run experiments in TrueForge sandbox
-        ↓
-Collect traces, metrics, and invariant results
-        ↓
-Return READY / BLOCKED / UNCERTAIN
-        ↓
-If BLOCKED: draft regression test and minimal patch
-        ↓
-Human approval before repository write
-        ↓
-Qodo reviews the commit or pull request
-        ↓
-ForgeGate reads and classifies Qodo findings
-        ↓
-Agent updates the patch if needed
-        ↓
-Rerun tests and adversarial experiments
-        ↓
-Qodo reviews the follow-up commit
-        ↓
-Final human approval before merge or deployment
-```
-
-### Evidence hierarchy
-
-1. Reproduced invariant violation.
-2. Passing or failing executable experiment.
-3. Deterministic regression test.
-4. Repository and schema evidence.
-5. Agent hypothesis or explanation.
-
-The UI must visually distinguish proven evidence from agent reasoning and unresolved assumptions.
-
-## 7. TrueForge Responsibilities
-
-TrueForge is the runtime layer. ForgeGate should use it rather than recreate it.
-
-### TrueForge should handle
-
-- Agent loop and model calls.
-- MCP tool access.
-- Sandbox code, file, and shell execution.
-- Tool approval checkpoints.
-- Agent questions.
-- Dynamic subagents.
-- Session persistence and reconnects.
-- Streaming event delivery.
-- Structured output where useful.
-- Generative UI primitives where useful.
-
-### ForgeGate should build
-
-- Invariant discovery instructions and evidence format.
-- Scenario-generation procedure.
-- Payment failure-injection harness.
-- Experiment runner and invariant oracle.
-- Decision model: `READY`, `BLOCKED`, `UNCERTAIN`.
-- Regression-test and patch workflow.
-- Qodo finding ingestion and repair loop.
-- Product-facing Control Room UI.
-- Demo repository and deterministic data.
-
-TrueForge exposes the necessary agent/session/turn/event model, tool approvals, sandbox events, subagent threads, and reconnect support through its API and TypeScript SDK.
-
-## 8. MCP Design
-
-The agent should have a small, explicit tool surface.
-
-### Read tools
-
-- `github.get_pull_request`
-- `github.get_changed_files`
-- `github.get_file`
-- `github.get_review_comments`
-- `github.get_check_runs`
-- `repo.get_architecture_context`
-- `experiment.get_baseline`
-- `experiment.get_invariants`
-
-### Sandbox-facing operations
-
-- Build the application.
-- Start the payment fixture.
-- Generate concurrent requests.
-- Inject provider timeout and duplicate webhook conditions.
-- Run the invariant checker.
-- Run regression tests.
-- Produce logs and result artifacts.
-
-### Write tools
-
-- `github.create_branch`
-- `github.commit_patch`
-- `github.create_or_update_pull_request`
-- `github.comment_on_pull_request`
-- Optional demo deployment action.
-
-All write/destructive tools must be approval-gated. Read-only analysis can proceed autonomously.
-
-### Custom MCP server
-
-If an existing connector cannot expose the local payment fixture cleanly, create one small custom MCP server backed by real local processes and seeded data. Do not hardcode fake tool-call transcripts.
-
-## 9. Qodo Workflow
-
-Qodo is an independent quality gate, not an agent dependency and not a decorative sponsor integration.
-
-### Correct loop
-
-```text
-ForgeGate finds invariant violation
-→ drafts test and patch
-→ approval before GitHub write
-→ Qodo reviews new commit
-→ ForgeGate reads Qodo findings via GitHub
-→ classifies actionable vs non-actionable findings
-→ fixes actionable findings
-→ reruns regression test and adversarial experiment
-→ approval before follow-up write
-→ Qodo reviews again
-→ final merge-ready result
-```
-
-Qodo may also suggest or apply fixes, but ForgeGate should own the repair decision because the patch must be validated against the business invariant, not only code-quality rules.
-
-### Qodo track strategy
-
-- Install Qodo at the beginning of the hackathon.
-- Use multiple real pull requests or meaningful commits.
-- Preserve the review history.
-- Respond to findings before merging.
-- Show one Qodo finding and the resulting retest in the demo.
-
-Qodo is required for the Best Code Quality track; it is not required for the other tracks, but ForgeGate will use it because it strengthens both the quality story and the sponsor-tool story.
-
-## 10. UI Direction: ForgeGate Control Room
-
-The UI should showcase the harness, not hide it behind a chat window.
-
-### Design goal
-
-The interface should make a judge feel that they are watching a live engineering investigation unfold:
-
-```text
-context → hypotheses → experiments → evidence → repair → independent review → approval
-```
-
-### Primary layout
-
-#### Header: decision context
-
-- ForgeGate logo/name.
-- PR number and title.
-- Repository and commit SHA.
-- Current decision state: `RUNNING`, `READY`, `BLOCKED`, or `UNCERTAIN`.
-- Elapsed time and experiment count.
-- Compact “human control required” indicator.
-
-#### Left rail: investigation stages
-
-A vertical progression with active, completed, and blocked states:
-
-1. Pull request context.
-2. Architecture map.
-3. Candidate invariants.
-4. Failure hypotheses.
-5. Sandbox experiments.
-6. Evidence.
-7. Repair.
-8. Qodo review.
-9. Approval.
-10. Final decision.
-
-Each stage should be clickable after completion and should open the corresponding evidence panel.
-
-#### Center: live investigation canvas
-
-The main area shows the current action as a dynamic sequence, not a static dashboard.
-
-Examples:
-
-- GitHub file cards being inspected.
-- Invariant cards appearing with evidence links.
-- Hypotheses branching into experiment nodes.
-- Sandbox execution timeline.
-- Live counters for payment intents, charges, retries, and ledger entries.
-- A visible invariant equation changing from passing to failing.
-- Qodo finding entering the same timeline as an independent review event.
-
-#### Right rail: evidence and decision panel
-
-Show:
-
-- Decision state.
-- Invariant under test.
-- Expected versus observed values.
-- Reproduction command or experiment ID.
-- Changed files.
-- Severity and business impact.
-- Confidence and missing evidence.
-- Action buttons only when approval is genuinely required.
-
-#### Bottom: event timeline
-
-Use the real TrueForge event stream to show:
-
-- Model messages.
-- MCP initialization.
-- Tool calls and responses.
-- Sandbox creation.
-- Subagent threads.
-- Approval-required events.
-- Qodo review events.
-- Turn completion.
-
-Do not fabricate reasoning text. Display tool activity, event metadata, and concise agent summaries derived from actual events.
-
-### Key visual moment
-
-The most important screen is the invariant failure:
-
-```text
-INVARIANT VIOLATED
-
-One payment intent → exactly one charge
-
-Expected charges: 100
-Observed charges: 102
-Failure path: timeout → retry → duplicate webhook
-Evidence: reproducible
-Decision: BLOCKED
-```
-
-This should be visually dominant without using color alone. Use label, icon, text, and a clear counterexample path.
-
-### Approval experience
-
-The approval view should be explicit and calm:
-
-```text
-ForgeGate wants to commit a regression test and patch to PR #42.
-
-Files changed: 2
-Invariant result: passing after patch
-Qodo status: 1 medium finding addressed
-Remaining risk: none observed in available experiments
-
-[Review diff] [Approve commit] [Reject]
-```
-
-The human should always know what action is being approved, what evidence supports it, and what remains uncertain.
-
-### UI states
-
-Implement and visually test:
-
-- Empty state: no PR selected.
-- Loading state: connecting to TrueForge.
-- Running state: live events and stage progression.
-- Paused state: approval or user question required.
-- Blocked state: invariant violation with evidence.
-- Repair state: patch and test generation.
-- Qodo review state: findings and re-review.
-- Ready state: all required gates passed.
-- Uncertain state: insufficient evidence and explicit reason.
-- Error state: connector, model, sandbox, or stream failure.
-- Reconnect state: session restored with event history intact.
-
-### UI quality requirements
-
-- Keyboard-accessible controls.
-- Visible focus states.
-- No color-only status communication.
-- Responsive layout at 320px, 768px, 1024px, and 1440px.
-- Respect reduced-motion preferences.
-- Use semantic headings and live regions for event updates.
-- Avoid generic purple AI styling, excessive rounded cards, and dashboard clutter.
-- Prefer one high-information canvas over many decorative panels.
-
-## 11. Judging Strategy
-
-| Judging criterion | ForgeGate proof | UI proof |
-|---|---|---|
-| Potential impact | Duplicate payment or ledger corruption prevented | Business impact shown in dollars/counts and decision state |
-| Creativity | Agent derives invariants and invents adversarial scenarios | Invariant-to-counterexample visualization |
-| Technical excellence | Reproducible sandbox, deterministic oracle, regression patch | Evidence drill-down and resilient event timeline |
-| Sponsor tools | TrueForge runs MCP, sandbox, subagents, sessions, approvals; Qodo reviews PRs | Visible event trace and Qodo review loop |
-| Control and safety | No repository/deployment write without approval | Explicit approval card with exact action and evidence |
-| Presentation | Clear three-minute failure-and-recovery narrative | Live Control Room with one obvious “wow” moment |
-
-## 12. Three-Minute Demo Script
-
-### 0:00–0:20 — Problem
-
-Show the PR:
-
-> “Can I safely deploy this payment retry change?”
-
-Show the business invariant:
-
-> One payment intent must produce exactly one charge.
-
-### 0:20–0:55 — Context discovery
-
-ForgeGate visibly:
-
-- Connects to GitHub through MCP.
-- Reads the changed retry code.
-- Inspects the payment state machine and ledger schema.
-- Presents the candidate invariant with evidence.
-
-### 0:55–1:20 — Scenario generation
-
-The agent explains:
-
-> “The changed retry path may duplicate charges when a provider timeout is followed by a duplicate webhook.”
-
-Show the hypothesis branching into an experiment.
-
-### 1:20–1:45 — Failure
-
-Sandbox runs the test.
-
-Show:
+Unsafe result:
 
 ```text
 100 payment intents
-102 charges
+102 provider charges
 100 ledger entries
-
-INVARIANT VIOLATED
-DECISION: BLOCKED
+BLOCKED
 ```
 
-### 1:45–2:10 — Repair
-
-ForgeGate generates:
-
-- A regression test.
-- A minimal idempotency patch.
-- The updated experiment result.
-
-### 2:10–2:30 — Qodo
-
-Qodo reviews the commit and produces a finding. ForgeGate reads the finding, fixes it, and reruns the test and adversarial scenario.
-
-### 2:30–2:50 — Approval
-
-TrueForge pauses before the GitHub write:
-
-> “Commit regression test and patch to PR #42?”
-
-The user reviews and approves.
-
-### 2:50–3:00 — Outcome
-
-Show:
+Repaired result:
 
 ```text
-1,000 payment simulations
-1,000 charges
+1,000 payment intents
+1,000 provider charges
 1,000 ledger entries
-Qodo: addressed
-Decision: READY
+READY
 ```
 
-Closing line:
+### Repeatable demo preparation
 
-> ForgeGate did not just review the change. It found a failure mode, reproduced it, repaired it, and proved the repair.
+Provide:
 
-## 13. Feasibility and Cost
+```bash
+pnpm demo:seed
+```
 
-### TrueForge
+It:
 
-- Open-source MIT license.
-- No TrueForge license fee.
-- Local mode uses SQLite and requires no Postgres or Redis.
-- Hosted mode uses Docker Compose or Kubernetes with Postgres and Redis.
+1. Creates `forgegate/demo-<timestamp>` from `master`.
+2. Applies the unsafe retry fixture.
+3. Opens a real GitHub PR.
+4. Prints the PR URL.
 
-### External costs
+It never resets, force-pushes, or deletes an existing branch. Each rehearsal receives a fresh PR and preserves its Qodo history.
 
-- Model API key, unless event credits are available.
-- Sandbox provider cost if using Daytona.
-- No need for paid TrueFoundry Gateway for the hackathon.
-- No need for live cloud infrastructure in the MVP.
+### Desktop Control Room
 
-### Windows constraint
+Target desktop browsers at widths of 1024px and above, optimized for 1280-1440px recording.
 
-Native Windows currently produces a TrueForge startup failure involving the local sandbox fallback and Windows ESM paths.
+Visual direction:
 
-Use WSL2 Ubuntu or Docker Linux containers. Do not make native Windows execution part of the project’s acceptance criteria.
+- Dark, dense operations-console interface.
+- Slate surfaces.
+- Green for verified passage.
+- Amber for uncertainty.
+- Red for reproduced failure.
+- IBM Plex Sans and JetBrains Mono.
+- Lucide SVG icons.
+- No color-only status communication.
+- CSS transform and opacity transitions.
+- Reduced-motion support.
 
-### Feasible demo environment
+Layout:
 
-- WSL2 Ubuntu.
-- Node.js 22+.
-- TrueForge local or Docker mode.
-- Public GitHub repository.
-- Seeded payment fixture.
-- Custom local MCP server if needed.
-- Daytona only if local Linux sandbox execution is insufficient.
+- Header: repository, PR, SHA, elapsed time, and decision.
+- Left rail: investigation stage progression.
+- Centre: invariants, hypotheses, and live experiment execution.
+- Right rail: evidence, expected versus observed values, and approvals.
+- Bottom panel: TrueForge event timeline and raw-event inspector.
 
-## 14. MVP Scope
+Required states:
 
-### In scope
+- No PR selected.
+- Connecting.
+- Running.
+- Approval required.
+- Blocked.
+- Repairing.
+- Waiting for Qodo.
+- Ready.
+- Uncertain.
+- Error.
+- Cancelled.
+- Reconnecting.
 
-- One public payment fixture repository.
-- One proposed retry/idempotency PR.
-- One primary invariant.
-- Three failure injectors: timeout, duplicate webhook, concurrent retry.
-- GitHub MCP read and approval-gated write.
-- TrueForge sandbox execution.
-- Deterministic invariant checker.
-- `READY`, `BLOCKED`, and `UNCERTAIN` decisions.
-- Regression test and minimal patch generation.
-- Qodo review → ForgeGate repair → retest loop.
-- ForgeGate Control Room UI.
-- Three-minute demo path.
-- Public README and architecture diagram.
+Desktop accessibility remains required:
 
-### Explicitly out of scope
+- Keyboard-operable controls.
+- Visible focus indicators.
+- Semantic headings and landmarks.
+- Accessible approval dialog.
+- Live-region announcements for important state changes.
+- Minimum 4.5:1 text contrast.
+- Reduced-motion support.
 
-- Arbitrary production deployment.
-- Arbitrary repository and language support.
-- Full chaos-engineering platform.
-- Real payment provider credentials.
-- Real customer or production data.
-- Autonomous merge or deployment.
-- Generic risk scoring without executable evidence.
-- Multi-tenant SaaS infrastructure.
-- Full domain-independent invariant discovery.
-- Mobile app.
-- Custom replacement for TrueForge’s chat UI and runtime.
+Mobile navigation, touch optimization, mobile breakpoints, and mobile visual testing are explicitly deferred.
 
-## 15. Risks and Mitigations
+## 4. Ordered Implementation Plan
 
-| Risk | Impact | Mitigation |
+### Phase 1 - Workflow and feasibility
+
+- Install Qodo immediately.
+- Protect `master` and use PRs for implementation.
+- Scaffold TypeScript, CI, and Docker.
+- Start TrueForge, Postgres, and Redis through Compose.
+- Configure Qwen3.5 4B through local Ollama and attempt the TrueForge local sandbox fallback from WSL2.
+- Treat failure of either local capability as a feasibility result: then evaluate a stronger accessible model and/or Daytona before continuing to dependent phases.
+- Prove one MCP call, sandbox command, subagent, reconnect, and rejected approval.
+
+Acceptance:
+
+- `docker compose up` works through Docker Desktop and WSL2.
+- ForgeGate and TrueForge health checks pass.
+- Qwen produces valid structured output and executes one MCP tool call, one subagent, and one bounded patch/test task.
+- The selected sandbox emits real TrueForge events, contains file/command execution, and cleans up without exposing credentials.
+- Rejected approval performs no GitHub mutation.
+
+### Phase 2 - Payment laboratory
+
+- Build the safe payment workflow.
+- Add SQLite repositories and invariant oracle.
+- Add deterministic failure injection.
+- Create the unsafe fixture.
+- Add `demo:seed`.
+
+Acceptance:
+
+- Main passes 20 consecutive runs.
+- Unsafe fixture fails 20 consecutive runs with identical evidence.
+- A fresh real PR can be created safely.
+
+### Phase 3 - Read-only investigation
+
+- Implement bounded GitHub read tools.
+- Create the ForgeGate skill and agent specification.
+- Implement invariant and failure-mode subagents.
+- Generate structured artifacts.
+- Map TrueForge events into investigation stages.
+
+Acceptance:
+
+- A demo PR reaches a real `BLOCKED` decision.
+- MCP, subagent, and selected-sandbox activity is visible from real events.
+
+### Phase 4 - Repair and approval
+
+- Generate the regression test and minimal patch.
+- Add all GitHub write guards.
+- Render the proposed diff.
+- Implement TrueForge approval handling.
+- Commit after approval.
+
+Acceptance:
+
+- Reject performs zero writes.
+- Approve creates one bounded commit.
+- Stale SHA and invalid paths fail closed.
+
+### Phase 5 - Qodo loop
+
+- Read Qodo reviews and comments.
+- Classify findings.
+- Fix actionable findings.
+- Rerun the complete experiment.
+- Request approval for follow-up writes.
+- Request Qodo re-review.
+
+Acceptance:
+
+- Qodo's real review appears in the Control Room.
+- The final decision references the latest reviewed and tested SHA.
+
+### Phase 6 - Desktop UI and reliability
+
+- Complete the desktop stage progression.
+- Add invariant, experiment, evidence, and Qodo views.
+- Add approval and final-decision views.
+- Add SSE reconnection and event deduplication.
+- Add all required states.
+- Verify 1024px, 1280px, and 1440px layouts.
+
+Acceptance:
+
+- Refresh restores the running session.
+- Events are not duplicated.
+- Keyboard-only operation works.
+- The primary flow is clear at the demo-recording resolution.
+
+### Phase 7 - Submission
+
+- Verify setup from a clean clone.
+- Confirm Qodo reviewed meaningful PRs.
+- Rehearse with a fresh demo PR.
+- Record the approximately three-minute video.
+- Publish README, architecture, security model, and AI-assistance disclosure.
+- Submit the repository, video, and write-up.
+
+### Deferred work
+
+Only consider these after all submission requirements pass:
+
+- Mobile UI.
+- Public cloud deployment.
+- Authentication and public-use quotas.
+- Arbitrary repository support.
+- Additional business domains.
+
+## 5. Verification and Boundaries
+
+### Automated verification
+
+- Invariant oracle.
+- Deterministic fault scheduler.
+- Decision rules.
+- Event reconstruction and deduplication.
+- GitHub repository, branch, path, SHA, and size guards.
+- Approval rejection with zero writes.
+- Baseline pass, unsafe failure, and repaired pass.
+- Qodo timeout producing `UNCERTAIN`.
+- Browser refresh during execution.
+- Keyboard and reduced-motion desktop tests.
+
+### Live demo acceptance
+
+- ForgeGate runs locally through Docker.
+- It reads a real GitHub PR through MCP.
+- TrueForge delegates to visible subagents.
+- The selected TrueForge sandbox executes the generated scenario.
+- The unsafe PR produces a duplicate-payment violation.
+- ForgeGate generates a regression test and patch.
+- TrueForge visibly pauses before the GitHub write.
+- Approval creates a real commit.
+- Qodo reviews it.
+- ForgeGate addresses a finding and tests again.
+- The decision transitions from `BLOCKED` to `READY`.
+- The demonstration fits approximately three minutes.
+
+### Three-minute demo outline
+
+- `0:00-0:20`: Show the retry PR and primary business invariant.
+- `0:20-0:55`: Show MCP context retrieval and subagent delegation.
+- `0:55-1:20`: Show the generated adversarial scenario.
+- `1:20-1:45`: Reveal `102 charges` and the `BLOCKED` decision.
+- `1:45-2:10`: Generate and validate the regression test and patch.
+- `2:10-2:30`: Show the real Qodo review and agent response.
+- `2:30-2:50`: Show the TrueForge approval pause and approve the commit.
+- `2:50-3:00`: Show `1,000/1,000/1,000` and `READY`.
+
+### Explicit exclusions
+
+- No mobile UI.
+- No public cloud requirement.
+- No authentication.
+- No autonomous merge or deployment.
+- No arbitrary repository or language support.
+- No multi-tenant SaaS.
+- No Kubernetes.
+- No separate ForgeGate database.
+- No generic chaos platform.
+- No mocked activity in the submitted demo.
+
+# Architecture and Design Extension
+
+This appendix makes the established implementation plan architecture-ready. It is additive: when it clarifies an ambiguity or flags a contradiction, it does not silently replace the original requirement.
+
+## 1. System Architecture
+
+### Architecture principles
+
+- TrueForge is the agent runtime and durable source of orchestration truth.
+- ForgeGate is a thin product layer: desktop UI, API adapter, event projection, and bounded GitHub MCP tools.
+- The selected TrueForge sandbox is the only place where untrusted repository code, generated code, shell commands, tests, and experiments execute.
+- GitHub mutations occur outside the sandbox through bounded MCP tools and only after a TrueForge approval.
+- Qodo remains an independent reviewer operating on the real GitHub PR.
+- The local MVP uses one browser origin, no ForgeGate database, no application login, and no public network exposure.
+
+### High-level architecture
+
+```mermaid
+flowchart LR
+    Browser[Desktop Control Room]
+
+    subgraph FG[ForgeGate container]
+        API[Fastify API and static UI]
+        Projector[Investigation projector]
+        Adapter[TrueForge SDK adapter]
+        MCP[Bounded GitHub MCP endpoint]
+        API --> Projector
+        API --> Adapter
+    end
+
+    subgraph TF[TrueForge boundary]
+        Server[TrueForge server and agent loop]
+        Model[Configured local or fallback model]
+        PG[(Postgres)]
+        Redis[(Redis)]
+        Server --> Model
+        Server --> PG
+        Server --> Redis
+    end
+
+    subgraph Safe[Isolated execution boundary]
+        Sandbox[Selected TrueForge sandbox]
+        Workspace[Disposable PR workspace]
+        Lab[Payment laboratory and SQLite]
+        Sandbox --> Workspace --> Lab
+    end
+
+    GitHub[GitHub public demo repository]
+    Qodo[Qodo GitHub App]
+
+    Browser <-->|HTTP and SSE on localhost| API
+    Adapter <-->|HTTP SDK and event streams| Server
+    Server <-->|MCP on private Compose network| MCP
+    Server <-->|Sandbox tool| Sandbox
+    MCP <-->|GitHub API| GitHub
+    GitHub <-->|PR events, reviews, comments| Qodo
+```
+
+### Components and communication
+
+| Component | Responsibility | Inputs | Outputs | Dependencies | Communication |
+|---|---|---|---|---|---|
+| Desktop Control Room | Starts an investigation and makes harness work, evidence, approvals, and decisions visible | PR URL, approval/rejection, cancel action, SSE events | API commands, rendered Agent Run, evidence, final decision | ForgeGate API | Same-origin HTTP and SSE |
+| Fastify API | Validates requests, creates/resumes TrueForge work, serves React, and exposes health endpoints | Browser requests, TrueForge events | API responses, SSE stream, static assets | TrueForge adapter, projector | HTTP mapped only to `127.0.0.1` |
+| Investigation projector | Converts persisted TrueForge events into status, stage, artifacts, and Agent Run steps | Sessions, turns, events, deltas | `InvestigationSnapshot`, normalized UI events | TrueForge SDK event types | In-process calls |
+| TrueForge adapter | Creates sessions/turns, streams/replays events, submits approvals, and cancels work | Validated investigation commands | TrueForge IDs, events, terminal state | TrueForge SDK | HTTP/SSE on private Compose network |
+| ForgeGate agent | Coordinates evidence, subagents, experiments, repair, approval, Qodo, and final decision | PR URL and session context | Structured artifacts, tool calls, decision report | Configured model, MCP, selected sandbox, skill | TrueForge agent loop |
+| Configured model | Produces hypotheses, structured artifacts, patches, and classifications | Agent context and tool results | Model messages and structured output | Local Qwen primary; hosted provider optional | Provider endpoint called only by TrueForge |
+| GitHub MCP endpoint | Exposes minimum GitHub tools and enforces repository, branch, path, size, and SHA policies | Schema-validated MCP calls | Normalized GitHub data or typed errors | Octokit, server-side PAT | Streamable HTTP privately; GitHub REST externally |
+| Selected TrueForge sandbox | Isolates checkout, generated files, commands, tests, and experiments | Tested SHA, scenario, commands, patch | Exit codes, bounded logs, diffs, artifacts | WSL2 local fallback experiment; Daytona optional | TrueForge sandbox tool |
+| GitHub | Owns repository, PR, commits, checks, comments, and reviews | MCP calls and Qodo events | Durable repository evidence | PAT, Qodo GitHub App | HTTPS API/webhooks |
+| Qodo | Independently reviews implementation and generated-patch commits | Real GitHub PR state | Findings, comments, checks, review links | Qodo GitHub App | GitHub; ForgeGate reads via MCP |
+| Postgres | Persists TrueForge agents, sessions, turns, events, and approvals | TrueForge writes | Durable orchestration state | TrueForge | Private DB connection |
+| Redis | Supports TrueForge runtime coordination | Transient TrueForge data | Runtime coordination | TrueForge | Private Redis connection |
+| Payment laboratory | Supplies deterministic system, fixture, fault scheduler, and invariant oracle | Seed and fault schedule | Charges, ledger, tests, `result.json` | `node:sqlite`, Vitest | Inside selected sandbox only |
+
+### Deployment and authorization boundary
+
+- Docker Desktop runs Linux containers through WSL2; native Windows execution is unsupported for this project.
+- Fastify serves the production Vite build and `/api`. Development may use a Vite proxy, but the demo uses one origin.
+- The MCP endpoint is reachable by TrueForge on the private Compose network and is not published publicly.
+- TrueForge OIDC is disabled for this localhost MVP. The browser never receives provider, GitHub, database, or Redis credentials.
+- All published host ports bind to `127.0.0.1`. Public exposure requires authentication and remains deferred.
+
+## 2. Component Architecture
+
+| Module | Responsibility | Key interfaces | Dependencies | Important data owned | Boundary |
+|---|---|---|---|---|---|
+| Control Room shell | Desktop layout, routing, connection state, accessibility, decision presentation | Investigation form, SSE subscription, approval dialog, cancel | Browser API client | Ephemeral UI state | Never infers success or fabricates steps |
+| Agent Run panel | Makes harness activity the primary narrative | Normalized `HarnessStep`, evidence expansion, approval card | Projector | Presentation-only expansion state | Every step traces to a real event/artifact |
+| Investigation API | Public ForgeGate HTTP contract | Create, get, events, approval, cancel, health | Validation, TrueForge adapter | No durable state | No agent reasoning or GitHub policy logic |
+| Investigation projector | Replays/folds TrueForge events into a stable snapshot | `project(events)`, normalized envelope | TrueForge delta helpers | In-memory event index | Rebuildable; TrueForge remains authoritative |
+| TrueForge adapter | SDK-specific session, turn, stream, replay, approval, cancel logic | Create/subscribe/replay/approve/cancel | TrueForge SDK | Active stream handles only | Does not duplicate persistence |
+| Agent specification | Model, instructions, MCP, sandbox, subagents, approvals, response format, limits | TrueForge `AgentSpec` | Skill and catalogs | Saved definition in TrueForge | Cannot bypass configured tools |
+| ForgeGate skill | Domain workflow, evidence hierarchy, gates, stopping rules | `SKILL.md` | Sandbox-enabled agent | Versioned instructions | No credentials/runtime state |
+| GitHub MCP server | GitHub interactions and write guards | Established MCP tools | MCP SDK, Octokit, PAT | Allowlists only | Sole agent path to GitHub |
+| Write-policy guard | Validates mutation immediately before Octokit | Repo/branch/path/SHA/file/size checks | MCP server | Immutable configured limits | Model text cannot override it |
+| Payment laboratory | Business-risk proof and repair verification | Baseline, scenario, oracle | Node, SQLite | Disposable lab artifacts | Selected-sandbox checkout only |
+| Qodo adapter | Converts GitHub review material to `QodoFinding` | Review/comment/check readers | GitHub MCP | No durable state | Never manufactures findings |
+| Demo seed CLI | Creates fresh unsafe branch and PR | `pnpm demo:seed` | Octokit or selected GitHub CLI | No retained state | Explicit operator action, not agent work |
+
+Shared contracts are limited to the established artifacts plus `InvestigationSnapshot`, `HarnessEvent`, `HarnessStep`, and the API error envelope. Do not create generic workflow, provider, sandbox, or reviewer abstractions for the MVP.
+
+## 3. Critical User Flows
+
+### Primary happy path
+
+**Trigger:** The user submits the seeded unsafe PR URL.
+
+**Actors:** User, Control Room, Fastify API, TrueForge, configured model, subagents, GitHub MCP, selected sandbox, GitHub, and Qodo.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Control Room
+    participant API as ForgeGate API
+    participant TF as TrueForge
+    participant MCP as GitHub MCP
+    participant SB as Selected sandbox
+    participant GH as GitHub
+    participant QD as Qodo
+
+    User->>UI: Submit real PR URL
+    UI->>API: POST /api/investigations
+    API->>TF: Create session and initial turn
+    TF->>MCP: Read PR, files, checks, exact head SHA
+    TF->>TF: Spawn invariant and failure-mode subagents
+    TF->>SB: Establish `master` baseline
+    TF->>SB: Run adversarial scenario on PR SHA
+    SB-->>TF: Reproducible invariant violation
+    TF-->>UI: BLOCKED with evidence
+    TF->>SB: Generate regression test and minimal patch
+    TF->>SB: Validate proposed repair
+    TF-->>UI: Approval required with exact commit payload
+    User->>UI: Allow commit
+    UI->>API: POST approval
+    API->>TF: Resume with tool approval
+    TF->>MCP: commit_files
+    MCP->>GH: Commit on existing demo branch
+    GH-->>QD: Push triggers review
+    TF->>MCP: Read real Qodo findings
+    TF->>SB: Address actionable finding and retest
+    opt Follow-up files changed
+        TF-->>UI: Second approval required
+        User->>UI: Allow follow-up commit
+        TF->>MCP: commit_files
+        MCP->>GH: Follow-up commit
+        GH-->>QD: Re-review latest SHA
+    end
+    TF->>MCP: Confirm latest head/review
+    TF-->>UI: Final READY, BLOCKED, or UNCERTAIN
+```
+
+**State:** `QUEUED` -> context/analysis/experiment -> `BLOCKED/EVIDENCE` -> repair/testing -> `PAUSED/APPROVAL` -> `QODO` -> `READY/DECISION`.
+
+**Success:** The defect reproduces, approved repair passes, Qodo completes, actionable findings resolve, and reviewed SHA equals tested SHA.
+
+**Failure:** Missing evidence, stale SHA, flaky result, dependency failure, or Qodo timeout prevents `READY`.
+
+**Approvals:** Initial commit, any follow-up commit, and any PR/Qodo trigger comment.
+
+**Outcome:** Evidence-backed `READY`, `BLOCKED`, or `UNCERTAIN`; never merge or deploy.
+
+### Required flow matrix
+
+| Flow | Trigger and steps | Tools/state changes | Success | Failure/recovery | Approval and outcome |
+|---|---|---|---|---|---|
+| Agent planning/execution | Initial turn; validate scope, read PR/SHA, delegate analysts, reconcile evidence, baseline `master`, plan and run scenario | GitHub reads, subagents, selected sandbox; `CONTEXT` -> `INVARIANTS` -> `HYPOTHESES` -> `EXPERIMENT` | Supported invariant and deterministic result | Bounded transient retries; missing proof -> `UNCERTAIN` | No approval for reads/isolation; produces violation or safe evidence |
+| Code modification | Reproduced violation; create failing regression test, minimal patch, validate paths/limits, show diff | Selected sandbox only; `BLOCKED` -> `REPAIR` -> `EVIDENCE` -> `APPROVAL` | Test fails before and passes after patch; scenario passes | Invalid/failed repair remains `BLOCKED`; infrastructure ambiguity -> `UNCERTAIN` | Approval before `commit_files`; approved commit or no write |
+| Testing/validation | Initial PR, proposed repair, or Qodo repair | Build/tests/scenario/oracle in selected sandbox; exact SHA/seed/results recorded | Required repetitions and counts pass | Product failure is evidence; flaky output -> `UNCERTAIN` | No sandbox approval; emits `ExperimentResult` |
+| Qodo review | Approved commit lands | Review/comment/check reads, sandbox repair, optional gated trigger/commit; `QODO` -> optional repair -> decision | Latest tested SHA reviewed, no actionable finding | Timeout/integration/stale review -> `UNCERTAIN`; unresolved risk -> `BLOCKED` | One repair round; any write needs approval |
+| Git/branch/commit/PR | Operator seeds; agent later gets patch approval | Seed CLI, PR read, guarded `commit_files` | Exact approved files form one commit on existing PR branch | SHA/path/size/auth conflict fails closed | Seed is operator action; agent write is gated |
+| Failure/recovery | Tool/model/stream/sandbox/Qodo/GitHub failure | Typed retry, replay/reconnect, cancel/dispose; current stage -> safe status | Resume without duplicated writes/events | Exhaustion -> `BLOCKED`, `UNCERTAIN`, `ERROR`, or `CANCELLED` | Changed mutation arguments require new approval |
+| Irreversible action | TrueForge intercepts configured write tool | `tool.approval_required`, approval API, resumed turn | Exact displayed call runs once | Missing/mismatched/stale/duplicate approval fails closed | Allow executes once; deny performs zero writes |
+
+## 4. Agent Architecture
+
+### Responsibilities
+
+1. Anchor claims to the exact PR SHA.
+2. Discover invariants from repository evidence rather than inventing them.
+3. Delegate invariant and failure-mode analysis to visible subagents.
+4. Generate deterministic adversarial scenarios.
+5. Execute generated work only in the selected TrueForge sandbox.
+6. Separate product failure from infrastructure failure.
+7. Generate a failing regression test before the minimal repair.
+8. Request approval before every GitHub mutation.
+9. Process one actionable Qodo-review round and test again.
+10. Produce a structured final decision with evidence and uncertainty.
+
+```mermaid
+flowchart TB
+    Human[Human operator]
+    Harness[TrueForge agent loop]
+    Model[Configured model]
+    Subs[Visible subagents]
+    Reads[Read-only GitHub MCP]
+    Gate{TrueForge approval gate}
+    Writes[Write GitHub MCP]
+    Sandbox[Selected TrueForge sandbox]
+    GitHub[GitHub]
+
+    Human --> Harness
+    Harness <--> Model
+    Harness <--> Subs
+    Harness --> Reads --> GitHub
+    Harness --> Sandbox
+    Harness --> Gate
+    Gate -->|Allow exact call| Writes --> GitHub
+    Gate -->|Deny| Harness
+    Harness --> Human
+```
+
+The model has no direct GitHub, host-shell, database, provider-key, or sandbox-key access.
+
+### Tool contract
+
+| Tool/capability | When allowed | Input/output expectation | Failure behavior |
+|---|---|---|---|
+| GitHub reads | After PR URL validation | Configured repo/PR/ref/path -> bounded normalized JSON | Retry transient reads twice; auth/schema failure -> `UNCERTAIN` |
+| Dynamic subagents | Invariant/hypothesis stages | Narrow role/evidence -> referenced structured findings | Discard unsupported output; root reconciles conflicts |
+| Selected sandbox | Baseline, scenario, patch, tests | Exact ref/seed/commands -> exit code, bounded logs, files, result | Retry provisioning once; classify execution failure |
+| `commit_files` | Only after validation and approval | Expected SHA, branch, message, bounded files -> commit/new head SHA | Guard/API conflict fails closed; no force-push |
+| PR comment/Qodo trigger | Only when necessary and approved | Bounded comment/trigger -> URL/ID | Failure is visible and does not change code evidence |
+| TrueForge approval | On configured write proposal | Exact tool-call allow/deny -> resumed events | Single-use, argument-bound |
+| Cancel | User request/hard timeout | Session ID -> terminal cancel and sandbox stop | Idempotent |
+
+### Decision, retry, and stop rules
+
+- Reject invariants without at least two repository evidence references.
+- Stop if `master` cannot establish expected safe behavior.
+- Return `BLOCKED` when a deterministic violation reproduces; attempt repair only when minimal and testable.
+- Never propose a commit until regression and full experiment pass in the selected sandbox.
+- Invalidate evidence when PR head changes.
+- Permit one Qodo-driven repair round; unresolved actionable findings prevent `READY`.
+- Stop at TrueForge's configured iteration limit.
+- Model/read transient errors: two retries. Selected-sandbox provisioning: one fresh-sandbox retry. Malformed structured output: one schema-feedback correction.
+- Do not blindly retry ambiguous GitHub writes; read branch state first.
+- Test/invariant failures are evidence, not infrastructure retries.
+- Approval denial executes zero writes.
+- Merge, deployment, force-push, deletion, workflow edits, credential access, and host commands never occur.
+
+## 5. Execution Lifecycle / State Machine
+
+The existing `Status`, `Stage`, and `Source` remain the public model:
+
+- `Status` describes aggregate run/decision presentation.
+- `Stage` describes the current operation.
+- `Source` attributes each event.
+- A `BLOCKED` decision may remain visible while `Stage` progresses through repair; only `DecisionReport` is final.
+
+```mermaid
+stateDiagram-v2
+    [*] --> QUEUED
+    QUEUED --> CONTEXT: session and turn created
+    CONTEXT --> INVARIANTS: PR and SHA loaded
+    INVARIANTS --> HYPOTHESES: invariants selected
+    HYPOTHESES --> EXPERIMENT: scenario planned
+    EXPERIMENT --> BLOCKED: violation reproduced
+    EXPERIMENT --> UNCERTAIN: evidence incomplete
+    BLOCKED --> REPAIR: repair starts
+    REPAIR --> TESTING: test and patch generated
+    TESTING --> APPROVAL: sandbox gates pass
+    TESTING --> BLOCKED: repair fails product gates
+    TESTING --> UNCERTAIN: infrastructure prevents proof
+    APPROVAL --> COMMITTING: human allows exact call
+    APPROVAL --> BLOCKED: human denies repair commit
+    COMMITTING --> QODO: commit succeeds
+    COMMITTING --> UNCERTAIN: write result ambiguous
+    QODO --> REPAIR: actionable finding and round available
+    QODO --> READY: review complete and gates pass
+    QODO --> UNCERTAIN: timeout or stale SHA
+    REPAIR --> TESTING: Qodo repair prepared
+    READY --> [*]
+    BLOCKED --> [*]: no repair, failed repair, or rejection
+    UNCERTAIN --> [*]
+    ERROR --> [*]
+    CANCELLED --> [*]
+```
+
+| From | To | Trigger | Required behavior |
+|---|---|---|---|
+| `QUEUED` | `RUNNING/CONTEXT` | Initial turn created | Begin event stream |
+| Running | `PAUSED/APPROVAL` | Gated tool proposed | Display exact required action |
+| `PAUSED/APPROVAL` | Running | Matching allow response | Resume with `user.tool_approval` |
+| `PAUSED/APPROVAL` | `BLOCKED/DECISION` | Repair commit rejected | Execute no write; preserve unsafe finding |
+| Running | `UNCERTAIN/DECISION` | Reliable evidence cannot complete | Stop unsafe progression |
+| Running/paused | `CANCELLED` | User cancels | Cancel turn and release sandbox |
+| Any | `ERROR` | ForgeGate cannot service/project request | Preserve correlation IDs and guidance |
+| `QODO` | `READY/DECISION` | Latest SHA tested/reviewed and gates pass | Emit final report |
+
+Only transitions that execute a GitHub mutation require approval. Sandbox writes are isolated and reversible.
+
+## 6. Git and GitHub Workflow
+
+### Branch and PR preparation
+
+- Protect `master` and use PRs for implementation so Qodo builds a meaningful trail.
+- Use one dedicated branch for each meaningful feature or milestone. Keep coherent commits on that branch; do not create a branch per edit or commit.
+- Implement and test on the feature branch, push it, and open a GitHub PR for Qodo.
+- Address actionable Qodo findings and explain disputed findings on the same branch/PR, rerun relevant tests, and push follow-up commits before merge.
+- Do not commit directly to `master`. Do not merge, delete the branch, or force-push unless the user explicitly requests it.
+- `pnpm demo:seed` creates `forgegate/demo-<timestamp>` from current `master`, applies the unsafe fixture, pushes it, and opens a non-draft PR.
+- The seed command refuses to reuse, reset, overwrite, or delete a branch.
+- The PR exists before ForgeGate starts; its URL and head SHA become investigation input.
+
+### Generated commits
+
+- The agent modifies only its selected-sandbox checkout until patch gates pass.
+- `PatchProposal` contains expected head SHA, exact files/diff, regression result, and experiment evidence.
+- After approval, `commit_files` re-reads the head and validates repository, branch, paths, file count, bytes, and SHA.
+- The MCP server creates one commit and advances only the existing demo branch.
+- The agent never receives GitHub credentials, runs `git push`, or creates another PR.
+- A Qodo-driven fix follows the same process and creates at most one follow-up commit.
+
+| Action | Policy |
+|---|---|
+| Read repository, PR, checks, reviews, comments | Automatic after validation |
+| Clone/read/modify/test in selected sandbox | Automatic and isolated |
+| Run `pnpm demo:seed` | Explicit operator command outside agent |
+| Commit files, comment, or trigger Qodo | Mandatory TrueForge approval |
+| Merge, deploy, force-push, delete branch, close PR, edit workflow | Prohibited |
+
+### Failure, rollback, and recovery
+
+- Stale SHA or policy failure creates no commit.
+- On ambiguous write timeout, read branch state before retrying. Report success only if the expected commit landed; otherwise pause for human action.
+- Failed sandbox changes disappear with the workspace.
+- Recover a bad commit only through a fresh approval-gated corrective/revert commit; never rewrite history.
+- Cancellation after a successful commit reports it and does not roll it back automatically.
+
+## 7. Qodo Integration
+
+### Workflow placement
+
+Qodo reviews the project's implementation PRs and the generated repair commit. In the demo it necessarily runs after the first approved patch exists on GitHub; the agent then consumes findings and tests again.
+
+### Inputs and outputs
+
+- Qodo receives the real repository, history, and committed diff through its GitHub App. ForgeGate sends no code to a separate Qodo API.
+- Qodo publishes summaries, findings, comments, statuses, and links on GitHub.
+- ForgeGate reads only the current PR and records the reviewed SHA where available.
+- `QodoFinding` stores review URL, comment ID, severity, summary, evidence, actionability, status, and response.
+
+### Finding policy
+
+- `actionable`: Relevant correctness, security, test, or maintainability concern; prepare a repair in the selected sandbox.
+- `informational`: Retain in report; no patch required.
+- `disputed`: Give repository/test evidence. Posting disagreement requires approval.
+- Critical/actionable findings must resolve before `READY`.
+- Allow one Qodo repair iteration including generation, full test, approval, commit, and re-review.
+- Unresolved proven risk ends `BLOCKED`; unresolved review state ends `UNCERTAIN`.
+
+### Trigger and readiness
+
+- Configure Qodo to review non-draft PRs and each push where supported.
+- Prefer automatic push review. If absent, `request_qodo_review` may post the trigger after approval.
+- `QODO_REVIEW_TIMEOUT_SECONDS` defaults to 600 and is tuned from measured latency.
+- `READY` requires latest PR head = latest tested SHA = latest completed Qodo review target, all tests/experiments passing, and no actionable finding or approval open.
+
+## 8. Sandbox / Safety Boundaries
+
+### Inside the selected sandbox
+
+- Checkout the configured repository at exact `master`/PR SHAs.
+- Install locked dependencies.
+- Read evidence and generate scenarios, tests, and proposed patches.
+- Run build, Vitest, payment scenarios, oracle, and bounded diagnostics.
+- Create disposable SQLite databases and structured artifacts.
+- Compute the proposed diff.
+
+### Outside the selected sandbox
+
+- Browser, Fastify, TrueForge, configured-model call, GitHub MCP, GitHub/Qodo, Postgres, Redis, Docker control, all credentials, approvals, and all GitHub mutations.
+
+### Execution policy
+
+- One fresh sandbox is associated with one investigation and exact PR SHA.
+- Restrict file collection to the checkout; resolve paths and symlinks before accepting patch content.
+- Never inject model-provider, GitHub, Qodo, database, Redis, or host credentials.
+- Permit only dependency/repository retrieval egress where provider controls allow; the fake payment scenario needs no network.
+- Record command, working directory, duration, exit code, and bounded/redacted output.
+- Limit command time, output, artifacts, files, and bytes.
+- Release the sandbox on completion, cancellation, timeout, or unrecoverable failure.
+
+### Pauses and prohibitions
+
+- No approval is needed for disposable sandbox changes.
+- Approval is mandatory before every commit, comment, Qodo trigger, corrective commit, or revert.
+- Merge, deployment, branch deletion, PR closure, force-push, workflow edits, secret retrieval, host commands, and writes outside `payment-lab/` remain prohibited.
+
+## 9. Backend API Design
+
+### Common error contract
+
+Use a single `ApiError` envelope with `code`, human-readable `message`, and optional `details`. It never contains credentials, hidden model reasoning, or unrestricted output.
+
+### Endpoints
+
+| Method and endpoint | Purpose | Request | Success response | Relevant errors |
+|---|---|---|---|---|
+| `POST /api/investigations` | Validate PR and start session/turn | Optional `Idempotency-Key`; `CreateInvestigationRequest` | `202 CreateInvestigationResponse` | `400`, `409`, `422`, `429`, `502`, `503` |
+| `GET /api/investigations/:sessionId` | Reconstruct snapshot | Session ID | `200 InvestigationSnapshot` | `400`, `404`, `500`, `502`, `503` |
+| `GET /api/investigations/:sessionId/events` | Stream events | Optional `Last-Event-ID` | `text/event-stream` | HTTP error before stream; sanitized stream error after start |
+| `POST /api/investigations/:sessionId/approvals/:approvalId` | Allow or deny call | `ApprovalDecisionRequest` | `202 ApprovalAcceptedResponse` | `400`, `404`, `409`, `422`, `502`, `503` |
+| `POST /api/investigations/:sessionId/cancel` | Cancel and release sandbox | No body | `202 CancelResponse` | `404`, `502`, `503` |
+| `GET /health/live` | Process liveness | None | `200 HealthResponse` | `503` |
+| `GET /health/ready` | Dependency readiness | None | `200 ReadinessResponse` | `503` without secret details |
+
+- `CreateInvestigationRequest`: `pullRequestUrl`.
+- `CreateInvestigationResponse`: `sessionId`, `QUEUED` status, and normalized PR identity.
+- `ApprovalDecisionRequest`: decision is `ALLOW` or `DENY`; optional reason.
+- `ApprovalAcceptedResponse`: session ID, approval ID, and accepted status.
+- `CancelResponse`: session ID and confirmed `CANCELLED` status.
+- `ApiError`: stable machine code, safe message, optional field details.
+
+Repeated matching idempotency keys return the same investigation. Approval repeats are idempotent only when identical; conflicting answers return `409`. Cancellation is idempotent for terminal sessions and is not shown complete before TrueForge confirms it.
+
+### SSE event envelope
+
+Each event contains `eventId`, TrueForge `sequence`, `sessionId`, `turnId`, optional `threadId`, `stage`, `source`, `type`, `occurredAt`, and a type-specific sanitized `payload`.
+
+Use the TrueForge sequence as the SSE `id`. Reconnect skips delivered sequences; finished investigations replay persisted events and close cleanly. Model deltas are merged into their base event before snapshot projection.
+
+## 10. Data Model
+
+No ForgeGate database is required, so an ER diagram adds no value. Persistence is split by system ownership.
+
+### Durable TrueForge entities
+
+| Entity | Purpose | Important fields | Relationships |
+|---|---|---|---|
+| Agent | Saved runtime definition | ID/name, model, instructions, MCP, sandbox, subagent/approval config | One agent has many sessions |
+| Session | One PR safety investigation | Session ID, agent reference, timestamps | One session has ordered turns |
+| Turn | One request or resume action | Turn ID, previous turn, input, status, required actions | One turn has ordered events |
+| Event | Authoritative execution/audit record | Event ID, sequence, type, thread ID, timestamp, payload | Belongs to turn and root/subagent thread |
+| Approval | Pending/resolved sensitive call | Tool-call ID, source event, thread, arguments, status, reason | Resumes same session through later turn |
+
+Postgres stores these through TrueForge. Redis supports runtime coordination and is not an application record store.
+
+### Derived ForgeGate state
+
+- `InvestigationSnapshot`: Rebuildable fold containing PR identity, status/stage, SHAs, artifacts, Harness Steps, approvals, retries, and decision.
+- `HarnessStep`: Event-derived item with ID, label, source, state (`PENDING`, `RUNNING`, `PASSED`, `FAILED`, `PAUSED`, `SKIPPED`), timestamps, tool/command summary, and evidence references.
+- `HarnessEvent`: Sanitized browser envelope; it never replaces the TrueForge event.
+- Existing structured artifacts remain domain records embedded in event/tool outputs.
+
+### External and disposable state
+
+- GitHub owns repository, branch, PR, commit, check, review, and comment state. Links, IDs, and SHAs appear in TrueForge history.
+- Qodo state is GitHub-owned and reread rather than copied into another database.
+- The selected sandbox owns workspace, generated files, logs, SQLite, and `result.json` only for its lifetime.
+- Fastify memory owns active SSE subscribers/event indexes only; restart reconstructs from TrueForge.
+
+## 11. Error Handling and Recovery
+
+| Failure | Response | Retry limit | Safe terminal/escalation |
+|---|---|---|---|
+| LLM timeout/rate limit/provider error | Record and retry same structured request | 2 | `UNCERTAIN` after exhaustion |
+| Malformed model output | Return schema errors for correction | 1 | `UNCERTAIN`; never execute malformed arguments |
+| MCP initialization/transport | Reconnect/reinvoke only known read operation | 2 | `UNCERTAIN` |
+| GitHub read/auth/rate limit | Preserve context; retry transient errors | 2 | `UNCERTAIN`, human setup action |
+| Selected-sandbox provisioning | Dispose partial sandbox and create fresh one | 1 | `UNCERTAIN` |
+| Sandbox timeout/crash | Capture output; classify infrastructure vs command | No blind rerun | Product -> `BLOCKED`; ambiguity -> `UNCERTAIN` |
+| Baseline fails on `master` | Stop because safe behavior is unestablished | 0 | `UNCERTAIN` |
+| Adversarial/regression test fails | Treat as product evidence | Required repetitions only | `BLOCKED` |
+| Deterministic repetitions differ | Preserve all seeds/results | 0 extra | `UNCERTAIN` |
+| Qodo absent/delayed | Poll to deadline; optionally approved trigger | 1 trigger; 600 seconds total | `UNCERTAIN` |
+| Actionable Qodo issue remains | Preserve finding/evidence | No second repair | `BLOCKED` or `UNCERTAIN` |
+| Stale SHA/policy rejection | Re-read PR and invalidate patch/evidence | 0 writes | `UNCERTAIN`; new investigation required |
+| Ambiguous GitHub write | Read branch/commit before further action | No blind retry | Confirm commit or pause for human |
+| SSE disconnect | Reconnect with `Last-Event-ID`; replay TrueForge | Bounded client backoff | Snapshot fallback; run continues |
+| Duplicate event | Deduplicate by sequence/event ID | N/A | Keep canonical event and log mismatch |
+| User rejects | Resume with deny; zero writes | 0 | Preserve `BLOCKED` |
+| User cancels | Idempotent TrueForge cancel and sandbox release | 1 confirmation read | `CANCELLED` |
+| Fastify restart | Reconnect and reconstruct | Automatic on request | `ERROR` only if projection fails |
+
+No technical error, timeout, missing review, or malformed output defaults to `READY`.
+
+## 12. Observability / Demo Visibility
+
+### Harness-first presentation rule
+
+The central demo moment is the agent harness visibly doing governed work. The duplicate-payment result is the business proof; the Agent Run shows judges why TrueForge is essential.
+
+The Control Room hierarchy is:
+
+1. Current decision and exact PR SHA.
+2. Live Agent Run with sponsor/tool attribution.
+3. Reproduced business-invariant evidence.
+4. Dominant human approval pause.
+5. Qodo feedback, agent response, retest, and final decision.
+
+### Agent Run panel
+
+The panel is generated only from real TrueForge and normalized tool events:
+
+```text
+AGENT RUN
+
+✓ GitHub MCP   Repository inspected          1.2s
+✓ TrueForge    Two subagents completed       4.8s
+✓ Sandbox      Isolated workspace created    2.1s
+✓ Agent        Adversarial plan generated    1.6s
+✕ Sandbox      Invariant violated            3.4s
+✓ Agent        Regression test generated     2.0s
+✓ Sandbox      Repair validation passed      5.7s
+
+⏸ HUMAN APPROVAL REQUIRED
+
+Commit 3 files to forgegate/demo-...
+Expected head: a81f...
+Scope: payment-lab/
+
+[ APPROVE ]  [ REJECT ]
+```
+
+After approval, the same timeline continues:
+
+```text
+✓ GitHub MCP   Commit created                f41c...
+✓ Qodo         Review completed              View review
+✓ Agent        Actionable finding addressed
+✓ Sandbox      Tests and scenario repeated
+✓ GitHub MCP   Latest head verified          b72e...
+✓ TrueForge    READY                         1000/1000/1000
+```
+
+The UI must not show `push branch` or `create pull request` during agent approval because the PR already exists and `commit_files` updates its branch through GitHub.
+
+### Visible event requirements
+
+- Current status/stage, exact tested SHA, and elapsed time.
+- Root-agent and subagent thread start/completion.
+- Tool source/name, start/end, duration, and result.
+- Sanitized GitHub repository, PR, and SHA context.
+- Sandbox creation/disposal, command, working directory, exit code, and bounded output.
+- Scenario faults, seed, expected/observed values, repetitions, and oracle verdict.
+- Changed files, diff summary, regression result, and exact pending mutation.
+- Approval allow/deny and resulting TrueForge resume event.
+- Commit SHA/link and verified PR head.
+- Qodo link, severity/status, classification, and response.
+- Retry reason, budget remaining, and recovery result.
+- Final passed/failed gates and remaining uncertainty.
+
+Each step can expand into evidence, but its collapsed label must remain clear in the three-minute recording.
+
+### Truthfulness and privacy
+
+- Never fabricate, pre-complete, reorder, or animate fake harness work.
+- Label replayed events `REPLAY` and current execution `LIVE`.
+- Never display hidden chain-of-thought; show concise structured plans, hypotheses, tool arguments, evidence, and decisions.
+- Redact credentials, headers, environment values, sensitive URLs, and oversized logs at the server boundary.
+- A running tool remains `RUNNING`; no confirming event means no success checkmark.
+
+### Demo acceptance
+
+- Within 20 seconds, judges can identify TrueForge, MCP, subagents, the selected sandbox, Qodo, and the human gate as distinct participants.
+- The approval card dominates while paused and states exactly what will change.
+- Reject visibly produces zero GitHub writes.
+- Refresh reconstructs the same Agent Run without duplicates.
+- Every final checkmark links to a real event or artifact in the inspector.
+- `BLOCKED` -> repair -> approval -> Qodo -> retest -> `READY` is understandable without narration.
+
+## 13. Security Considerations
+
+### Secrets and credentials
+
+- Secrets exist only in uncommitted environment configuration or Docker secrets where practical.
+- Browser bundle, repository, sandbox, logs, events, screenshots, and video contain no secret values.
+- The fine-grained GitHub PAT is server-side, limited to the configured repository and minimum contents/PR permissions.
+- Any optional hosted-model or Daytona fallback keys stay in TrueForge/provider settings, not the agent definition or sandbox.
+- Postgres and Redis are private Compose services with no unnecessary host publication.
+
+### Untrusted inputs
+
+- Treat PR URLs, branch names, GitHub content, Qodo comments, repository instructions, model output, tool arguments, paths, diffs, commands, and sandbox artifacts as untrusted.
+- Validate HTTP and MCP payloads with strict schemas and size limits.
+- Normalize repository identifiers and reject alternate hosts, traversal, absolute paths, forbidden symlinks, and files outside `payment-lab/`.
+- Repository prompt injection cannot change system policy, enable tools, authorize writes, expose secrets, or relax limits.
+- Qodo comments are review input, not executable instructions; classify them before changing code.
+
+### Authorization and approval
+
+- Localhost is the temporary user boundary. No authentication is acceptable only while all ports bind to `127.0.0.1` and cloud remains excluded.
+- GitHub authorization is enforced again in the MCP server, independent of model and UI.
+- Approval binds session, thread, tool-call ID, tool name, exact arguments, expected SHA, and displayed diff. Any change invalidates it.
+- Duplicate approvals are idempotent; conflicting responses fail.
+- Approval cannot authorize merge, deploy, force-push, workflow edits, deletion, or out-of-scope files.
+
+### Command and sandbox security
+
+- Agent commands run only through the selected TrueForge sandbox, never through the ForgeGate host process.
+- Workspaces are disposable, credential-free, and scoped to one investigation.
+- Commands/artifacts have time, output, file-count, and byte limits.
+- The fake payment provider prevents real financial effects.
+- Sandbox-disposal failure is logged/escalated but grants no host access.
+
+## 14. Implementation Dependencies
+
+### Runtime and libraries
+
+| Dependency | Purpose |
+|---|---|
+| Node.js 24 | TypeScript runtime and `node:sqlite` |
+| pnpm workspace | Reproducible package management |
+| Strict TypeScript | Shared contracts and boundary safety |
+| React 19 and Vite | Desktop Control Room |
+| Fastify | API, SSE, health, static UI, private MCP hosting |
+| `@truefoundry/trueforge-sdk` | Session, turn, event, approval integration |
+| Official MCP TypeScript SDK | GitHub MCP endpoint |
+| Octokit | GitHub API operations |
+| Ollama custom provider | Local Qwen3.5 4B through TrueForge's OpenAI-compatible provider support |
+| TrueForge local sandbox fallback | Preferred zero-cost WSL2 execution path, subject to Phase 1 proof |
+| Daytona provider | Optional supported fallback only if local sandbox feasibility fails |
+| `node:sqlite` | Payment/ledger laboratory |
+| Vitest | Unit, integration, deterministic scenarios |
+| Playwright | Desktop flow, accessibility, reconnect, approval tests |
+| Lucide | Accessible SVG icons |
+| Docker Compose | ForgeGate, TrueForge, Postgres, Redis |
+
+Do not add an ORM, ForgeGate database client, message broker, state framework, component framework, auth library, Kubernetes tooling, or cloud SDK unless scope later changes.
+
+### Required services and accounts
+
+- Docker Desktop with WSL2.
+- Public GitHub repository and fine-grained PAT.
+- Qodo GitHub App installed on that repository.
+- Local Ollama endpoint with Qwen3.5 4B available to TrueForge inside WSL2.
+- No OpenAI API account is required for the primary plan; ChatGPT Plus is not used as an API credential.
+- No Daytona account is initially required; obtain one only if the WSL2 local sandbox proof fails and Daytona is selected.
+- TrueForge server/image, Postgres, and Redis.
+
+### Environment variables
+
+| Variable | Purpose | Required |
 |---|---|---|
-| Invariant discovery hallucinates | High | Require repository/schema evidence; label candidates; use `UNCERTAIN` when unsupported |
-| Sandbox cannot provide desired network fault injection | High | Implement a local payment-provider stub with deterministic failure controls |
-| Agent generates an unsafe patch | High | Require regression test, Qodo review, experiment rerun, and human approval |
-| Qodo review is delayed or unavailable | Medium | Keep Qodo evidence as a separate track; demo a recorded or pre-completed review trail only if permitted, otherwise use live PR review |
-| GitHub OAuth or MCP setup fails | Medium | Use a public demo repository and a bounded connector configuration; keep local fixture access separate |
-| Demo becomes too long | High | One PR, one invariant, three failure modes, one repair loop |
-| UI becomes a generic dashboard | Medium | Center the event-driven investigation canvas and invariant counterexample |
-| Native Windows blocks development | High | Use WSL2 or Docker Linux from the start |
-| Generated code cannot be explained | High | Keep code minimal, document decisions, and disclose AI assistance |
+| `TRUEFORGE_BASE_URL` | Internal TrueForge URL | Yes |
+| `TRUEFORGE_AGENT_NAME` | Saved agent identifier | Yes |
+| `LOCAL_MODEL_BASE_URL` | Ollama OpenAI-compatible endpoint reachable by TrueForge | Yes |
+| `LOCAL_MODEL_ID` | Local Qwen3.5 4B model ID exposed to TrueForge | Yes |
+| `OPENAI_API_KEY` | Optional cloud-model fallback credential | No |
+| `DAYTONA_API_KEY` | Optional supported-sandbox fallback credential | No |
+| `GITHUB_TOKEN` | Fine-grained server token | Yes |
+| `FORGEGATE_DEMO_REPO` | Exact `owner/repo` allowlist | Yes |
+| `FORGEGATE_BRANCH_PREFIX` | Fixed `forgegate/demo-` | No |
+| `FORGEGATE_PATH_PREFIX` | Fixed `payment-lab/` | No |
+| `QODO_REVIEW_TIMEOUT_SECONDS` | Review deadline; default 600 | No |
+| TrueForge Postgres/Redis variables | Harness persistence | Yes |
 
-## 16. Definition of Done
+Pin the tested TrueForge image, SDK, MCP SDK, and package versions during Phase 1. Never use floating `latest` in reproducible demo configuration.
 
-ForgeGate is ready for submission when:
+## 15. Architecture Decisions / ADRs
 
-- [ ] A judge can clone the public repository and follow the README.
-- [ ] TrueForge visibly calls a real MCP connector.
-- [ ] TrueForge visibly provisions and uses the sandbox.
-- [ ] The agent discovers and explains the payment invariant.
-- [ ] The seeded bad PR produces a reproducible invariant violation.
-- [ ] The UI shows the failure evidence and `BLOCKED` decision.
-- [ ] ForgeGate generates a regression test and minimal patch.
-- [ ] Qodo reviews the change through a real pull request.
-- [ ] ForgeGate processes Qodo findings and reruns the experiment.
-- [ ] The UI shows an approval pause before repository or deployment write.
-- [ ] The corrected scenario reaches `READY`.
-- [ ] The UI demonstrates MCP, sandbox, subagent/session, Qodo, and approval states.
-- [ ] The demo fits approximately three minutes.
-- [ ] No secrets, personal data, or unauthorized accounts appear in the repo or video.
-- [ ] AI coding assistance is disclosed.
+These concise ADRs live in this plan because no separate ADR convention or source tree exists yet.
 
-## 17. Build Order
+### ADR-001: Docker Desktop and WSL2
 
-### Phase 1 — Feasibility proof
+- **Decision:** Run Linux containers through WSL2.
+- **Reason:** TrueForge sandbox fallback is unsupported on native Windows and the observed ESM path issue is avoided in Linux.
+- **Alternatives:** Native Windows, direct WSL install, cloud.
+- **Trade-off:** Docker Desktop is required; local topology becomes reproducible.
 
-- Confirm TrueForge runs in WSL2 or Linux Docker.
-- Connect a model.
-- Connect GitHub MCP or a minimal custom MCP server.
-- Run one session and capture streamed events.
-- Prove sandbox execution.
-- Prove one approval-gated write.
+### ADR-002: One ForgeGate web service and origin
 
-### Phase 2 — Deterministic payment laboratory
+- **Decision:** Fastify serves React, API, SSE, and the private MCP endpoint from one container/process.
+- **Reason:** Smallest architecture satisfying the fixed stack; avoids CORS and another service.
+- **Alternatives:** Separate frontend/API/MCP containers, embedded TrueForge UI.
+- **Trade-off:** Components scale together, acceptable for one local user.
 
-- Create the safe baseline payment service.
-- Add the intentionally unsafe retry change.
-- Add timeout, duplicate webhook, and concurrency injection.
-- Add invariant oracle and stable result output.
+### ADR-003: TrueForge owns orchestration persistence
 
-### Phase 3 — ForgeGate agent loop
+- **Decision:** TrueForge stores agents, sessions, turns, events, and approvals in Postgres; ForgeGate derives snapshots.
+- **Reason:** Persistence, replay, approvals, and visible harness events are core TrueForge evidence.
+- **Alternatives:** ForgeGate event database, local TrueForge SQLite.
+- **Trade-off:** Postgres/Redis add services but avoid duplicated state.
 
-- PR context extraction.
-- Candidate invariant generation with evidence.
-- Hypothesis generation.
-- Experiment execution.
-- Decision output.
-- Regression test and patch generation.
+### ADR-004: Daytona-only generated execution - superseded by ADR-016
 
-### Phase 4 — Qodo loop
+- **Decision:** Repository code, generated patches, and shell commands run only in disposable Daytona.
+- **Reason:** Safe generated execution is required and visibly demonstrates isolation.
+- **Alternatives:** Host Docker, native shell, mocked results.
+- **Trade-off:** Provider availability is required; failure yields `UNCERTAIN`, never host fallback.
 
-- Install Qodo from the beginning.
-- Create meaningful pull requests.
-- Trigger and capture Qodo reviews.
-- Read findings through GitHub.
-- Repair, retest, and request another review.
+### ADR-005: Custom bounded GitHub MCP
 
-### Phase 5 — Control Room UI
+- **Decision:** Expose only established read tools and gated write tools with server-side guards.
+- **Reason:** Broad GitHub access weakens the safety story and is unnecessary.
+- **Alternatives:** General GitHub MCP, direct agent Octokit, GitHub CLI in sandbox.
+- **Trade-off:** Small integration cost gives enforceable mutation boundaries.
 
-- Implement stage progression.
-- Implement live event timeline.
-- Implement invariant and evidence cards.
-- Implement sandbox experiment view.
-- Implement Qodo review state.
-- Implement approval dialog.
-- Implement final decision screen.
-- Add loading, paused, error, reconnect, and uncertain states.
+### ADR-006: Credentials and writes outside sandbox
 
-### Phase 6 — Submission polish
+- **Decision:** `commit_files` executes in the MCP server through Octokit after approval.
+- **Reason:** Generated code must not receive repository credentials or push capability.
+- **Alternatives:** Push from Daytona, host git, manual patch download.
+- **Trade-off:** SHA conflict handling is required, but the PR trail is real and safe.
 
-- Freeze the demo scenario.
-- Verify clean-clone setup.
-- Record the three-minute demo.
-- Write the short project explanation.
-- Confirm Qodo review history is visible.
-- Confirm all secrets and personal data are removed.
-- Run the final judge checklist.
+### ADR-007: One repository and disposable demo PRs
 
-## 18. Open Decisions
+- **Decision:** Keep product/lab/fixture/tests/skill/Compose/docs together and seed a fresh PR per rehearsal.
+- **Reason:** Judges clone one repo; fresh PRs preserve deterministic setup and Qodo evidence.
+- **Alternatives:** Separate lab repo, reset reused PR, mock repo.
+- **Trade-off:** Strict path guards are mandatory.
 
-- Whether the UI runs as a custom application around the TrueForge API or primarily extends the bundled UI.
-- Whether local Linux sandbox execution is sufficient or Daytona is required.
-- Whether the first patch is generated entirely by ForgeGate or assisted by a controlled coding tool.
-- Whether the demo includes a real GitHub PR write or stops at an approval preview.
-- Whether to use the name ForgeGate publicly or pair it with “Invariant Hunter” as the product descriptor.
+### ADR-008: Fine-grained PAT for local MVP
 
-## Final Position
+- **Decision:** Use one server-side token restricted to the demo repository.
+- **Reason:** Simpler than operating a custom GitHub App for one local user/repo.
+- **Alternatives:** GitHub App, OAuth, GitHub CLI credentials.
+- **Trade-off:** Rotation is manual; least privilege/redaction are mandatory.
 
-ForgeGate should not be presented as a generic production simulator or autonomous QA platform.
+### ADR-009: Qodo as independent post-commit gate
 
-It should be presented as:
+- **Decision:** Qodo reviews real commits; ForgeGate reads/responds and retests.
+- **Reason:** TrueForge governs execution; Qodo independently reviews quality.
+- **Alternatives:** Pre-commit Qodo, simulated findings, implementation-PR-only Qodo.
+- **Trade-off:** Real latency can exceed the demo window; use honest editing, never simulation.
 
-> A TrueForge-powered agent that discovers what must remain true in a system, tries to violate those guarantees under adversarial conditions, and refuses to approve a change without executable evidence.
+### ADR-010: Approval for every agent GitHub mutation
 
-The winning demo is one reproducible duplicate-payment failure, one generated repair, one Qodo review loop, one approval gate, and one clear transition from `BLOCKED` to `READY`.
+- **Decision:** Gate commits, comments, and Qodo triggers through TrueForge.
+- **Reason:** Visible human control is a judging criterion.
+- **Alternatives:** Gate commits only, auto-comment, prompt-only control.
+- **Trade-off:** More pauses produce stronger safety evidence; seed remains explicit operator setup.
+
+### ADR-011: One Qodo remediation round
+
+- **Decision:** Permit one fix/retest/reapproval/re-review cycle.
+- **Reason:** Proves the loop while bounding cost, latency, and runaway behavior.
+- **Alternatives:** No response, unlimited loop, multiple rounds.
+- **Trade-off:** Remaining findings prevent `READY`.
+
+### ADR-012: SSE reconstruction without ForgeGate DB
+
+- **Decision:** Stream normalized events and rebuild snapshots from TrueForge.
+- **Reason:** Another store would duplicate authoritative state.
+- **Alternatives:** WebSocket plus event DB, browser-only state, polling only.
+- **Trade-off:** Projector must merge/deduplicate correctly.
+
+### ADR-013: Harness-first UI narrative
+
+- **Decision:** Agent Run and approval dominate; business evidence supports them.
+- **Reason:** Judges must see TrueForge reach tools, spawn subagents, run safely, persist, and pause.
+- **Alternatives:** Chat-first UI, CI dashboard, result-only report.
+- **Trade-off:** Truthful event attribution takes care but strengthens four judging dimensions.
+
+### ADR-014: Desktop-only and local-only scope
+
+- **Decision:** Optimize 1024-1440px desktop and localhost Docker.
+- **Reason:** Mobile/cloud do not improve the core three-minute proof enough.
+- **Alternatives:** Mobile UI, public SaaS, Kubernetes.
+- **Trade-off:** No remote public access; clean-clone docs/video remain essential.
+
+### ADR-015: OpenAI default with override - superseded by ADR-016
+
+- **Decision:** Start with `openai/gpt-5.2` and permit `OPENAI_MODEL` override.
+- **Reason:** Provider is fixed while override permits a cheaper/newly validated model without code changes.
+- **Alternatives:** Hard-code model, model-selection UI, local model.
+- **Trade-off:** Cost/reliability vary; record the tested model/configuration.
+
+### ADR-016: Local-first model and WSL2 sandbox feasibility
+
+- **Decision:** Use Qwen3.5 4B through local Ollama as the primary model. Run TrueForge in WSL2 and attempt its local sandbox fallback before considering paid providers.
+- **Reason:** The user already has local inference capacity but no OpenAI API key; ChatGPT Plus does not include API usage. WSL2 also removes the observed `win32` platform rejection.
+- **Alternatives:** OpenAI API, another hosted model provider, Daytona sandbox, or a custom execution service.
+- **Trade-off:** Qwen3.5 4B may be too weak for reliable agentic coding, and TrueForge documents Daytona as its only supported sandbox provider. Both local choices are Phase 1 feasibility gates. If either fails, select the smallest viable fallback during implementation without changing ForgeGate's product workflow or safety rules.
+- **Supersedes:** ADR-004 as the primary sandbox choice and ADR-015 as the primary model choice. Daytona and OpenAI remain optional fallbacks, not current prerequisites.
+
+## 16. Open Questions
+
+### Contradictions and required clarifications
+
+1. **Qodo ordering:** The existing three-minute outline places Qodo before first approval/commit. Qodo cannot review an uncommitted patch. Implement/record sandbox repair -> approval -> commit -> Qodo -> optional repair/retest/reapproval -> decision. Preserve the original outline as history, but use this corrected order.
+2. **Overloaded status:** Existing `Status` mixes run and decision state; `BLOCKED` is both an intermediate wow moment and possible terminal result. Pair it with `Stage` and treat only `DecisionReport` as final.
+3. **Every write versus seeding:** Approval applies to agent-initiated writes. `pnpm demo:seed` is explicit operator setup before investigation.
+4. **Approval wording:** The PR already exists and `commit_files` updates its branch. Do not claim the agent separately pushes or creates a PR unless the real workflow changes.
+5. **Qodo eligibility:** Hackathon guidance says open-source Qodo use is free, while current troubleshooting material may require an eligible account/seat. A real review is a Phase 1 stop gate.
+
+### BLOCKING decisions and prerequisites
+
+- Select the public GitHub `owner/repo` for `FORGEGATE_DEMO_REPO`.
+- Create/test a fine-grained PAT with minimum contents/PR permissions for only that repository.
+- Install Qodo at the start, link GitHub if required, enable non-draft PR push reviews, and prove one real review.
+- Prove Qwen3.5 4B can reliably produce the required structured outputs, tool calls, subagent results, patch, and test loop; if it cannot, select an accessible stronger model before Phase 3.
+- Prove TrueForge's local sandbox fallback under WSL2 provides adequate isolation and all required harness events; if it cannot, evaluate Daytona during implementation.
+- Pin compatible TrueForge server image, SDK, MCP SDK, and catalog configuration after Phase 1 feasibility.
+- Verify Compose with Postgres/Redis, MCP, subagents, sandbox, rejected approval, replay, and cancellation through WSL2.
+
+### NON-BLOCKING decisions
+
+- Keep the local Qwen model/configuration stable between rehearsal and recording once it passes the feasibility gate.
+- Set Qodo bot/review detection from actual repository events.
+- Tune the 600-second Qodo timeout from real latency.
+- Choose whether raw event inspector starts collapsed; Agent Run remains primary.
+- Choose 1280px or 1440px recording viewport after visual verification.
+- Decide whether the video uses an honest jump cut while Qodo runs. Never mock/relabel replay as live.
+- Mobile, cloud, authentication, arbitrary repositories, and more domains remain deferred.
+
+### Architectural risks
+
+- TrueForge version drift could break SDK events, catalogs, sandbox, or approval behavior; pin and verify first.
+- Qodo eligibility or latency could block the closed loop; prove it in Phase 1.
+- The WSL2 local fallback may be unsupported or insufficiently isolated; fail the feasibility gate rather than silently running generated commands on an unconfined host. Daytona availability matters only if selected as fallback.
+- Structured output may be malformed; schema validation and one correction are mandatory.
+- Projector bugs could make UI disagree with TrueForge; replay/reconnect tests must compare snapshots.
+- A changed PR head invalidates evidence/approval; check SHA at checkout, approval display, and commit.
+- Public repo increases secret-exposure risk; scan repository, logs, and video before submission.
+- Qodo may exceed three minutes; preserve truthful timestamps and use honest editing, not simulation.
+- One Qodo round may leave findings; return `BLOCKED`/`UNCERTAIN`, not an unbounded loop.
+
+### Recommended implementation order
+
+1. Resolve repository identity, GitHub/Qodo setup, TrueForge version pins, and local Ollama connectivity.
+2. Complete Phase 1 stop gates: Qwen structured/tool/patch proof, selected-sandbox isolation/event proof, MCP read, visible subagent, rejected approval with zero writes, replay, cancel, and real Qodo review.
+3. Prove safe baseline, unsafe fixture, oracle, and fresh-PR seed repeatedly.
+4. Implement read-only investigation, artifacts, projector, and minimal Agent Run against real events.
+5. Implement sandbox regression/repair and validation without GitHub writes.
+6. Implement write guard, approval card, commit/deny, stale SHA, and ambiguous-write recovery.
+7. Implement Qodo polling/classification, one repair, retest, second approval, and SHA gate.
+8. Complete desktop UI, reconnect/dedupe, accessibility, failures, inspector, and harness-first polish.
+9. Run clean-clone, security, deterministic, browser, and live-integration verification.
+10. Seed a fresh PR, rehearse corrected sequence, record truthful demo, and finish submission.
