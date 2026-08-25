@@ -3,6 +3,8 @@
 ## Graphify
 
 - When the user types `/graphify`, use the installed graphify skill before doing anything else.
+- The skill is normally installed externally at `~/.Codex/skills/graphify/SKILL.md` or `C:\Users\<user>\.agents\skills\graphify\SKILL.md`; do not add it to this repository.
+- If the skill or tool is unavailable, state that clearly, then continue with the normal repository workflow without Graphify.
 
 ## Hackathon development workflow
 
