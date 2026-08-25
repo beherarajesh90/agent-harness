@@ -131,12 +131,19 @@ READY | ERROR | CANCELLED
 
 Stage:
 CONTEXT | INVARIANTS | HYPOTHESES | EXPERIMENT |
-EVIDENCE | REPAIR | QODO | APPROVAL | DECISION
+EVIDENCE | REPAIR | TESTING | APPROVAL | COMMITTING |
+QODO | DECISION
 
 Source:
 SYSTEM | GITHUB | AGENT | SUBAGENT |
 SANDBOX | QODO | HUMAN
 ```
+
+`Stage` is the canonical public stage union. The SSE envelope `stage` field,
+projector state, persisted investigation snapshot, and desktop stage
+progression must use only these values. `Status` values such as `BLOCKED`,
+`READY`, and `UNCERTAIN` are not stage values and must not be emitted through
+the `stage` field.
 
 ### Structured artifacts
 
@@ -681,7 +688,7 @@ sequenceDiagram
 | Flow | Trigger and steps | Tools/state changes | Success | Failure/recovery | Approval and outcome |
 |---|---|---|---|---|---|
 | Agent planning/execution | Initial turn; validate scope, read PR/SHA, delegate analysts, reconcile evidence, baseline `master`, plan and run scenario | GitHub reads, subagents, selected sandbox; `CONTEXT` -> `INVARIANTS` -> `HYPOTHESES` -> `EXPERIMENT` | Supported invariant and deterministic result | Bounded transient retries; missing proof -> `UNCERTAIN` | No approval for reads/isolation; produces violation or safe evidence |
-| Code modification | Reproduced violation; create failing regression test, minimal patch, validate paths/limits, show diff | Selected sandbox only; `BLOCKED` -> `REPAIR` -> `EVIDENCE` -> `APPROVAL` | Test fails before and passes after patch; scenario passes | Invalid/failed repair remains `BLOCKED`; infrastructure ambiguity -> `UNCERTAIN` | Approval before `commit_files`; approved commit or no write |
+| Code modification | Reproduced violation; create failing regression test, minimal patch, validate paths/limits, show diff | Selected sandbox only; `BLOCKED` -> `REPAIR` -> `TESTING` -> `APPROVAL` | Test fails before and passes after patch; scenario passes | Invalid/failed repair remains `BLOCKED`; infrastructure ambiguity -> `UNCERTAIN` | Approval before `commit_files`; approved commit or no write |
 | Testing/validation | Initial PR, proposed repair, or Qodo repair | Build/tests/scenario/oracle in selected sandbox; exact SHA/seed/results recorded | Required repetitions and counts pass | Product failure is evidence; flaky output -> `UNCERTAIN` | No sandbox approval; emits `ExperimentResult` |
 | Qodo review | Approved commit lands | Review/comment/check reads, sandbox repair, optional gated trigger/commit; `QODO` -> optional repair -> decision | Latest tested SHA reviewed, no actionable finding | Timeout/integration/stale review -> `UNCERTAIN`; unresolved risk -> `BLOCKED` | One repair round; any write needs approval |
 | Git/branch/commit/PR | Operator seeds; agent later gets patch approval | Seed CLI, PR read, guarded `commit_files` | Exact approved files form one commit on existing PR branch | SHA/path/size/auth conflict fails closed | Seed is operator action; agent write is gated |
