@@ -1360,8 +1360,11 @@ Last repository verification: 2026-08-25.
 - [ ] A GitHub PR and Qodo review for the planning branch are not verified from this repository.
 - [ ] No Node/pnpm workspace, application source, Docker configuration, TrueForge configuration, MCP server, payment laboratory, test suite, or UI exists yet.
 - [ ] No package manifest, Compose file, Vitest configuration, or Playwright configuration exists yet.
-- [?] Local Ollama/Qwen connectivity, Qwen agent capability, and WSL2 local sandbox fallback are not verified.
-- [?] Public demo repository configuration, GitHub PAT, Qodo installation, and a real Qodo review are not verified.
+- [x] WSL2 is available with Ubuntu 26.04, and a user-local Node 24.19 runtime was installed for feasibility testing.
+- [x] TrueForge v0.1.4 starts in WSL2 standalone mode and serves its API documentation on `localhost:8790`.
+- [x] Qwen3.5 4B responds through local Ollama and a WSL-reachable Ollama endpoint; TrueForge produced valid structured JSON, a visible `create_sub_agent` call/result, and a bounded Daytona patch/test result.
+- [x] Daytona was configured as the selected sandbox after the local fallback failed its internal PyPI dependency-install proof. TrueForge accepted the credential, provisioned a Daytona sandbox, executed `echo SANDBOX_OK && cat ...`, and returned exit code `0` with the expected output.
+- [~] Public demo repository configuration and a read-only GitHub PAT are verified through the official GitHub MCP Docker server; Qodo installation and a real Qodo review are not verified.
 
 ## Recurring Milestone PR Gate
 
@@ -1398,23 +1401,23 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [ ] Start the local Ollama endpoint reachable from TrueForge in WSL2.
 - [ ] Configure Qwen3.5 4B as a TrueForge custom OpenAI-compatible provider.
 - [ ] Verify one normal model response through TrueForge.
-- [ ] Verify schema-valid structured output.
-- [ ] Verify a GitHub MCP read tool call.
-- [ ] Verify one visible subagent result.
-- [ ] Verify a bounded patch/test task produces a usable result.
+- [x] Verify schema-valid structured output through TrueForge JSON Schema response format.
+- [x] Verify a GitHub MCP read tool call: `get_file_contents` fetched `plan.md` from `beherarajesh90/agent-harness` on `master` through the official read-only server.
+- [x] Verify one visible `create_sub_agent` call and returned payment-invariant analysis.
+- [x] Verify a bounded Daytona patch/test task produces a usable result and successful test output.
 - [ ] Record the tested local model ID, endpoint route, context limit, and observed limitations.
 - [ ] Make an explicit fallback decision only if Qwen fails the required harness tasks.
 
 ### Sandbox and control feasibility
 
-- [ ] Run TrueForge inside WSL2 and attempt its local sandbox fallback.
-- [ ] Verify sandbox-created and command events reach the TrueForge event stream.
+- [x] Run TrueForge inside WSL2 with Daytona; server startup, WSL-reachable local Ollama, Daytona provisioning, sandbox initialization, command execution, and successful turn completion pass.
+- [x] Verify the successful sandbox command and result reach the persisted TrueForge event stream.
 - [ ] Verify files and commands remain within the disposable workspace.
 - [ ] Verify model, GitHub, and provider credentials do not enter the sandbox.
 - [ ] Verify sandbox cleanup after success, cancellation, and failed provisioning.
 - [ ] Verify the fallback provides sufficient isolation for the demo safety boundary.
-- [ ] Record a fallback decision only if the local sandbox proof fails.
-- [ ] If required, configure Daytona as the selected supported fallback and repeat the same proof.
+- [x] Record Daytona as the selected sandbox because the local fallback failed its dependency-install/network proof.
+- [x] Configure Daytona as the selected supported sandbox and repeat the same proof successfully.
 
 ### Harness proof and external setup
 
