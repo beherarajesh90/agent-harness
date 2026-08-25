@@ -1362,8 +1362,8 @@ Last repository verification: 2026-08-25.
 - [ ] No package manifest, Compose file, Vitest configuration, or Playwright configuration exists yet.
 - [x] WSL2 is available with Ubuntu 26.04, and a user-local Node 24.19 runtime was installed for feasibility testing.
 - [x] TrueForge v0.1.4 starts in WSL2 standalone mode and serves its API documentation on `localhost:8790`.
-- [~] Qwen3.5 4B responds through local Ollama, and a WSL-reachable Ollama endpoint is configured; TrueForge produced sandbox `exec` tool calls, but structured output, subagent, and bounded patch/test behavior are not yet verified.
-- [?] Ubuntu 24.04 now has `python3.12-venv`, `bubblewrap`, `socat`, and `ripgrep`, and TrueForge creates the isolated sandbox; however its internal `pip install pydantic` cannot reach PyPI and fails with a proxy error while direct PyPI access outside the sandbox succeeds. No sandbox command/event/isolation/cleanup proof exists yet.
+- [~] Qwen3.5 4B responds through local Ollama, and a WSL-reachable Ollama endpoint is configured; TrueForge produced a successful Daytona sandbox `exec` result, but structured output, subagent, and bounded patch/test behavior are not yet verified.
+- [x] Daytona was configured as the selected sandbox after the local fallback failed its internal PyPI dependency-install proof. TrueForge accepted the credential, provisioned a Daytona sandbox, executed `echo SANDBOX_OK && cat ...`, and returned exit code `0` with the expected output.
 - [?] Public demo repository configuration, GitHub PAT, Qodo installation, and a real Qodo review are not verified.
 
 ## Recurring Milestone PR Gate
@@ -1410,14 +1410,14 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 
 ### Sandbox and control feasibility
 
-- [?] Run TrueForge inside WSL2 and attempt its local sandbox fallback; server startup, WSL-reachable local Ollama, fallback availability, and sandbox creation pass, but sandbox provisioning stops at its internal PyPI dependency install due to the sandbox network/proxy limitation.
-- [ ] Verify sandbox-created and command events reach the TrueForge event stream.
+- [x] Run TrueForge inside WSL2 with Daytona; server startup, WSL-reachable local Ollama, Daytona provisioning, sandbox initialization, command execution, and successful turn completion pass.
+- [x] Verify the successful sandbox command and result reach the persisted TrueForge event stream.
 - [ ] Verify files and commands remain within the disposable workspace.
 - [ ] Verify model, GitHub, and provider credentials do not enter the sandbox.
 - [ ] Verify sandbox cleanup after success, cancellation, and failed provisioning.
 - [ ] Verify the fallback provides sufficient isolation for the demo safety boundary.
-- [ ] Record a fallback decision only if the local sandbox proof fails.
-- [ ] If required, configure Daytona as the selected supported fallback and repeat the same proof.
+- [x] Record Daytona as the selected sandbox because the local fallback failed its dependency-install/network proof.
+- [x] Configure Daytona as the selected supported sandbox and repeat the same proof successfully.
 
 ### Harness proof and external setup
 
