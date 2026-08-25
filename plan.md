@@ -1360,7 +1360,10 @@ Last repository verification: 2026-08-25.
 - [ ] A GitHub PR and Qodo review for the planning branch are not verified from this repository.
 - [ ] No Node/pnpm workspace, application source, Docker configuration, TrueForge configuration, MCP server, payment laboratory, test suite, or UI exists yet.
 - [ ] No package manifest, Compose file, Vitest configuration, or Playwright configuration exists yet.
-- [?] Local Ollama/Qwen connectivity, Qwen agent capability, and WSL2 local sandbox fallback are not verified.
+- [x] WSL2 is available with Ubuntu 26.04, and a user-local Node 24.19 runtime was installed for feasibility testing.
+- [x] TrueForge v0.1.4 starts in WSL2 standalone mode and serves its API documentation on `localhost:8790`.
+- [~] Qwen3.5 4B responds through local Ollama, but Ollama is not yet reachable from WSL and TrueForge structured/tool/subagent behavior is not verified.
+- [?] TrueForge's local sandbox fallback is unavailable because WSL is missing `socat` and `rg`; the official supported Daytona path remains unconfigured.
 - [?] Public demo repository configuration, GitHub PAT, Qodo installation, and a real Qodo review are not verified.
 
 ## Recurring Milestone PR Gate
@@ -1407,7 +1410,7 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 
 ### Sandbox and control feasibility
 
-- [ ] Run TrueForge inside WSL2 and attempt its local sandbox fallback.
+- [~] Run TrueForge inside WSL2 and attempt its local sandbox fallback; server startup passes, sandbox provisioning is blocked by missing host dependencies.
 - [ ] Verify sandbox-created and command events reach the TrueForge event stream.
 - [ ] Verify files and commands remain within the disposable workspace.
 - [ ] Verify model, GitHub, and provider credentials do not enter the sandbox.
