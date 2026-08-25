@@ -109,7 +109,7 @@ The six judging criteria remain equally important:
 - `GET /api/investigations/:sessionId/events`
   - Streams events over SSE.
   - Supports reconnection through `Last-Event-ID`.
-  - Deduplicates by TrueForge event ID.
+  - Uses the strictly monotonic TrueForge `sequence` as the canonical SSE cursor and deduplication key; `eventId` is retained for tracing and cross-checking only.
 
 - `POST /api/investigations/:sessionId/approvals/:approvalId`
   - Answers an actual pending TrueForge approval.
@@ -940,9 +940,9 @@ Repeated matching idempotency keys return the same investigation. Approval repea
 
 ### SSE event envelope
 
-Each event contains `eventId`, TrueForge `sequence`, `sessionId`, `turnId`, optional `threadId`, `stage`, `source`, `type`, `occurredAt`, and a type-specific sanitized `payload`.
+Each event contains `eventId`, TrueForge `sequence`, `sessionId`, `turnId`, optional `threadId`, `stage`, `source`, `type`, `occurredAt`, and a type-specific sanitized `payload`. `sequence` is strictly monotonic within a session; `eventId` is a stable tracing identity and must not be used as the SSE resume cursor.
 
-Use the TrueForge sequence as the SSE `id`. Reconnect skips delivered sequences; finished investigations replay persisted events and close cleanly. Model deltas are merged into their base event before snapshot projection.
+Use the TrueForge `sequence` as the SSE `id`. Clients use SSE `id` (= `sequence`) for `Last-Event-ID`; the server guarantees no duplicate sequences; the projector also ignores already-seen sequences. Reconnect skips delivered sequences; finished investigations replay persisted events and close cleanly. Model deltas are merged into their base event before snapshot projection. If an `eventId` conflicts with a sequence already observed, retain the sequence ordering and surface the mismatch as an integrity warning.
 
 ## 10. Data Model
 
