@@ -1362,8 +1362,8 @@ Last repository verification: 2026-08-25.
 - [ ] No package manifest, Compose file, Vitest configuration, or Playwright configuration exists yet.
 - [x] WSL2 is available with Ubuntu 26.04, and a user-local Node 24.19 runtime was installed for feasibility testing.
 - [x] TrueForge v0.1.4 starts in WSL2 standalone mode and serves its API documentation on `localhost:8790`.
-- [~] Qwen3.5 4B responds through local Ollama, but Ollama is not yet reachable from WSL and TrueForge structured/tool/subagent behavior is not verified.
-- [~] User-local `socat` and `ripgrep` were added under WSL, and TrueForge now reports its local sandbox fallback available; sandbox command/event/isolation/cleanup behavior is not yet verified.
+- [~] Qwen3.5 4B responds through local Ollama, and a WSL-reachable Ollama endpoint is configured; TrueForge produced sandbox `exec` tool calls, but structured output, subagent, and bounded patch/test behavior are not yet verified.
+- [?] User-local `socat` and `ripgrep` were added under WSL and TrueForge reports its local sandbox fallback available, but sandbox initialization is blocked because the active Ubuntu 26.04 image lacks `ensurepip`/`python3.14-venv`. Ubuntu 24.04 has an available `python3.12-venv` package and is the next local-runtime option; no sandbox command/event/isolation/cleanup proof exists yet.
 - [?] Public demo repository configuration, GitHub PAT, Qodo installation, and a real Qodo review are not verified.
 
 ## Recurring Milestone PR Gate
@@ -1410,7 +1410,7 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 
 ### Sandbox and control feasibility
 
-- [~] Run TrueForge inside WSL2 and attempt its local sandbox fallback; server startup and fallback availability pass, but sandbox execution and cleanup evidence remain.
+- [?] Run TrueForge inside WSL2 and attempt its local sandbox fallback; server startup, WSL-reachable local Ollama, and fallback availability pass, but sandbox provisioning stops at the missing Python venv dependency before command execution.
 - [ ] Verify sandbox-created and command events reach the TrueForge event stream.
 - [ ] Verify files and commands remain within the disposable workspace.
 - [ ] Verify model, GitHub, and provider credentials do not enter the sandbox.
