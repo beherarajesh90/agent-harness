@@ -1364,7 +1364,7 @@ Last repository verification: 2026-08-25.
 - [x] TrueForge v0.1.4 starts in WSL2 standalone mode and serves its API documentation on `localhost:8790`.
 - [x] Qwen3.5 4B responds through local Ollama and a WSL-reachable Ollama endpoint; TrueForge produced valid structured JSON, a visible `create_sub_agent` call/result, and a bounded Daytona patch/test result.
 - [x] Daytona was configured as the selected sandbox after the local fallback failed its internal PyPI dependency-install proof. TrueForge accepted the credential, provisioned a Daytona sandbox, executed `echo SANDBOX_OK && cat ...`, and returned exit code `0` with the expected output.
-- [?] Public demo repository configuration, GitHub PAT, Qodo installation, and a real Qodo review are not verified.
+- [~] Public demo repository configuration and a read-only GitHub PAT are verified through the official GitHub MCP Docker server; Qodo installation and a real Qodo review are not verified.
 
 ## Recurring Milestone PR Gate
 
@@ -1402,7 +1402,7 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [ ] Configure Qwen3.5 4B as a TrueForge custom OpenAI-compatible provider.
 - [ ] Verify one normal model response through TrueForge.
 - [x] Verify schema-valid structured output through TrueForge JSON Schema response format.
-- [ ] Verify a GitHub MCP read tool call.
+- [x] Verify a GitHub MCP read tool call: `get_file_contents` fetched `plan.md` from `beherarajesh90/agent-harness` on `master` through the official read-only server.
 - [x] Verify one visible `create_sub_agent` call and returned payment-invariant analysis.
 - [x] Verify a bounded Daytona patch/test task produces a usable result and successful test output.
 - [ ] Record the tested local model ID, endpoint route, context limit, and observed limitations.
