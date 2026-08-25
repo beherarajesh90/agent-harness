@@ -992,7 +992,7 @@ Postgres stores these through TrueForge. Redis supports runtime coordination and
 | Stale SHA/policy rejection | Re-read PR and invalidate patch/evidence | 0 writes | `UNCERTAIN`; new investigation required |
 | Ambiguous GitHub write | Read branch/commit before further action | No blind retry | Confirm commit or pause for human |
 | SSE disconnect | Reconnect with `Last-Event-ID`; replay TrueForge | Bounded client backoff | Snapshot fallback; run continues |
-| Duplicate event | Deduplicate by sequence/event ID | N/A | Keep canonical event and log mismatch |
+| Duplicate event | Deduplicate by sequence; use `eventId` only to log mismatches | N/A | Keep canonical sequence and log any identity mismatch |
 | User rejects | Resume with deny; zero writes | 0 | Preserve `BLOCKED` |
 | User cancels | Idempotent TrueForge cancel and sandbox release | 1 confirmation read | `CANCELLED` |
 | Fastify restart | Reconnect and reconstruct | Automatic on request | `ERROR` only if projection fails |
@@ -1482,7 +1482,7 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [ ] Implement snapshot reconstruction from TrueForge events.
 - [ ] Implement normalized SSE event stream.
 - [ ] Merge model deltas into base events.
-- [ ] Deduplicate by TrueForge event ID and sequence.
+- [ ] Deduplicate by TrueForge `sequence`; use `eventId` only for tracing and mismatch detection.
 - [ ] Implement `Last-Event-ID` resume behavior.
 - [ ] Implement get-investigation API.
 - [ ] Implement cancel API.
