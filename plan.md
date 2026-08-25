@@ -1362,7 +1362,7 @@ Last repository verification: 2026-08-25.
 - [ ] No package manifest, Compose file, Vitest configuration, or Playwright configuration exists yet.
 - [x] WSL2 is available with Ubuntu 26.04, and a user-local Node 24.19 runtime was installed for feasibility testing.
 - [x] TrueForge v0.1.4 starts in WSL2 standalone mode and serves its API documentation on `localhost:8790`.
-- [~] Qwen3.5 4B responds through local Ollama, and a WSL-reachable Ollama endpoint is configured; TrueForge produced a successful Daytona sandbox `exec` result, but structured output, subagent, and bounded patch/test behavior are not yet verified.
+- [x] Qwen3.5 4B responds through local Ollama and a WSL-reachable Ollama endpoint; TrueForge produced valid structured JSON, a visible `create_sub_agent` call/result, and a bounded Daytona patch/test result.
 - [x] Daytona was configured as the selected sandbox after the local fallback failed its internal PyPI dependency-install proof. TrueForge accepted the credential, provisioned a Daytona sandbox, executed `echo SANDBOX_OK && cat ...`, and returned exit code `0` with the expected output.
 - [?] Public demo repository configuration, GitHub PAT, Qodo installation, and a real Qodo review are not verified.
 
@@ -1401,10 +1401,10 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [ ] Start the local Ollama endpoint reachable from TrueForge in WSL2.
 - [ ] Configure Qwen3.5 4B as a TrueForge custom OpenAI-compatible provider.
 - [ ] Verify one normal model response through TrueForge.
-- [ ] Verify schema-valid structured output.
+- [x] Verify schema-valid structured output through TrueForge JSON Schema response format.
 - [ ] Verify a GitHub MCP read tool call.
-- [ ] Verify one visible subagent result.
-- [ ] Verify a bounded patch/test task produces a usable result.
+- [x] Verify one visible `create_sub_agent` call and returned payment-invariant analysis.
+- [x] Verify a bounded Daytona patch/test task produces a usable result and successful test output.
 - [ ] Record the tested local model ID, endpoint route, context limit, and observed limitations.
 - [ ] Make an explicit fallback decision only if Qwen fails the required harness tasks.
 
