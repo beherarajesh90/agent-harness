@@ -47,6 +47,12 @@ export function createPaymentLaboratory() {
   const settleIntent = database.prepare("UPDATE payment_intents SET status = 'settled' WHERE id = ?");
   const count = (table: string) =>
     Number((database.prepare(`SELECT COUNT(*) AS total FROM ${table}`).get() as { total: number }).total);
+  const invariantViolations = database.prepare(`
+    SELECT id
+    FROM payment_intents
+    WHERE (SELECT COUNT(*) FROM provider_charges WHERE intent_id = payment_intents.id) != 1
+      OR (SELECT COUNT(*) FROM ledger_entries WHERE intent_id = payment_intents.id) != 1
+  `);
 
   return {
     processPayment(input: PaymentInput): PaymentResult {
@@ -77,6 +83,23 @@ export function createPaymentLaboratory() {
         charges: count("provider_charges"),
         intents: count("payment_intents"),
         ledgerEntries: count("ledger_entries"),
+      };
+    },
+
+    evaluateInvariants() {
+      const charges = count("provider_charges");
+      const intents = count("payment_intents");
+      const ledgerEntries = count("ledger_entries");
+      const violations = (invariantViolations.all() as { id: string }[]).map(
+        ({ id }) => `one-charge-and-ledger-entry-per-intent:${id}`,
+      );
+
+      return {
+        charges,
+        intents,
+        ledgerEntries,
+        verdict: violations.length === 0 ? "pass" : "fail",
+        violations,
       };
     },
   };

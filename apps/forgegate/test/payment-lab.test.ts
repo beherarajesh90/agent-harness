@@ -38,4 +38,21 @@ describe("payment laboratory", () => {
       ledgerEntries: 1,
     });
   });
+
+  it("reports the primary invariant as satisfied for a settled payment", () => {
+    const laboratory = createPaymentLaboratory();
+    laboratory.processPayment({
+      amount: 500,
+      idempotencyKey: "checkout-102",
+      intentId: "pi-102",
+    });
+
+    expect(laboratory.evaluateInvariants()).toEqual({
+      charges: 1,
+      intents: 1,
+      ledgerEntries: 1,
+      verdict: "pass",
+      violations: [],
+    });
+  });
 });
