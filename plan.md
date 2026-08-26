@@ -1361,6 +1361,7 @@ Last repository verification: 2026-08-26.
 - [x] A strict Node 24/pnpm workspace, Fastify health service, Vitest suite, and Docker Compose configuration now exist on `feature/phase-1-foundation`.
 - [x] `docker compose up --wait` started ForgeGate and TrueForge successfully through Docker Desktop; `127.0.0.1:3100/health/ready` and `127.0.0.1:8790/healthz` both responded successfully, while Postgres and Redis remained private.
 - [x] ForgeGate pins `@truefoundry/trueforge-sdk` at `0.1.3`; its SDK-backed readiness probe is verified against the pinned TrueForge `0.1.4` container.
+- [x] A deterministic GitHub write-policy guard now rejects repository, branch, SHA, operation, path, file-count, and byte-limit violations before any future GitHub client call; MCP transport and tools remain pending.
 - [x] `Ubuntu-24.04` is the verified WSL2 target: it can access Docker Desktop and successfully started the full Compose stack with both health endpoints passing. `Ubuntu-26.04` remains unused for this project.
 - [x] WSL2 is available with Ubuntu 24.04. A user-local Node 24.19 runtime was previously installed for feasibility testing; install or verify a Node runtime in Ubuntu 24.04 only when a WSL-hosted Node task requires it.
 - [x] TrueForge v0.1.4 starts in WSL2 standalone mode and serves its API documentation on `localhost:8790`.
