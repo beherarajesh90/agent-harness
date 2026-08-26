@@ -5,7 +5,7 @@ import { createGitHubApprovalStore } from "../src/github-approval.js";
 const payload = {
   branch: "forgegate/demo-payment-retry",
   expectedHeadSha: "a".repeat(40),
-  files: [{ content: "fix", path: "payment-lab/retry.ts" }],
+  files: [{ content: "fix", path: "apps/forgegate/src/payment-lab.ts" }],
   message: "fix: enforce payment idempotency",
   repository: "beherarajesh90/agent-harness",
 };

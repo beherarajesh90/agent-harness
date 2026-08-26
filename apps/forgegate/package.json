@@ -5,6 +5,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsx watch src/server.ts",
+    "demo:seed": "tsx src/demo-seed-cli.ts",
     "lint": "eslint src test --max-warnings=0",
     "start": "node dist/src/server.js",
     "test": "vitest run",

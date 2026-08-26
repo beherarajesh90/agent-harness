@@ -12,10 +12,11 @@ const host = process.env.HOST ?? "0.0.0.0";
 
 const github = createGitHubReadClient({
   policy: createGitHubMutationPolicy({
+    allowedPaths: (process.env.FORGEGATE_ALLOWED_PATHS ??
+      "apps/forgegate/src/payment-lab.ts,apps/forgegate/test/payment-lab.test.ts").split(","),
     branchPrefix: process.env.FORGEGATE_BRANCH_PREFIX ?? "forgegate/demo-",
     maxBytes: Number(process.env.FORGEGATE_MAX_BYTES ?? 250_000),
     maxFiles: Number(process.env.FORGEGATE_MAX_FILES ?? 10),
-    pathPrefix: process.env.FORGEGATE_PATH_PREFIX ?? "payment-lab/",
     repository,
   }),
   repository,

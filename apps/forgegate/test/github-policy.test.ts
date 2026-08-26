@@ -10,7 +10,7 @@ const policy = {
   branchPrefix: "forgegate/demo-",
   maxBytes: 250_000,
   maxFiles: 10,
-  pathPrefix: "payment-lab/",
+  allowedPaths: ["apps/forgegate/src/payment-lab.ts", "apps/forgegate/test/payment-lab.test.ts"],
   repository: "beherarajesh90/agent-harness",
 };
 const sha = "a".repeat(40);
@@ -22,7 +22,20 @@ describe("assertGitHubMutationAllowed", () => {
         actualHeadSha: sha,
         branch: "forgegate/demo-payment-retry",
         expectedHeadSha: sha,
-        files: [{ content: "export const retry = true;", path: "payment-lab/retry.ts" }],
+        files: [{ content: "export const retry = true;", path: "apps/forgegate/src/payment-lab.ts" }],
+        operation: "commit_files",
+        repository: "beherarajesh90/agent-harness",
+      }),
+    ).not.toThrow();
+  });
+
+  it("allows the payment laboratory regression test", () => {
+    expect(() =>
+      assertGitHubMutationAllowed(policy, {
+        actualHeadSha: sha,
+        branch: "forgegate/demo-payment-retry",
+        expectedHeadSha: sha,
+        files: [{ content: "test", path: "apps/forgegate/test/payment-lab.test.ts" }],
         operation: "commit_files",
         repository: "beherarajesh90/agent-harness",
       }),
@@ -48,16 +61,17 @@ describe("assertGitHubMutationAllowed", () => {
     ["a stale tested SHA", { actualHeadSha: "b".repeat(40) }],
     ["an unapproved GitHub operation", { operation: "merge_pull_request" }],
     ["a workflow path", { files: [{ content: "name: unsafe", path: ".github/workflows/pwn.yml" }] }],
-    ["a traversal path", { files: [{ content: "x", path: "payment-lab/../README.md" }] }],
-    ["more than ten files", { files: Array.from({ length: 11 }, (_, index) => ({ content: "x", path: `payment-lab/${index}.ts` })) }],
-    ["a payload above the byte limit", { files: [{ content: "x".repeat(250_001), path: "payment-lab/large.ts" }] }],
+    ["a traversal path", { files: [{ content: "x", path: "apps/forgegate/src/../server.ts" }] }],
+    ["a neighboring application file", { files: [{ content: "x", path: "apps/forgegate/src/server.ts" }] }],
+    ["more than ten files", { files: Array.from({ length: 11 }, () => ({ content: "x", path: "apps/forgegate/src/payment-lab.ts" })) }],
+    ["a payload above the byte limit", { files: [{ content: "x".repeat(250_001), path: "apps/forgegate/src/payment-lab.ts" }] }],
   ])("rejects %s", (_description, override) => {
     expect(() =>
       assertGitHubMutationAllowed(policy, {
         actualHeadSha: sha,
         branch: "forgegate/demo-payment-retry",
         expectedHeadSha: sha,
-        files: [{ content: "export const retry = true;", path: "payment-lab/retry.ts" }],
+        files: [{ content: "export const retry = true;", path: "apps/forgegate/src/payment-lab.ts" }],
         operation: "commit_files",
         repository: "beherarajesh90/agent-harness",
         ...override,
@@ -69,7 +83,7 @@ describe("assertGitHubMutationAllowed", () => {
 describe("createGitHubMutationPolicy", () => {
   it.each([
     ["an empty branch prefix", { branchPrefix: "" }],
-    ["an empty path prefix", { pathPrefix: "" }],
+    ["an empty path allowlist", { allowedPaths: [] }],
     ["a NaN file limit", { maxFiles: Number.NaN }],
     ["an infinite byte limit", { maxBytes: Number.POSITIVE_INFINITY }],
   ])("rejects %s", (_description, override) => {

@@ -7,7 +7,7 @@ const policy = {
   branchPrefix: "forgegate/demo-",
   maxBytes: 250_000,
   maxFiles: 10,
-  pathPrefix: "payment-lab/",
+  allowedPaths: ["apps/forgegate/src/payment-lab.ts", "apps/forgegate/test/payment-lab.test.ts"],
   repository: "beherarajesh90/agent-harness",
 };
 
@@ -49,7 +49,7 @@ describe("GitHub commit client", () => {
       client.commitFiles({
         branch: "forgegate/demo-payment-retry",
         expectedHeadSha,
-        files: [{ content: "fix", path: "payment-lab/retry.ts" }],
+        files: [{ content: "fix", path: "apps/forgegate/src/payment-lab.ts" }],
         message: "fix: enforce payment idempotency",
         repository: policy.repository,
       }),
@@ -94,7 +94,7 @@ describe("GitHub commit client", () => {
     await client.commitFiles({
       branch: "forgegate/demo-payment-retry",
       expectedHeadSha: "a".repeat(40),
-      files: [{ content: "fix", path: "payment-lab/retry.ts" }],
+      files: [{ content: "fix", path: "apps/forgegate/src/payment-lab.ts" }],
       message: "fix: enforce payment idempotency",
       repository: policy.repository,
     });
@@ -126,7 +126,7 @@ describe("GitHub commit client", () => {
       client.commitFiles({
         branch: "forgegate/demo-payment-retry",
         expectedHeadSha: "a".repeat(40),
-        files: [{ content: "unsafe", path: "README.md" }],
+      files: [{ content: "unsafe", path: "README.md" }],
         message: "fix: unsafe",
         repository: policy.repository,
       }),
