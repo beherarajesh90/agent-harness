@@ -19,7 +19,7 @@ export function createTrueForgeInvestigationLauncher({
 }) {
   const configuredRepository = assertConfiguredRepository(repository);
 
-  return async ({ pullRequestUrl }: { pullRequestUrl: string }) => {
+  return async ({ pullRequestUrl, requestFingerprint }: { pullRequestUrl: string; requestFingerprint?: string }) => {
     assertConfiguredPullRequest(pullRequestUrl, configuredRepository);
 
     const session = await sessions.create({ agent: { spec: createForgeGateAgentSpec(modelName) } });
@@ -27,6 +27,7 @@ export function createTrueForgeInvestigationLauncher({
       input: [
         {
           content: [
+            ...(requestFingerprint ? [`ForgeGate request fingerprint: ${requestFingerprint}.`] : []),
             `Investigate ${pullRequestUrl} in ${configuredRepository}.`,
             "Read the PR and exact head SHA before making claims.",
             "Spawn exactly two visible dynamic subagents:",

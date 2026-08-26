@@ -59,7 +59,7 @@ describe("investigation control plane", () => {
     const first = service.create(url, "request-1");
     const second = service.create(`${url}#same`, "request-1");
 
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     resolveLaunch({ sessionId: "session-1", turnId: "turn-1" });
     await expect(Promise.all([first, second])).resolves.toEqual([
       { sessionId: "session-1", turnId: "turn-1" },
@@ -72,6 +72,20 @@ describe("investigation control plane", () => {
     gateway.launch.mockResolvedValueOnce({ sessionId: "session-2", turnId: "turn-2" });
     await expect(service.create(url, "request-2")).resolves.toEqual({ sessionId: "session-2", turnId: "turn-2" });
     expect(gateway.launch).toHaveBeenCalledTimes(3);
+  });
+
+  it("recovers a durable idempotency result after service recreation", async () => {
+    const gateway = {
+      cancel: vi.fn(),
+      findByRequestFingerprint: vi.fn(async () => ({ pullRequestUrl: "https://github.com/acme/demo/pull/1", result: { sessionId: "session-1", turnId: "turn-1" } })),
+      launch: vi.fn(),
+      listEvents: vi.fn(async () => []),
+    };
+    const service = createInvestigationService(gateway);
+
+    await expect(service.create("https://github.com/acme/demo/pull/1", "request-1")).resolves.toEqual({ sessionId: "session-1", turnId: "turn-1" });
+    expect(gateway.launch).not.toHaveBeenCalled();
+    expect(gateway.findByRequestFingerprint).toHaveBeenCalledOnce();
   });
 
   it("exposes create, snapshot, and cancel endpoints", async () => {

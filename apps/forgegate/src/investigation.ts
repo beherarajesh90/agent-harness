@@ -38,10 +38,14 @@ export type InvestigationSnapshot = {
 };
 
 type TrueForgeEventItem = { event: Record<string, unknown>; turnId: string };
+type InvestigationRecord = { pullRequestUrl: string; turnId: string };
+type LaunchResult = { sessionId: string; turnId: string };
 type InvestigationGateway = {
   cancel: (sessionId: string) => Promise<unknown>;
+  findByRequestFingerprint?: (fingerprint: string) => Promise<{ pullRequestUrl: string; result: LaunchResult } | undefined>;
+  getMetadata?: (sessionId: string) => Promise<InvestigationRecord | undefined>;
   listEvents: (sessionId: string) => Promise<TrueForgeEventItem[]>;
-  launch: (input: { pullRequestUrl: string }) => Promise<{ sessionId: string; turnId: string }>;
+  launch: (input: { pullRequestUrl: string; requestFingerprint?: string }) => Promise<LaunchResult>;
 };
 
 export class IdempotencyConflictError extends Error {
@@ -72,23 +76,31 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
 }
 
 export function createInvestigationService(gateway: InvestigationGateway) {
-  const records = new Map<string, { pullRequestUrl: string; turnId: string }>();
-  const idempotency = new Map<string, { pullRequestUrl: string; result: { sessionId: string; turnId: string } }>();
-  const inFlight = new Map<string, { pullRequestUrl: string; promise: Promise<{ sessionId: string; turnId: string }> }>();
+  const records = new Map<string, InvestigationRecord>();
+  const idempotency = new Map<string, { pullRequestUrl: string; result: LaunchResult }>();
+  const inFlight = new Map<string, { pullRequestUrl: string; promise: Promise<LaunchResult> }>();
 
   return {
     async cancel(sessionId: string) {
-      const record = records.get(sessionId);
+      const record = await resolveRecord(sessionId);
       if (!record) throw new Error("investigation not found");
       await gateway.cancel(sessionId);
       return get(sessionId);
     },
     async create(pullRequestUrl: string, key?: string) {
       const normalizedPullRequestUrl = normalizePullRequestUrl(pullRequestUrl);
+      const fingerprint = key ? requestFingerprint(key) : undefined;
       const previous = key ? idempotency.get(key) : undefined;
       if (previous) {
         if (previous.pullRequestUrl !== normalizedPullRequestUrl) throw new IdempotencyConflictError();
         return previous.result;
+      }
+      const recovered = fingerprint ? await gateway.findByRequestFingerprint?.(fingerprint) : undefined;
+      if (recovered) {
+        if (recovered.pullRequestUrl !== normalizedPullRequestUrl) throw new IdempotencyConflictError();
+        idempotency.set(key!, recovered);
+        records.set(recovered.result.sessionId, { pullRequestUrl: recovered.pullRequestUrl, turnId: recovered.result.turnId });
+        return recovered.result;
       }
       const pending = key ? inFlight.get(key) : undefined;
       if (pending) {
@@ -96,7 +108,7 @@ export function createInvestigationService(gateway: InvestigationGateway) {
         return pending.promise;
       }
       const launch = Promise.resolve()
-        .then(() => gateway.launch({ pullRequestUrl }))
+        .then(() => gateway.launch(fingerprint ? { pullRequestUrl, requestFingerprint: fingerprint } : { pullRequestUrl }))
         .then((result) => {
           records.set(result.sessionId, { pullRequestUrl: normalizedPullRequestUrl, turnId: result.turnId });
           if (key) {
@@ -114,17 +126,27 @@ export function createInvestigationService(gateway: InvestigationGateway) {
       }
     },
     async get(sessionId: string) {
-      const record = records.get(sessionId);
+      const record = await resolveRecord(sessionId);
       if (!record) throw new Error("investigation not found");
       return projectInvestigation(sessionId, record.pullRequestUrl, await gateway.listEvents(sessionId));
     },
   };
 
+  async function resolveRecord(sessionId: string) {
+    const record = records.get(sessionId) ?? (await gateway.getMetadata?.(sessionId));
+    if (record) records.set(sessionId, record);
+    return record;
+  }
+
   async function get(sessionId: string) {
-    const record = records.get(sessionId);
+    const record = await resolveRecord(sessionId);
     if (!record) throw new Error("investigation not found");
     return projectInvestigation(sessionId, record.pullRequestUrl, await gateway.listEvents(sessionId));
   }
+}
+
+function requestFingerprint(key: string) {
+  return createHash("sha256").update(key).digest("hex");
 }
 
 function normalizePullRequestUrl(pullRequestUrl: string) {
@@ -171,3 +193,4 @@ function stageFor(type: string): Stage {
   if (type === "tool.response") return "EVIDENCE";
   return "CONTEXT";
 }
+import { createHash } from "node:crypto";
