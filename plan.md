@@ -1352,14 +1352,15 @@ Status: `[x]` verified complete, `[ ]` not started, `[~]` in progress, `[?]` blo
 
 ## Current Implementation State
 
-Last repository verification: 2026-08-25.
+Last repository verification: 2026-08-26.
 
 - [x] Product, architecture, API, safety, workflow, and demo requirements are documented in this plan.
 - [x] Repository-level branch, PR, Qodo, and merge rules are recorded in `AGENTS.md`.
 - [x] The planning milestone uses and tracks the pushed `docs/forgegate-architecture-plan` branch.
 - [ ] A GitHub PR and Qodo review for the planning branch are not verified from this repository.
-- [ ] No Node/pnpm workspace, application source, Docker configuration, TrueForge configuration, MCP server, payment laboratory, test suite, or UI exists yet.
-- [ ] No package manifest, Compose file, Vitest configuration, or Playwright configuration exists yet.
+- [x] A strict Node 24/pnpm workspace, Fastify health service, Vitest suite, and Docker Compose configuration now exist on `feature/phase-1-foundation`.
+- [x] `docker compose up --wait` started ForgeGate and TrueForge successfully through Docker Desktop; `127.0.0.1:3100/health/ready` and `127.0.0.1:8790/healthz` both responded successfully, while Postgres and Redis remained private.
+- [?] The `Ubuntu-26.04` WSL2 distribution cannot currently run Docker because Docker Desktop WSL integration is not enabled for it; WSL-specific Compose proof remains pending.
 - [x] WSL2 is available with Ubuntu 26.04, and a user-local Node 24.19 runtime was installed for feasibility testing.
 - [x] TrueForge v0.1.4 starts in WSL2 standalone mode and serves its API documentation on `localhost:8790`.
 - [x] Qwen3.5 4B responds through local Ollama and a WSL-reachable Ollama endpoint; TrueForge produced valid structured JSON, a visible `create_sub_agent` call/result, and a bounded Daytona patch/test result.
@@ -1387,14 +1388,14 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 
 ### Repository and runtime foundation
 
-- [ ] Create the strict TypeScript pnpm workspace.
-- [ ] Add `.gitignore` coverage for dependencies, environment files, logs, and build output.
-- [ ] Add baseline lint, typecheck, test, and build commands.
-- [ ] Add Docker Compose topology for ForgeGate, TrueForge, Postgres, and Redis.
-- [ ] Bind all published services to `127.0.0.1`.
-- [ ] Pin tested TrueForge server image, SDK, MCP SDK, and package versions.
-- [ ] Add health checks for ForgeGate and TrueForge.
-- [ ] Prove clean startup through Docker Desktop and WSL2.
+- [x] Create the strict TypeScript pnpm workspace.
+- [x] Add `.gitignore` coverage for dependencies, environment files, logs, and build output.
+- [x] Add baseline lint, typecheck, test, and build commands.
+- [x] Add Docker Compose topology for ForgeGate, TrueForge, Postgres, and Redis.
+- [x] Bind all published services to `127.0.0.1`.
+- [~] Pin tested TrueForge server image, SDK, MCP SDK, and package versions. TrueForge is pinned at `0.1.4`; SDK and MCP SDK pins await their implementation slice.
+- [x] Add health checks for ForgeGate and TrueForge.
+- [?] Prove clean startup through Docker Desktop and WSL2. Docker Desktop proof passed; WSL2 integration is not enabled for `Ubuntu-26.04`.
 
 ### Local model feasibility
 
