@@ -15,6 +15,7 @@ type PaymentLaboratoryOptions = {
   faultSchedule?: {
     timeoutAfterChargeForIntentIds?: ReadonlySet<string>;
   };
+  unsafeRetryForIntentIds?: ReadonlySet<string>;
 };
 
 class ProviderTimeoutError extends Error {}
@@ -78,21 +79,21 @@ export function createPaymentLaboratory(options: PaymentLaboratoryOptions = {}) 
     return Number(row.total);
   };
 
-  function chargeProvider(input: PaymentInput) {
+  function chargeProvider(input: PaymentInput, providerIdempotencyKey: string) {
     providerAttempts += 1;
-    const existing = findProviderCharge.get(input.idempotencyKey) as { id: number } | undefined;
+    const existing = findProviderCharge.get(providerIdempotencyKey) as { id: number } | undefined;
     if (existing) {
       return existing.id;
     }
 
-    createProviderCharge.run(input.intentId, input.amount, input.idempotencyKey);
+    createProviderCharge.run(input.intentId, input.amount, providerIdempotencyKey);
     const shouldTimeout = options.faultSchedule?.timeoutAfterChargeForIntentIds?.has(input.intentId);
     if (shouldTimeout && !timedOutIntentIds.has(input.intentId)) {
       timedOutIntentIds.add(input.intentId);
       throw new ProviderTimeoutError(`provider timed out after charging ${input.intentId}`);
     }
 
-    return Number((findProviderCharge.get(input.idempotencyKey) as { id: number }).id);
+    return Number((findProviderCharge.get(providerIdempotencyKey) as { id: number }).id);
   }
 
   return {
@@ -109,7 +110,11 @@ export function createPaymentLaboratory(options: PaymentLaboratoryOptions = {}) 
 
       for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
-          chargeProvider(input);
+          const unsafeRetry = attempt === 1 && options.unsafeRetryForIntentIds?.has(input.intentId);
+          const providerIdempotencyKey = unsafeRetry
+            ? `${input.idempotencyKey}:retry-${attempt}`
+            : input.idempotencyKey;
+          chargeProvider(input, providerIdempotencyKey);
           database.exec("BEGIN");
           try {
             createLedgerEntry.run(input.intentId, input.amount);
@@ -159,4 +164,38 @@ export function createPaymentLaboratory(options: PaymentLaboratoryOptions = {}) 
       };
     },
   };
+}
+
+export function runUnsafeRetryFixture() {
+  const unsafeIntentIds = new Set(["pi-001", "pi-002"]);
+  const laboratory = createPaymentLaboratory({
+    faultSchedule: { timeoutAfterChargeForIntentIds: unsafeIntentIds },
+    unsafeRetryForIntentIds: unsafeIntentIds,
+  });
+
+  for (let index = 1; index <= 100; index += 1) {
+    const intentId = `pi-${String(index).padStart(3, "0")}`;
+    laboratory.processPayment({
+      amount: 500,
+      idempotencyKey: `checkout-${index}`,
+      intentId,
+    });
+  }
+
+  return laboratory.evaluateInvariants();
+}
+
+export function runSafeFixture() {
+  const laboratory = createPaymentLaboratory();
+
+  for (let index = 1; index <= 100; index += 1) {
+    const intentId = `pi-${String(index).padStart(3, "0")}`;
+    laboratory.processPayment({
+      amount: 500,
+      idempotencyKey: `checkout-${index}`,
+      intentId,
+    });
+  }
+
+  return laboratory.evaluateInvariants();
 }

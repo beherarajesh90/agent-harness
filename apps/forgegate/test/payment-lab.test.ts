@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { createPaymentLaboratory } from "../src/payment-lab.js";
+import {
+  createPaymentLaboratory,
+  runSafeFixture,
+  runUnsafeRetryFixture,
+} from "../src/payment-lab.js";
 
 describe("payment laboratory", () => {
   it("creates one charge and one ledger entry for a settled payment intent", () => {
@@ -73,5 +77,30 @@ describe("payment laboratory", () => {
       ledgerEntries: 1,
     });
     expect(laboratory.activity()).toEqual({ providerAttempts: 2 });
+  });
+
+  it("produces deterministic duplicate-charge evidence for the unsafe retry fixture", () => {
+    expect(runUnsafeRetryFixture()).toEqual({
+      charges: 102,
+      intents: 100,
+      ledgerEntries: 100,
+      verdict: "fail",
+      violations: [
+        "one-charge-and-ledger-entry-per-intent:pi-001",
+        "one-charge-and-ledger-entry-per-intent:pi-002",
+      ],
+    });
+  });
+
+  it("passes the safe fixture for 20 consecutive runs", () => {
+    for (let run = 0; run < 20; run += 1) {
+      expect(runSafeFixture()).toEqual({
+        charges: 100,
+        intents: 100,
+        ledgerEntries: 100,
+        verdict: "pass",
+        violations: [],
+      });
+    }
   });
 });
