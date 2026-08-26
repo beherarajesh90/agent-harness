@@ -17,6 +17,9 @@ const evidenceReferenceSchema = z
     message: "end line must not precede start line",
   });
 
+export type InvariantCandidate = z.infer<typeof invariantCandidateSchema>;
+export type ScenarioPlan = z.infer<typeof scenarioPlanSchema>;
+
 export const invariantCandidateSchema = z
   .object({
     confidence: z.number().min(0).max(1),
@@ -48,6 +51,22 @@ export const scenarioPlanSchema = z
     testedSha: shaSchema,
   })
   .strict();
+
+export function validateAnalystArtifacts(input: { invariants: unknown; scenarios: unknown }) {
+  const invariants = z.array(invariantCandidateSchema).parse(input.invariants);
+  const scenarios = z.array(scenarioPlanSchema).parse(input.scenarios);
+  const invariantIds = new Set(invariants.map((invariant) => invariant.id));
+  for (const scenario of scenarios) {
+    if (!invariantIds.has(scenario.invariantId)) {
+      throw new z.ZodError([{
+        code: "custom",
+        message: "scenario must reference an accepted invariant",
+        path: ["scenarios"],
+      }]);
+    }
+  }
+  return { invariants, scenarios };
+}
 
 export function createForgeGateAgentSpec(modelName: string): AgentSpec {
   if (!modelName.trim()) {

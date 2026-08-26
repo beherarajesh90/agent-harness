@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createForgeGateAgentSpec, invariantCandidateSchema, scenarioPlanSchema } from "../src/agent-spec.js";
+import { createForgeGateAgentSpec, invariantCandidateSchema, scenarioPlanSchema, validateAnalystArtifacts } from "../src/agent-spec.js";
 
 describe("ForgeGate agent specification", () => {
   it("enables only the configured GitHub tools and gates commits", () => {
@@ -63,5 +63,30 @@ describe("ForgeGate agent specification", () => {
     expect(scenarioPlanSchema.parse(scenario)).toEqual(scenario);
     expect(scenarioPlanSchema.safeParse({ ...scenario, seed: 1.5 }).success).toBe(false);
     expect(scenarioPlanSchema.safeParse({ ...scenario, injectedFaults: [] }).success).toBe(false);
+  });
+
+  it("accepts only scenarios linked to validated invariant artifacts", () => {
+    const sha = "a".repeat(40);
+    const invariant = {
+      confidence: 0.95,
+      evidence: [
+        { endLine: 84, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 50 },
+        { endLine: 102, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 82 },
+      ],
+      id: "payment-one-charge",
+      statement: "One payment intent produces exactly one charge.",
+      testedSha: sha,
+    };
+    const scenario = {
+      expectedOutcome: "one payment intent must produce one charge",
+      injectedFaults: ["provider timeout"],
+      invariantId: invariant.id,
+      ordering: ["charge", "timeout"],
+      seed: 42,
+      testedSha: sha,
+    };
+
+    expect(validateAnalystArtifacts({ invariants: [invariant], scenarios: [scenario] })).toEqual({ invariants: [invariant], scenarios: [scenario] });
+    expect(() => validateAnalystArtifacts({ invariants: [invariant], scenarios: [{ ...scenario, invariantId: "unknown" }] })).toThrow("accepted invariant");
   });
 });
