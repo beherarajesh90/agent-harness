@@ -14,7 +14,9 @@ const policy = {
 describe("GitHub commit client", () => {
   it("reads pull request reviews and review comments for Qodo classification", async () => {
     const listReviews = vi.fn(async () => ({ data: [{ id: 11, user: { login: "qodo" }, state: "COMMENTED" }] }));
-    const listReviewComments = vi.fn(async () => ({ data: [{ id: 12, body: "Add a regression test" }] }));
+    const listReviewComments = vi.fn(async ({ page }: { page: number }) => ({
+      data: page === 1 ? Array.from({ length: 100 }, (_, id) => ({ id, body: "review" })) : [{ id: 12, body: "Add a regression test" }],
+    }));
     const octokit = {
       rest: {
         pulls: { get: vi.fn(), listReviewComments, listReviews },
@@ -32,9 +34,14 @@ describe("GitHub commit client", () => {
     await expect(client.getQodoReviews(7)).resolves.toEqual([
       { id: 11, user: { login: "qodo" }, state: "COMMENTED" },
     ]);
-    await expect(client.getReviewComments(7)).resolves.toEqual([{ id: 12, body: "Add a regression test" }]);
+    await expect(client.getReviewComments(7)).resolves.toMatchObject({
+      comments: [...Array.from({ length: 100 }, (_, id) => ({ id, body: "review" })), { id: 12, body: "Add a regression test" }],
+      complete: true,
+      truncated: false,
+    });
     expect(listReviews).toHaveBeenCalledWith({ owner: "beherarajesh90", per_page: 100, pull_number: 7, repo: "agent-harness" });
-    expect(listReviewComments).toHaveBeenCalledWith({ owner: "beherarajesh90", per_page: 100, pull_number: 7, repo: "agent-harness" });
+    expect(listReviewComments).toHaveBeenNthCalledWith(1, { owner: "beherarajesh90", page: 1, per_page: 100, pull_number: 7, repo: "agent-harness" });
+    expect(listReviewComments).toHaveBeenNthCalledWith(2, { owner: "beherarajesh90", page: 2, per_page: 100, pull_number: 7, repo: "agent-harness" });
   });
 
   it("reads PR files, SHA-pinned file contents, and checks", async () => {

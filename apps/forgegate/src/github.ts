@@ -25,6 +25,12 @@ export type PullRequestFilesResult = {
   truncated: boolean;
 };
 
+export type ReviewCommentsResult = {
+  comments: unknown[];
+  complete: boolean;
+  truncated: boolean;
+};
+
 export function isFullCommitSha(ref: string) {
   return /^[a-f0-9]{40}$/.test(ref);
 }
@@ -145,14 +151,23 @@ export function createGitHubReadClient({
       return data;
     },
 
-    async getReviewComments(pullNumber: number) {
-      const { data } = await github.rest.pulls.listReviewComments({
-        owner,
-        per_page: 100,
-        pull_number: pullNumber,
-        repo,
-      });
-      return data;
+    async getReviewComments(pullNumber: number): Promise<ReviewCommentsResult> {
+      const comments: unknown[] = [];
+      for (let page = 1; page <= pullRequestFilesMaxPages; page += 1) {
+        const { data } = await github.rest.pulls.listReviewComments({
+          owner,
+          page,
+          per_page: pullRequestFilesPageSize,
+          pull_number: pullNumber,
+          repo,
+        });
+        comments.push(...data);
+        if (data.length < pullRequestFilesPageSize) {
+          return { comments, complete: true, truncated: false };
+        }
+      }
+
+      return { comments, complete: false, truncated: true };
     },
 
     async commitFiles(input: CommitFilesInput): Promise<CommitFilesResult> {

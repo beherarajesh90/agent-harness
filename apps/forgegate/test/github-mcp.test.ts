@@ -27,7 +27,7 @@ describe("GitHub MCP server", () => {
     const getFile = vi.fn(async (path: string, ref: string) => ({ content: "source", path, ref }));
     const getChecks = vi.fn(async (ref: string) => ({ check_runs: [{ ref }] }));
     const getQodoReviews = vi.fn(async (pullNumber: number) => [{ pullNumber, reviewer: "qodo" }]);
-    const getReviewComments = vi.fn(async (pullNumber: number) => [{ body: "review", pullNumber }]);
+    const getReviewComments = vi.fn(async (pullNumber: number) => ({ complete: true, comments: [{ body: "review", pullNumber }], truncated: false }));
     const approvalStore = createGitHubApprovalStore();
     const server = createGitHubMcpHttpServer(
       { getChecks, getFile, getPullRequest, getPullRequestFiles, getQodoReviews, getReviewComments, commitFiles: vi.fn(), repository: "beherarajesh90/agent-harness" },
@@ -85,7 +85,7 @@ describe("GitHub MCP server", () => {
     await expect(
       client.callTool({ arguments: { pull_number: 42, repository: "beherarajesh90/agent-harness" }, name: "get_review_comments" }),
     ).resolves.toMatchObject({
-      content: [{ text: JSON.stringify([{ body: "review", pullNumber: 42 }]), type: "text" }],
+      content: [{ text: JSON.stringify({ complete: true, comments: [{ body: "review", pullNumber: 42 }], truncated: false }), type: "text" }],
     });
 
     const payload = {
@@ -125,7 +125,7 @@ describe("GitHub MCP server", () => {
     const getFile = vi.fn(async (path: string, ref: string) => ({ path, ref }));
     const getChecks = vi.fn(async (ref: string) => ({ ref }));
     const getQodoReviews = vi.fn(async (pullNumber: number) => [{ pullNumber }]);
-    const getReviewComments = vi.fn(async (pullNumber: number) => [{ pullNumber }]);
+    const getReviewComments = vi.fn(async (pullNumber: number) => ({ complete: true, comments: [{ pullNumber }], truncated: false }));
     const commitFiles = vi.fn(async () => ({
       commitSha: "b".repeat(40),
       url: "https://github.com/beherarajesh90/agent-harness/commit/" + "b".repeat(40),
@@ -206,7 +206,7 @@ describe("GitHub MCP server", () => {
     await expect(
       client.callTool({ arguments: { pull_number: 42, repository: "beherarajesh90/agent-harness" }, name: "get_review_comments" }),
     ).resolves.toMatchObject({
-      content: [{ text: JSON.stringify([{ pullNumber: 42 }]), type: "text" }],
+      content: [{ text: JSON.stringify({ complete: true, comments: [{ pullNumber: 42 }], truncated: false }), type: "text" }],
     });
 
     const commitPayload = {
