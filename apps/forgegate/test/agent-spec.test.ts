@@ -27,6 +27,7 @@ describe("ForgeGate agent specification", () => {
       model: { name: "ollama-local/qwen35-4b" },
       skills: [],
     });
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").model.params).toMatchObject({ max_tokens: 4096 });
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").responseFormat).toMatchObject({
       type: "json_schema",
       jsonSchema: { name: "forgegate_investigation", strict: true },

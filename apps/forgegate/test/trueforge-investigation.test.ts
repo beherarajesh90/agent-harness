@@ -20,7 +20,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
       }),
     ).resolves.toEqual({ sessionId: "session-1", turnId: "turn-1" });
     expect(sessions.create).toHaveBeenCalledWith({
-      agent: { spec: expect.objectContaining({ model: { name: "ollama-local/qwen35-4b" } }) },
+      agent: { spec: expect.objectContaining({ model: { name: "ollama-local/qwen35-4b", params: { max_tokens: 4096 } } }) },
     });
     expect(sessions.createTurn).toHaveBeenCalledWith(
       "session-1",

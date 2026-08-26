@@ -136,7 +136,7 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
         requireApprovalForTools: ["commit_files"],
       },
     ],
-    model: { name: modelName },
+    model: { name: modelName, params: { max_tokens: 4096 } },
     skills: [],
   };
 }
