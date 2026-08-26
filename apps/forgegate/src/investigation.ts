@@ -1,3 +1,5 @@
+import { invariantCandidateSchema, scenarioPlanSchema } from "./agent-spec.js";
+
 export const stages = [
   "CONTEXT",
   "INVARIANTS",
@@ -90,12 +92,33 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
 }
 
 function artifactFromPayload(payload: Record<string, unknown>): InvestigationArtifact[] {
-  const type = payload.artifactType;
-  const data = payload.artifact;
-  if ((type !== "ExperimentResult" && type !== "InvariantCandidate" && type !== "ScenarioPlan") || !isRecord(data)) {
-    return [];
+  const wrapped = readArtifact(payload.artifactType, payload.artifact);
+  if (wrapped.length > 0) return wrapped;
+
+  const output = isRecord(payload.state) && isRecord(payload.state.output) ? payload.state.output : undefined;
+  const content = output?.content;
+  const type = payload.title === "invariant-analyst" ? "InvariantCandidate" : payload.title === "failure-mode-analyst" ? "ScenarioPlan" : undefined;
+  return type && typeof content === "string" ? readArtifact(type, parseJson(content)) : [];
+}
+
+function readArtifact(type: unknown, value: unknown): InvestigationArtifact[] {
+  if (type !== "ExperimentResult" && type !== "InvariantCandidate" && type !== "ScenarioPlan") return [];
+  const values = Array.isArray(value) ? value : [value];
+  return values.flatMap((candidate) => {
+    if (!isRecord(candidate)) return [];
+    if (type === "InvariantCandidate" && !invariantCandidateSchema.safeParse(candidate).success) return [];
+    if (type === "ScenarioPlan" && !scenarioPlanSchema.safeParse(candidate).success) return [];
+    return [{ data: candidate, type }];
+  });
+}
+
+function parseJson(content: string): unknown {
+  const body = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  try {
+    return JSON.parse(body) as unknown;
+  } catch {
+    return undefined;
   }
-  return [{ data, type }];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

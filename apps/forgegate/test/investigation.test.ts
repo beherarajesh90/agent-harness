@@ -21,11 +21,29 @@ describe("investigation control plane", () => {
 
   it("projects known structured artifacts from event payloads", () => {
     const snapshot = projectInvestigation("session-1", "url", [
-      { event: { artifact: { invariantId: "payment-one-charge", seed: 42 }, artifactType: "ScenarioPlan", type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifact: { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "payment-one-charge", ordering: ["charge", "timeout"], seed: 42, testedSha: "a".repeat(40) }, artifactType: "ScenarioPlan", type: "tool.response" }, turnId: "turn-1" },
       { event: { artifact: { id: "payment-one-charge" }, artifactType: "Unknown", type: "tool.response" }, turnId: "turn-1" },
     ]);
 
-    expect(snapshot.artifacts).toEqual([{ data: { invariantId: "payment-one-charge", seed: 42 }, type: "ScenarioPlan" }]);
+    expect(snapshot.artifacts).toEqual([{ data: { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "payment-one-charge", ordering: ["charge", "timeout"], seed: 42, testedSha: "a".repeat(40) }, type: "ScenarioPlan" }]);
+  });
+
+  it("extracts and validates analyst JSON from completed thread output", () => {
+    const sha = "a".repeat(40);
+    const snapshot = projectInvestigation("session-1", "url", [
+      {
+        event: {
+          payload: undefined,
+          state: { output: { content: `\`\`\`json\n[{\"confidence\":0.9,\"evidence\":[{\"endLine\":2,\"path\":\"a.ts\",\"sha\":\"${sha}\",\"startLine\":1},{\"endLine\":4,\"path\":\"b.ts\",\"sha\":\"${sha}\",\"startLine\":3}],\"id\":\"one-charge\",\"statement\":\"one charge\",\"testedSha\":\"${sha}\"}]\n\`\`\`` } },
+          title: "invariant-analyst",
+          type: "thread.done",
+        },
+        turnId: "turn-1",
+      },
+    ]);
+
+    expect(snapshot.artifacts).toHaveLength(1);
+    expect(snapshot.artifacts[0]!.type).toBe("InvariantCandidate");
   });
 
   it("creates, reconstructs, and cancels an investigation", async () => {
