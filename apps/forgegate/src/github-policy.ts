@@ -23,10 +23,17 @@ export type GitHubMutation = {
   files: { path: string; content: string }[];
 };
 
+export function createGitHubMutationPolicy(policy: GitHubMutationPolicy) {
+  assertGitHubMutationPolicy(policy);
+  return policy;
+}
+
 export function assertGitHubMutationAllowed(
   policy: GitHubMutationPolicy,
   mutation: GitHubMutation,
 ) {
+  assertGitHubMutationPolicy(policy);
+
   if (mutation.repository !== policy.repository) {
     throw new GitHubPolicyError("repository is not allowed");
   }
@@ -58,6 +65,33 @@ export function assertGitHubMutationAllowed(
 
   if (bytes > policy.maxBytes) {
     throw new GitHubPolicyError("payload exceeds limit");
+  }
+}
+
+function assertGitHubMutationPolicy(policy: GitHubMutationPolicy) {
+  assertValidPrefix(policy.branchPrefix, "branch prefix", false);
+  assertValidPrefix(policy.pathPrefix, "path prefix", true);
+  assertPositiveSafeInteger(policy.maxFiles, "max files");
+  assertPositiveSafeInteger(policy.maxBytes, "max bytes");
+}
+
+function assertValidPrefix(value: string, name: string, requireTrailingSlash: boolean) {
+  if (
+    !value ||
+    value.trim() !== value ||
+    value.startsWith("/") ||
+    value.includes("\\") ||
+    value.includes("..") ||
+    !/^[A-Za-z0-9._/-]+$/.test(value) ||
+    (requireTrailingSlash && !value.endsWith("/"))
+  ) {
+    throw new GitHubPolicyError(`${name} is invalid`);
+  }
+}
+
+function assertPositiveSafeInteger(value: number, name: string) {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new GitHubPolicyError(`${name} must be a positive integer`);
   }
 }
 

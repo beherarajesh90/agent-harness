@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   GitHubPolicyError,
   assertGitHubMutationAllowed,
+  createGitHubMutationPolicy,
 } from "../src/github-policy.js";
 
 const policy = {
@@ -62,5 +63,16 @@ describe("assertGitHubMutationAllowed", () => {
         ...override,
       }),
     ).toThrow(GitHubPolicyError);
+  });
+});
+
+describe("createGitHubMutationPolicy", () => {
+  it.each([
+    ["an empty branch prefix", { branchPrefix: "" }],
+    ["an empty path prefix", { pathPrefix: "" }],
+    ["a NaN file limit", { maxFiles: Number.NaN }],
+    ["an infinite byte limit", { maxBytes: Number.POSITIVE_INFINITY }],
+  ])("rejects %s", (_description, override) => {
+    expect(() => createGitHubMutationPolicy({ ...policy, ...override })).toThrow(GitHubPolicyError);
   });
 });
