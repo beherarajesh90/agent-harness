@@ -68,7 +68,7 @@ export function createTrueForgeInvestigationLauncher({
     });
 
     if (listEvents) {
-      void createInvestigationPhaseController({ createTurn: sessions.createTurn, listEvents }).continue(session.data.id, turn.data.id);
+      void createInvestigationPhaseController({ createTurn: sessions.createTurn.bind(sessions), listEvents }).continue(session.data.id, turn.data.id).catch(() => undefined);
     }
     return { sessionId: session.data.id, turnId: turn.data.id };
   };
