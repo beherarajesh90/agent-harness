@@ -25,9 +25,9 @@ describe("ForgeGate agent specification", () => {
         },
       ],
       model: { name: "ollama-local/qwen35-4b" },
-      responseFormat: { type: "json_object" },
       skills: [{ name: "forgegate" }],
     });
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").responseFormat).toBeUndefined();
   });
 
   it("requires an invariant to cite two files at the tested SHA", () => {

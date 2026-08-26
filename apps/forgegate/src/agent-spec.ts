@@ -77,7 +77,6 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       },
     ],
     model: { name: modelName },
-    responseFormat: { type: "json_object" },
     skills: [{ name: "forgegate" }],
   };
 }
