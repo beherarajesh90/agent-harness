@@ -12,6 +12,31 @@ const policy = {
 };
 
 describe("GitHub commit client", () => {
+  it("reads pull request reviews and review comments for Qodo classification", async () => {
+    const listReviews = vi.fn(async () => ({ data: [{ id: 11, user: { login: "qodo" }, state: "COMMENTED" }] }));
+    const listReviewComments = vi.fn(async () => ({ data: [{ id: 12, body: "Add a regression test" }] }));
+    const octokit = {
+      rest: {
+        pulls: { get: vi.fn(), listReviewComments, listReviews },
+      },
+    };
+    const client = createGitHubReadClient({
+      octokit: octokit as never,
+      policy,
+      repository: policy.repository,
+      token: "read-token",
+      writeOctokit: octokit as never,
+      writeToken: "write-token",
+    });
+
+    await expect(client.getQodoReviews(7)).resolves.toEqual([
+      { id: 11, user: { login: "qodo" }, state: "COMMENTED" },
+    ]);
+    await expect(client.getReviewComments(7)).resolves.toEqual([{ id: 12, body: "Add a regression test" }]);
+    expect(listReviews).toHaveBeenCalledWith({ owner: "beherarajesh90", per_page: 100, pull_number: 7, repo: "agent-harness" });
+    expect(listReviewComments).toHaveBeenCalledWith({ owner: "beherarajesh90", per_page: 100, pull_number: 7, repo: "agent-harness" });
+  });
+
   it("reads PR files, SHA-pinned file contents, and checks", async () => {
     const listFiles = vi.fn(async () => ({
       data: [{ filename: "apps/forgegate/src/payment-lab.ts", sha: "a".repeat(40), status: "modified" }],

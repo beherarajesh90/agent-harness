@@ -26,9 +26,11 @@ describe("GitHub MCP server", () => {
     const getPullRequestFiles = vi.fn(async (pullNumber: number) => [{ pullNumber }]);
     const getFile = vi.fn(async (path: string, ref: string) => ({ content: "source", path, ref }));
     const getChecks = vi.fn(async (ref: string) => ({ check_runs: [{ ref }] }));
+    const getQodoReviews = vi.fn(async (pullNumber: number) => [{ pullNumber, reviewer: "qodo" }]);
+    const getReviewComments = vi.fn(async (pullNumber: number) => [{ body: "review", pullNumber }]);
     const approvalStore = createGitHubApprovalStore();
     const server = createGitHubMcpHttpServer(
-      { getChecks, getFile, getPullRequest, getPullRequestFiles, commitFiles: vi.fn() },
+      { getChecks, getFile, getPullRequest, getPullRequestFiles, getQodoReviews, getReviewComments, commitFiles: vi.fn() },
       { approvalSecret: "test-secret", approvalStore },
     );
 
@@ -47,6 +49,8 @@ describe("GitHub MCP server", () => {
     await expect(client.listTools()).resolves.toMatchObject({
       tools: [
         expect.objectContaining({ name: "get_pull_request" }),
+        expect.objectContaining({ name: "get_qodo_reviews" }),
+        expect.objectContaining({ name: "get_review_comments" }),
         expect.objectContaining({ name: "get_pull_request_files" }),
         expect.objectContaining({ name: "get_file" }),
         expect.objectContaining({ name: "get_checks" }),
@@ -72,6 +76,16 @@ describe("GitHub MCP server", () => {
       client.callTool({ arguments: { ref: "a".repeat(40) }, name: "get_checks" }),
     ).resolves.toMatchObject({
       content: [{ text: JSON.stringify({ check_runs: [{ ref: "a".repeat(40) }] }), type: "text" }],
+    });
+    await expect(
+      client.callTool({ arguments: { pull_number: 42 }, name: "get_qodo_reviews" }),
+    ).resolves.toMatchObject({
+      content: [{ text: JSON.stringify([{ pullNumber: 42, reviewer: "qodo" }]), type: "text" }],
+    });
+    await expect(
+      client.callTool({ arguments: { pull_number: 42 }, name: "get_review_comments" }),
+    ).resolves.toMatchObject({
+      content: [{ text: JSON.stringify([{ body: "review", pullNumber: 42 }]), type: "text" }],
     });
 
     const payload = {
@@ -110,6 +124,8 @@ describe("GitHub MCP server", () => {
     const getPullRequestFiles = vi.fn(async (pullNumber: number) => [{ number: pullNumber }]);
     const getFile = vi.fn(async (path: string, ref: string) => ({ path, ref }));
     const getChecks = vi.fn(async (ref: string) => ({ ref }));
+    const getQodoReviews = vi.fn(async (pullNumber: number) => [{ pullNumber }]);
+    const getReviewComments = vi.fn(async (pullNumber: number) => [{ pullNumber }]);
     const commitFiles = vi.fn(async () => ({
       commitSha: "b".repeat(40),
       url: "https://github.com/beherarajesh90/agent-harness/commit/" + "b".repeat(40),
@@ -122,6 +138,8 @@ describe("GitHub MCP server", () => {
       getFile,
       getPullRequest,
       getPullRequestFiles,
+      getQodoReviews,
+      getReviewComments,
     });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     const client = new Client({ name: "forgegate-test", version: "1.0.0" });
@@ -132,6 +150,8 @@ describe("GitHub MCP server", () => {
     await expect(client.listTools()).resolves.toMatchObject({
       tools: [
         expect.objectContaining({ name: "get_pull_request" }),
+        expect.objectContaining({ name: "get_qodo_reviews" }),
+        expect.objectContaining({ name: "get_review_comments" }),
         expect.objectContaining({ name: "get_pull_request_files" }),
         expect.objectContaining({ name: "get_file" }),
         expect.objectContaining({ name: "get_checks" }),
@@ -166,6 +186,16 @@ describe("GitHub MCP server", () => {
       client.callTool({ arguments: { ref: "a".repeat(40) }, name: "get_checks" }),
     ).resolves.toMatchObject({
       content: [{ text: JSON.stringify({ ref: "a".repeat(40) }), type: "text" }],
+    });
+    await expect(
+      client.callTool({ arguments: { pull_number: 42 }, name: "get_qodo_reviews" }),
+    ).resolves.toMatchObject({
+      content: [{ text: JSON.stringify([{ pullNumber: 42 }]), type: "text" }],
+    });
+    await expect(
+      client.callTool({ arguments: { pull_number: 42 }, name: "get_review_comments" }),
+    ).resolves.toMatchObject({
+      content: [{ text: JSON.stringify([{ pullNumber: 42 }]), type: "text" }],
     });
 
     const commitPayload = {

@@ -107,6 +107,26 @@ export function createGitHubReadClient({
       return data;
     },
 
+    async getQodoReviews(pullNumber: number) {
+      const { data } = await github.rest.pulls.listReviews({
+        owner,
+        per_page: 100,
+        pull_number: pullNumber,
+        repo,
+      });
+      return data;
+    },
+
+    async getReviewComments(pullNumber: number) {
+      const { data } = await github.rest.pulls.listReviewComments({
+        owner,
+        per_page: 100,
+        pull_number: pullNumber,
+        repo,
+      });
+      return data;
+    },
+
     async commitFiles(input: CommitFilesInput): Promise<CommitFilesResult> {
       if (!policy) {
         throw new GitHubPolicyError("GitHub mutation policy is not configured");

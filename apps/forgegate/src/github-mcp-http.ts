@@ -18,6 +18,8 @@ type GitHubReadClient = {
   getFile: (path: string, ref: string) => Promise<unknown>;
   getPullRequest: (pullNumber: number) => Promise<unknown>;
   getPullRequestFiles: (pullNumber: number) => Promise<unknown>;
+  getQodoReviews: (pullNumber: number) => Promise<unknown>;
+  getReviewComments: (pullNumber: number) => Promise<unknown>;
 };
 
 export function createGitHubMcpHttpServer(

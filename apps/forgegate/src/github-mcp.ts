@@ -11,6 +11,8 @@ export function createGitHubMcpServer({
   getFile,
   getPullRequest,
   getPullRequestFiles,
+  getQodoReviews,
+  getReviewComments,
 }: {
   commitFiles: (input: CommitFilesInput) => Promise<CommitFilesResult>;
   consumeApproval: (token: string, payload: CommitApprovalPayload) => boolean;
@@ -18,6 +20,8 @@ export function createGitHubMcpServer({
   getFile: (path: string, ref: string) => Promise<unknown>;
   getPullRequest: (pullNumber: number) => Promise<unknown>;
   getPullRequestFiles: (pullNumber: number) => Promise<unknown>;
+  getQodoReviews: (pullNumber: number) => Promise<unknown>;
+  getReviewComments: (pullNumber: number) => Promise<unknown>;
 }) {
   const server = new McpServer({ name: "forgegate-github", version: "0.1.0" });
 
@@ -44,6 +48,48 @@ export function createGitHubMcpServer({
           content: [{ text: "GitHub pull request read failed.", type: "text" }],
           isError: true,
         };
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_qodo_reviews",
+    {
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+        readOnlyHint: true,
+      },
+      description: "Read pull request reviews for later Qodo-origin classification.",
+      inputSchema: z.object({ pull_number: z.number().int().positive() }),
+    },
+    async ({ pull_number }) => {
+      try {
+        return { content: [{ text: JSON.stringify(await getQodoReviews(pull_number)), type: "text" }] };
+      } catch {
+        return { content: [{ text: "GitHub pull request reviews read failed.", type: "text" }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_review_comments",
+    {
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+        readOnlyHint: true,
+      },
+      description: "Read pull request review comments for later Qodo-origin classification.",
+      inputSchema: z.object({ pull_number: z.number().int().positive() }),
+    },
+    async ({ pull_number }) => {
+      try {
+        return { content: [{ text: JSON.stringify(await getReviewComments(pull_number)), type: "text" }] };
+      } catch {
+        return { content: [{ text: "GitHub review comments read failed.", type: "text" }], isError: true };
       }
     },
   );
