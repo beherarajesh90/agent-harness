@@ -1,4 +1,5 @@
 import { createForgeGateAgentSpec } from "./agent-spec.js";
+import { projectInvestigation } from "./investigation.js";
 
 type TrueForgeSessions = {
   create: (request: { agent: { spec: ReturnType<typeof createForgeGateAgentSpec> } }) => Promise<{ data: { id: string } }>;
@@ -8,14 +9,31 @@ type TrueForgeSessions = {
   ) => Promise<{ data: { id: string } }>;
 };
 
+type InvestigationEvent = { event: Record<string, unknown>; turnId: string };
+type PhaseControllerOptions = {
+  createTurn: TrueForgeSessions["createTurn"];
+  listEvents: (sessionId: string) => Promise<InvestigationEvent[]>;
+  pollIntervalMs?: number;
+  maxPolls?: number;
+};
+
+const continuationPrompts = [
+  "Continue with Phase INVARIANTS. Spawn the invariant-analyst now, wait for its completed output, validate every InvariantCandidate against the ForgeGate schema, and preserve each accepted artifact.",
+  "Continue with Phase HYPOTHESES. Pass the validated invariant artifacts to the failure-mode-analyst, wait for its completed output, validate every ScenarioPlan, and preserve each accepted artifact.",
+  "Continue with Phase EXPERIMENT and EVIDENCE. Run the validated ScenarioPlan in the disposable sandbox against the exact PR SHA and return a schema-valid ExperimentResult with repetitions, observed counts, verdict, and artifact link.",
+  "Continue with Phase DECISION. Reconcile the persisted InvariantCandidate, ScenarioPlan, and ExperimentResult artifacts. Return the final JSON bundle and decision; READY is allowed only when all three artifact types are valid and consistent.",
+] as const;
+
 export function createTrueForgeInvestigationLauncher({
   modelName,
   repository,
   sessions,
+  listEvents,
 }: {
   modelName: string;
   repository: string;
   sessions: TrueForgeSessions;
+  listEvents?: (sessionId: string) => Promise<InvestigationEvent[]>;
 }) {
   const configuredRepository = assertConfiguredRepository(repository);
 
@@ -49,8 +67,41 @@ export function createTrueForgeInvestigationLauncher({
       ],
     });
 
+    if (listEvents) {
+      void createInvestigationPhaseController({ createTurn: sessions.createTurn, listEvents }).continue(session.data.id, turn.data.id);
+    }
     return { sessionId: session.data.id, turnId: turn.data.id };
   };
+}
+
+export function createInvestigationPhaseController({ createTurn, listEvents, pollIntervalMs = 1_000, maxPolls = 600 }: PhaseControllerOptions) {
+  return { continue: continueInvestigation };
+
+  async function continueInvestigation(sessionId: string, initialTurnId: string) {
+    let turnId = initialTurnId;
+    for (const prompt of continuationPrompts) {
+      const completed = await waitForTurn(sessionId, turnId);
+      if (!completed) return;
+      const events = await listEvents(sessionId);
+      if (hasCompleteEvidence(events)) return;
+      turnId = (await createTurn(sessionId, { input: [{ content: prompt, type: "user.message" }] })).data.id;
+    }
+  }
+
+  async function waitForTurn(sessionId: string, turnId: string) {
+    for (let poll = 0; poll < maxPolls; poll += 1) {
+      const events = await listEvents(sessionId);
+      if (events.some((item) => item.turnId === turnId && item.event.type === "turn.done")) return true;
+      if (poll < maxPolls - 1) await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
+    return false;
+  }
+}
+
+function hasCompleteEvidence(events: InvestigationEvent[]) {
+  const types = new Set(projectInvestigation("controller", "", events).artifacts.map((artifact) => artifact.type));
+  const required: ("ExperimentResult" | "InvariantCandidate" | "ScenarioPlan")[] = ["InvariantCandidate", "ScenarioPlan", "ExperimentResult"];
+  return required.every((type) => types.has(type));
 }
 
 function assertConfiguredRepository(repository: string) {

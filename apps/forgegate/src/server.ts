@@ -10,6 +10,7 @@ const launcher = createTrueForgeInvestigationLauncher({
   modelName: process.env.TRUEFORGE_MODEL ?? "openrouter/openai-gpt-oss-120b",
   repository,
   sessions: trueforge.sessions,
+  listEvents,
 });
 const investigations = createInvestigationService({
   cancel: (sessionId) => trueforge.sessions.cancel(sessionId),
