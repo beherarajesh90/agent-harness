@@ -32,6 +32,9 @@ export function createPaymentLaboratory() {
     ) STRICT;
   `);
 
+  const findIntentByIdempotencyKey = database.prepare(
+    "SELECT id, status FROM payment_intents WHERE idempotency_key = ?",
+  );
   const createIntent = database.prepare(
     "INSERT INTO payment_intents (id, amount, idempotency_key, status) VALUES (?, ?, ?, 'pending')",
   );
@@ -47,6 +50,13 @@ export function createPaymentLaboratory() {
 
   return {
     processPayment(input: PaymentInput): PaymentResult {
+      const existing = findIntentByIdempotencyKey.get(input.idempotencyKey) as
+        | { id: string; status: "settled" }
+        | undefined;
+      if (existing) {
+        return { intentId: existing.id, status: existing.status };
+      }
+
       database.exec("BEGIN");
       try {
         createIntent.run(input.intentId, input.amount, input.idempotencyKey);

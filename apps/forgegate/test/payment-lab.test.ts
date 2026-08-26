@@ -19,4 +19,23 @@ describe("payment laboratory", () => {
       ledgerEntries: 1,
     });
   });
+
+  it("does not charge or ledger the same idempotency key twice", () => {
+    const laboratory = createPaymentLaboratory();
+    const payment = {
+      amount: 500,
+      idempotencyKey: "checkout-101",
+      intentId: "pi-101",
+    };
+
+    laboratory.processPayment(payment);
+    const replay = laboratory.processPayment(payment);
+
+    expect(replay).toEqual({ intentId: "pi-101", status: "settled" });
+    expect(laboratory.evidence()).toEqual({
+      charges: 1,
+      intents: 1,
+      ledgerEntries: 1,
+    });
+  });
 });
