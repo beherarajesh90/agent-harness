@@ -1468,9 +1468,9 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 
 ### Agent and structured evidence
 
-- [ ] Create saved ForgeGate agent specification.
-- [ ] Add ForgeGate skill with evidence hierarchy, stopping rules, and approval policy.
-- [ ] Configure dynamic subagents.
+- [x] Create saved ForgeGate agent specification.
+- [x] Add ForgeGate skill with evidence hierarchy, stopping rules, and approval policy.
+- [x] Configure dynamic subagents.
 - [ ] Implement visible invariant analyst subagent.
 - [ ] Implement visible failure-mode analyst subagent.
 - [ ] Require two repository evidence references for each accepted invariant.
