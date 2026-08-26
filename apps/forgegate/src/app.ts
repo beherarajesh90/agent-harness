@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import { IdempotencyConflictError } from "./investigation.js";
 import type { InvestigationSnapshot } from "./investigation.js";
 
 type InvestigationService = {
@@ -35,7 +36,10 @@ export function buildApp({
       const key = Array.isArray(idempotencyKey) ? idempotencyKey[0] : idempotencyKey;
       const result = await investigationService.create(request.body.pullRequestUrl, key);
       return reply.code(202).send({ ...result, status: "QUEUED" });
-    } catch {
+    } catch (error) {
+      if (error instanceof IdempotencyConflictError) {
+        return reply.code(409).send({ code: "IDEMPOTENCY_CONFLICT", message: error.message });
+      }
       return reply.code(422).send({ code: "INVESTIGATION_REJECTED", message: "investigation could not be started" });
     }
   });

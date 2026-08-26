@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { buildApp } from "../src/app.js";
-import { createInvestigationService, projectInvestigation } from "../src/investigation.js";
+import { createInvestigationService, IdempotencyConflictError, projectInvestigation } from "../src/investigation.js";
 
 describe("investigation control plane", () => {
   it("projects newest-first TrueForge events into ordered SSE events", () => {
@@ -32,6 +32,21 @@ describe("investigation control plane", () => {
     expect(gateway.cancel).toHaveBeenCalledWith("session-1");
   });
 
+  it("replays an idempotency key only for the same normalized PR URL", async () => {
+    const gateway = {
+      cancel: vi.fn(),
+      launch: vi.fn(async () => ({ sessionId: "session-1", turnId: "turn-1" })),
+      listEvents: vi.fn(async () => []),
+    };
+    const service = createInvestigationService(gateway);
+    const url = "https://github.com/acme/demo/pull/1";
+
+    await service.create(url, "request-1");
+    await expect(service.create(`${url}#same`, "request-1")).resolves.toEqual({ sessionId: "session-1", turnId: "turn-1" });
+    await expect(service.create("https://github.com/acme/demo/pull/2", "request-1")).rejects.toBeInstanceOf(IdempotencyConflictError);
+    expect(gateway.launch).toHaveBeenCalledOnce();
+  });
+
   it("exposes create, snapshot, and cancel endpoints", async () => {
     const service = {
       cancel: vi.fn(async () => ({ events: [], pullRequestUrl: "url", sessionId: "session-1", stage: "CONTEXT" as const, status: "CANCELLED" as const, turnId: "turn-1" })),
@@ -41,6 +56,8 @@ describe("investigation control plane", () => {
     const app = buildApp({ investigationService: service });
 
     await expect(app.inject({ method: "POST", payload: { pullRequestUrl: "url" }, url: "/api/investigations" })).resolves.toMatchObject({ statusCode: 202 });
+    service.create.mockRejectedValueOnce(new IdempotencyConflictError());
+    await expect(app.inject({ headers: { "idempotency-key": "request-1" }, method: "POST", payload: { pullRequestUrl: "other-url" }, url: "/api/investigations" })).resolves.toMatchObject({ statusCode: 409 });
     await expect(app.inject({ method: "GET", url: "/api/investigations/session-1" })).resolves.toMatchObject({ statusCode: 200 });
     await expect(app.inject({ method: "POST", url: "/api/investigations/session-1/cancel" })).resolves.toMatchObject({ statusCode: 202 });
     await app.close();

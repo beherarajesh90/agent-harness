@@ -44,6 +44,13 @@ type InvestigationGateway = {
   launch: (input: { pullRequestUrl: string }) => Promise<{ sessionId: string; turnId: string }>;
 };
 
+export class IdempotencyConflictError extends Error {
+  constructor() {
+    super("idempotency key is already bound to a different pull request");
+    this.name = "IdempotencyConflictError";
+  }
+}
+
 export function projectInvestigation(sessionId: string, pullRequestUrl: string, items: TrueForgeEventItem[]): InvestigationSnapshot {
   const events = items
     .slice()
@@ -66,7 +73,7 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
 
 export function createInvestigationService(gateway: InvestigationGateway) {
   const records = new Map<string, { pullRequestUrl: string; turnId: string }>();
-  const idempotency = new Map<string, { sessionId: string; turnId: string }>();
+  const idempotency = new Map<string, { pullRequestUrl: string; result: { sessionId: string; turnId: string } }>();
 
   return {
     async cancel(sessionId: string) {
@@ -76,10 +83,15 @@ export function createInvestigationService(gateway: InvestigationGateway) {
       return get(sessionId);
     },
     async create(pullRequestUrl: string, key?: string) {
-      if (key && idempotency.has(key)) return idempotency.get(key)!;
+      const normalizedPullRequestUrl = normalizePullRequestUrl(pullRequestUrl);
+      const previous = key ? idempotency.get(key) : undefined;
+      if (previous) {
+        if (previous.pullRequestUrl !== normalizedPullRequestUrl) throw new IdempotencyConflictError();
+        return previous.result;
+      }
       const result = await gateway.launch({ pullRequestUrl });
-      records.set(result.sessionId, { pullRequestUrl, turnId: result.turnId });
-      if (key) idempotency.set(key, result);
+      records.set(result.sessionId, { pullRequestUrl: normalizedPullRequestUrl, turnId: result.turnId });
+      if (key) idempotency.set(key, { pullRequestUrl: normalizedPullRequestUrl, result });
       return result;
     },
     async get(sessionId: string) {
@@ -94,6 +106,12 @@ export function createInvestigationService(gateway: InvestigationGateway) {
     if (!record) throw new Error("investigation not found");
     return projectInvestigation(sessionId, record.pullRequestUrl, await gateway.listEvents(sessionId));
   }
+}
+
+function normalizePullRequestUrl(pullRequestUrl: string) {
+  const url = new URL(pullRequestUrl);
+  url.hash = "";
+  return url.toString();
 }
 
 function toHarnessEvent(sessionId: string, item: TrueForgeEventItem, sequence: number): HarnessEvent {
