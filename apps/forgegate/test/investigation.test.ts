@@ -15,7 +15,7 @@ describe("investigation control plane", () => {
       { eventId: "event-2", sequence: 2 },
     ]);
     expect(snapshot.artifacts).toEqual([]);
-    expect(snapshot.status).toBe("READY");
+    expect(snapshot.status).toBe("UNCERTAIN");
     expect(snapshot.stage).toBe("DECISION");
   });
 

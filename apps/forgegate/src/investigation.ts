@@ -75,13 +75,14 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
     .slice()
     .reverse()
     .map((item, index) => toHarnessEvent(sessionId, item, index + 1));
+  const artifacts = events.flatMap((event) => artifactFromPayload(event.payload));
   const last = events.at(-1);
   const terminal = last?.type === "turn.done";
   const state = last?.payload.state as { status?: string } | undefined;
-  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : terminal ? "READY" : "RUNNING";
+  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : terminal ? artifacts.length > 0 ? "READY" : "UNCERTAIN" : "RUNNING";
 
   return {
-    artifacts: events.flatMap((event) => artifactFromPayload(event.payload)),
+    artifacts,
     events,
     pullRequestUrl,
     sessionId,
