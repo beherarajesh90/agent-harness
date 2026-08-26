@@ -47,6 +47,33 @@ describe("investigation control plane", () => {
     expect(gateway.launch).toHaveBeenCalledOnce();
   });
 
+  it("shares an in-flight launch and releases the key after failure", async () => {
+    let resolveLaunch!: (value: { sessionId: string; turnId: string }) => void;
+    const gateway = {
+      cancel: vi.fn(),
+      launch: vi.fn(() => new Promise<{ sessionId: string; turnId: string }>((resolve) => { resolveLaunch = resolve; })),
+      listEvents: vi.fn(async () => []),
+    };
+    const service = createInvestigationService(gateway);
+    const url = "https://github.com/acme/demo/pull/1";
+    const first = service.create(url, "request-1");
+    const second = service.create(`${url}#same`, "request-1");
+
+    await Promise.resolve();
+    resolveLaunch({ sessionId: "session-1", turnId: "turn-1" });
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      { sessionId: "session-1", turnId: "turn-1" },
+      { sessionId: "session-1", turnId: "turn-1" },
+    ]);
+    expect(gateway.launch).toHaveBeenCalledOnce();
+
+    gateway.launch.mockRejectedValueOnce(new Error("provider unavailable"));
+    await expect(service.create(url, "request-2")).rejects.toThrow("provider unavailable");
+    gateway.launch.mockResolvedValueOnce({ sessionId: "session-2", turnId: "turn-2" });
+    await expect(service.create(url, "request-2")).resolves.toEqual({ sessionId: "session-2", turnId: "turn-2" });
+    expect(gateway.launch).toHaveBeenCalledTimes(3);
+  });
+
   it("exposes create, snapshot, and cancel endpoints", async () => {
     const service = {
       cancel: vi.fn(async () => ({ events: [], pullRequestUrl: "url", sessionId: "session-1", stage: "CONTEXT" as const, status: "CANCELLED" as const, turnId: "turn-1" })),

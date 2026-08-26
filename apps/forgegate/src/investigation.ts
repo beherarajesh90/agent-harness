@@ -74,6 +74,7 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
 export function createInvestigationService(gateway: InvestigationGateway) {
   const records = new Map<string, { pullRequestUrl: string; turnId: string }>();
   const idempotency = new Map<string, { pullRequestUrl: string; result: { sessionId: string; turnId: string } }>();
+  const inFlight = new Map<string, { pullRequestUrl: string; promise: Promise<{ sessionId: string; turnId: string }> }>();
 
   return {
     async cancel(sessionId: string) {
@@ -89,10 +90,28 @@ export function createInvestigationService(gateway: InvestigationGateway) {
         if (previous.pullRequestUrl !== normalizedPullRequestUrl) throw new IdempotencyConflictError();
         return previous.result;
       }
-      const result = await gateway.launch({ pullRequestUrl });
-      records.set(result.sessionId, { pullRequestUrl: normalizedPullRequestUrl, turnId: result.turnId });
-      if (key) idempotency.set(key, { pullRequestUrl: normalizedPullRequestUrl, result });
-      return result;
+      const pending = key ? inFlight.get(key) : undefined;
+      if (pending) {
+        if (pending.pullRequestUrl !== normalizedPullRequestUrl) throw new IdempotencyConflictError();
+        return pending.promise;
+      }
+      const launch = Promise.resolve()
+        .then(() => gateway.launch({ pullRequestUrl }))
+        .then((result) => {
+          records.set(result.sessionId, { pullRequestUrl: normalizedPullRequestUrl, turnId: result.turnId });
+          if (key) {
+            inFlight.delete(key);
+            idempotency.set(key, { pullRequestUrl: normalizedPullRequestUrl, result });
+          }
+          return result;
+        });
+      if (key) inFlight.set(key, { pullRequestUrl: normalizedPullRequestUrl, promise: launch });
+      try {
+        return await launch;
+      } catch (error) {
+        if (key && inFlight.get(key)?.promise === launch) inFlight.delete(key);
+        throw error;
+      }
     },
     async get(sessionId: string) {
       const record = records.get(sessionId);
