@@ -1367,7 +1367,7 @@ Last repository verification: 2026-08-26.
 - [x] TrueForge v0.1.4 starts in WSL2 standalone mode and serves its API documentation on `localhost:8790`.
 - [x] Qwen3.5 4B responds through local Ollama and a WSL-reachable Ollama endpoint; TrueForge produced valid structured JSON, a visible `create_sub_agent` call/result, and a bounded Daytona patch/test result.
 - [x] Daytona was configured as the selected sandbox after the local fallback failed its internal PyPI dependency-install proof. TrueForge accepted the credential, provisioned a Daytona sandbox, executed `echo SANDBOX_OK && cat ...`, and returned exit code `0` with the expected output.
-- [~] Public demo repository configuration and a read-only GitHub PAT are verified through the official GitHub MCP Docker server. ForgeGate's private custom MCP service is Docker-profiled, has no host-published port, requires `GITHUB_TOKEN`, and passed a mocked end-to-end Streamable HTTP read flow; a live custom-server GitHub call, Qodo installation, and a real Qodo review are not verified.
+- [~] Public demo repository configuration and a read-only GitHub PAT are verified through the official GitHub MCP Docker server. ForgeGate's private custom MCP service is Docker-profiled, has no host-published port, requires `GITHUB_TOKEN`, and read GitHub PR `#3` through its private Streamable HTTP boundary from the ForgeGate container; Qodo installation and a real Qodo review are not verified.
 
 ## Recurring Milestone PR Gate
 
@@ -1424,7 +1424,7 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 
 ### Harness proof and external setup
 
-- [~] Configure bounded GitHub MCP read tools against the chosen public demo repository. The custom service exposes only `get_pull_request` and its mocked protocol flow passes; live custom-server GitHub verification remains.
+- [x] Configure bounded GitHub MCP read tools against the chosen public demo repository. The custom service exposes only `get_pull_request` and read PR `#3` through its private Streamable HTTP boundary from the ForgeGate container.
 - [ ] Configure write tools as TrueForge approval-gated.
 - [ ] Verify rejected approval performs zero GitHub mutations.
 - [ ] Verify a session survives browser reconnect and event replay.
