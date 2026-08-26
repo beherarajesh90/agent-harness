@@ -38,6 +38,17 @@ export const invariantCandidateSchema = z
     });
   });
 
+export const scenarioPlanSchema = z
+  .object({
+    expectedOutcome: z.string().min(1),
+    injectedFaults: z.array(z.string().min(1)).min(1),
+    invariantId: z.string().min(1),
+    ordering: z.array(z.string().min(1)).min(1),
+    seed: z.number().int().nonnegative(),
+    testedSha: shaSchema,
+  })
+  .strict();
+
 export function createForgeGateAgentSpec(modelName: string): AgentSpec {
   if (!modelName.trim()) {
     throw new Error("ForgeGate model name is required");
