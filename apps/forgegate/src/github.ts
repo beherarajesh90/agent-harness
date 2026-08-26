@@ -25,6 +25,10 @@ export type PullRequestFilesResult = {
   truncated: boolean;
 };
 
+export function isFullCommitSha(ref: string) {
+  return /^[a-f0-9]{40}$/.test(ref);
+}
+
 const pullRequestFilesPageSize = 100;
 const pullRequestFilesMaxPages = 10;
 
@@ -105,6 +109,10 @@ export function createGitHubReadClient({
     },
 
     async getFile(path: string, ref: string) {
+      if (!isFullCommitSha(ref)) {
+        throw new Error("GitHub file ref must be a full commit SHA");
+      }
+
       const { data } = await github.rest.repos.getContent({ owner, path, ref, repo });
       if (Array.isArray(data) || data.type !== "file" || data.encoding !== "base64") {
         throw new Error("GitHub file read did not return a base64-encoded file");

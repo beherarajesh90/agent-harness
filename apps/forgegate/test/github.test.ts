@@ -83,6 +83,8 @@ describe("GitHub commit client", () => {
       path: "apps/forgegate/src/payment-lab.ts",
       sha: "b".repeat(40),
     });
+    await expect(client.getFile("apps/forgegate/src/payment-lab.ts", "main")).rejects.toThrow("commit SHA");
+    expect(getContent).toHaveBeenCalledOnce();
     await expect(client.getChecks("b".repeat(40))).resolves.toEqual({
       check_runs: [{ name: "tests", conclusion: "success" }],
     });

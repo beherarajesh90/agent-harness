@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { CommitApprovalPayload } from "./github-approval.js";
 import type { CommitFilesInput, CommitFilesResult } from "./github.js";
+import { isFullCommitSha } from "./github.js";
 
 export function createGitHubMcpServer({
   commitFiles,
@@ -131,7 +132,11 @@ export function createGitHubMcpServer({
         readOnlyHint: true,
       },
       description: "Read one repository file at an exact Git ref.",
-      inputSchema: z.object({ path: z.string().min(1), ref: z.string().min(1), repository: z.string().min(1) }),
+      inputSchema: z.object({
+        path: z.string().min(1),
+        ref: z.string().refine(isFullCommitSha, "ref must be a full commit SHA"),
+        repository: z.string().min(1),
+      }),
     },
     async ({ path, ref, repository: requestedRepository }) => {
       try {
