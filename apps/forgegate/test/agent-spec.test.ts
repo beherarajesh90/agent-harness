@@ -25,7 +25,7 @@ describe("ForgeGate agent specification", () => {
         },
       ],
       model: { name: "ollama-local/qwen35-4b" },
-      skills: [{ name: "forgegate" }],
+      skills: [],
     });
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").responseFormat).toBeUndefined();
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("InvariantCandidate"));

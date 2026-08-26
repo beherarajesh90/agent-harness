@@ -107,6 +107,6 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       },
     ],
     model: { name: modelName },
-    skills: [{ name: "forgegate" }],
+    skills: [],
   };
 }
