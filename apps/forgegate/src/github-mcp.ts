@@ -13,6 +13,7 @@ export function createGitHubMcpServer({
   getPullRequestFiles,
   getQodoReviews,
   getReviewComments,
+  repository,
 }: {
   commitFiles: (input: CommitFilesInput) => Promise<CommitFilesResult>;
   consumeApproval: (token: string, payload: CommitApprovalPayload) => boolean;
@@ -22,6 +23,7 @@ export function createGitHubMcpServer({
   getPullRequestFiles: (pullNumber: number) => Promise<unknown>;
   getQodoReviews: (pullNumber: number) => Promise<unknown>;
   getReviewComments: (pullNumber: number) => Promise<unknown>;
+  repository: string;
 }) {
   const server = new McpServer({ name: "forgegate-github", version: "0.1.0" });
 
@@ -35,10 +37,11 @@ export function createGitHubMcpServer({
         readOnlyHint: true,
       },
       description: "Read one pull request from the configured ForgeGate demo repository.",
-      inputSchema: z.object({ pull_number: z.number().int().positive() }),
+      inputSchema: z.object({ pull_number: z.number().int().positive(), repository: z.string().min(1) }),
     },
-    async ({ pull_number }) => {
+    async ({ pull_number, repository: requestedRepository }) => {
       try {
+        assertConfiguredRepository(requestedRepository, repository);
         const pullRequest = await getPullRequest(pull_number);
         return {
           content: [{ text: JSON.stringify(pullRequest) ?? "null", type: "text" }],
@@ -62,10 +65,11 @@ export function createGitHubMcpServer({
         readOnlyHint: true,
       },
       description: "Read pull request reviews for later Qodo-origin classification.",
-      inputSchema: z.object({ pull_number: z.number().int().positive() }),
+      inputSchema: z.object({ pull_number: z.number().int().positive(), repository: z.string().min(1) }),
     },
-    async ({ pull_number }) => {
+    async ({ pull_number, repository: requestedRepository }) => {
       try {
+        assertConfiguredRepository(requestedRepository, repository);
         return { content: [{ text: JSON.stringify(await getQodoReviews(pull_number)), type: "text" }] };
       } catch {
         return { content: [{ text: "GitHub pull request reviews read failed.", type: "text" }], isError: true };
@@ -83,10 +87,11 @@ export function createGitHubMcpServer({
         readOnlyHint: true,
       },
       description: "Read pull request review comments for later Qodo-origin classification.",
-      inputSchema: z.object({ pull_number: z.number().int().positive() }),
+      inputSchema: z.object({ pull_number: z.number().int().positive(), repository: z.string().min(1) }),
     },
-    async ({ pull_number }) => {
+    async ({ pull_number, repository: requestedRepository }) => {
       try {
+        assertConfiguredRepository(requestedRepository, repository);
         return { content: [{ text: JSON.stringify(await getReviewComments(pull_number)), type: "text" }] };
       } catch {
         return { content: [{ text: "GitHub review comments read failed.", type: "text" }], isError: true };
@@ -104,10 +109,11 @@ export function createGitHubMcpServer({
         readOnlyHint: true,
       },
       description: "Read the changed files for one pull request from the configured repository.",
-      inputSchema: z.object({ pull_number: z.number().int().positive() }),
+      inputSchema: z.object({ pull_number: z.number().int().positive(), repository: z.string().min(1) }),
     },
-    async ({ pull_number }) => {
+    async ({ pull_number, repository: requestedRepository }) => {
       try {
+        assertConfiguredRepository(requestedRepository, repository);
         return { content: [{ text: JSON.stringify(await getPullRequestFiles(pull_number)), type: "text" }] };
       } catch {
         return { content: [{ text: "GitHub pull request files read failed.", type: "text" }], isError: true };
@@ -125,10 +131,11 @@ export function createGitHubMcpServer({
         readOnlyHint: true,
       },
       description: "Read one repository file at an exact Git ref.",
-      inputSchema: z.object({ path: z.string().min(1), ref: z.string().min(1) }),
+      inputSchema: z.object({ path: z.string().min(1), ref: z.string().min(1), repository: z.string().min(1) }),
     },
-    async ({ path, ref }) => {
+    async ({ path, ref, repository: requestedRepository }) => {
       try {
+        assertConfiguredRepository(requestedRepository, repository);
         return { content: [{ text: JSON.stringify(await getFile(path, ref)), type: "text" }] };
       } catch {
         return { content: [{ text: "GitHub file read failed.", type: "text" }], isError: true };
@@ -146,10 +153,11 @@ export function createGitHubMcpServer({
         readOnlyHint: true,
       },
       description: "Read check runs for an exact Git ref.",
-      inputSchema: z.object({ ref: z.string().min(1) }),
+      inputSchema: z.object({ ref: z.string().min(1), repository: z.string().min(1) }),
     },
-    async ({ ref }) => {
+    async ({ ref, repository: requestedRepository }) => {
       try {
+        assertConfiguredRepository(requestedRepository, repository);
         return { content: [{ text: JSON.stringify(await getChecks(ref)), type: "text" }] };
       } catch {
         return { content: [{ text: "GitHub checks read failed.", type: "text" }], isError: true };
@@ -200,4 +208,10 @@ export function createGitHubMcpServer({
   );
 
   return server;
+}
+
+function assertConfiguredRepository(requestedRepository: string, configuredRepository: string) {
+  if (requestedRepository !== configuredRepository) {
+    throw new Error("repository is not allowed");
+  }
 }

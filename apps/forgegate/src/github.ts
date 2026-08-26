@@ -65,6 +65,8 @@ export function createGitHubReadClient({
   const writeGithub = writeOctokit ?? new Octokit({ auth: writeToken });
 
   return {
+    repository,
+
     async getPullRequest(pullNumber: number) {
       const { data } = await github.rest.pulls.get({
         owner,

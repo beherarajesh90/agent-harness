@@ -30,7 +30,7 @@ describe("GitHub MCP server", () => {
     const getReviewComments = vi.fn(async (pullNumber: number) => [{ body: "review", pullNumber }]);
     const approvalStore = createGitHubApprovalStore();
     const server = createGitHubMcpHttpServer(
-      { getChecks, getFile, getPullRequest, getPullRequestFiles, getQodoReviews, getReviewComments, commitFiles: vi.fn() },
+      { getChecks, getFile, getPullRequest, getPullRequestFiles, getQodoReviews, getReviewComments, commitFiles: vi.fn(), repository: "beherarajesh90/agent-harness" },
       { approvalSecret: "test-secret", approvalStore },
     );
 
@@ -58,32 +58,32 @@ describe("GitHub MCP server", () => {
       ],
     });
     await expect(
-      client.callTool({ arguments: { pull_number: 42 }, name: "get_pull_request" }),
+      client.callTool({ arguments: { pull_number: 42, repository: "beherarajesh90/agent-harness" }, name: "get_pull_request" }),
     ).resolves.toMatchObject({
       content: [{ text: JSON.stringify({ number: 42 }), type: "text" }],
     });
     await expect(
-      client.callTool({ arguments: { pull_number: 42 }, name: "get_pull_request_files" }),
+      client.callTool({ arguments: { pull_number: 42, repository: "beherarajesh90/agent-harness" }, name: "get_pull_request_files" }),
     ).resolves.toMatchObject({
       content: [{ text: JSON.stringify([{ pullNumber: 42 }]), type: "text" }],
     });
     await expect(
-      client.callTool({ arguments: { path: "apps/forgegate/src/payment-lab.ts", ref: "a".repeat(40) }, name: "get_file" }),
+      client.callTool({ arguments: { path: "apps/forgegate/src/payment-lab.ts", ref: "a".repeat(40), repository: "beherarajesh90/agent-harness" }, name: "get_file" }),
     ).resolves.toMatchObject({
       content: [{ text: JSON.stringify({ content: "source", path: "apps/forgegate/src/payment-lab.ts", ref: "a".repeat(40) }), type: "text" }],
     });
     await expect(
-      client.callTool({ arguments: { ref: "a".repeat(40) }, name: "get_checks" }),
+      client.callTool({ arguments: { ref: "a".repeat(40), repository: "beherarajesh90/agent-harness" }, name: "get_checks" }),
     ).resolves.toMatchObject({
       content: [{ text: JSON.stringify({ check_runs: [{ ref: "a".repeat(40) }] }), type: "text" }],
     });
     await expect(
-      client.callTool({ arguments: { pull_number: 42 }, name: "get_qodo_reviews" }),
+      client.callTool({ arguments: { pull_number: 42, repository: "beherarajesh90/agent-harness" }, name: "get_qodo_reviews" }),
     ).resolves.toMatchObject({
       content: [{ text: JSON.stringify([{ pullNumber: 42, reviewer: "qodo" }]), type: "text" }],
     });
     await expect(
-      client.callTool({ arguments: { pull_number: 42 }, name: "get_review_comments" }),
+      client.callTool({ arguments: { pull_number: 42, repository: "beherarajesh90/agent-harness" }, name: "get_review_comments" }),
     ).resolves.toMatchObject({
       content: [{ text: JSON.stringify([{ body: "review", pullNumber: 42 }]), type: "text" }],
     });
@@ -140,6 +140,7 @@ describe("GitHub MCP server", () => {
       getPullRequestFiles,
       getQodoReviews,
       getReviewComments,
+      repository: "beherarajesh90/agent-harness",
     });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     const client = new Client({ name: "forgegate-test", version: "1.0.0" });
@@ -161,7 +162,7 @@ describe("GitHub MCP server", () => {
 
     await expect(
       client.callTool({
-        arguments: { pull_number: 42 },
+        arguments: { pull_number: 42, repository: "beherarajesh90/agent-harness" },
         name: "get_pull_request",
       }),
     ).resolves.toMatchObject({
@@ -173,27 +174,33 @@ describe("GitHub MCP server", () => {
       ],
     });
     await expect(
-      client.callTool({ arguments: { pull_number: 42 }, name: "get_pull_request_files" }),
+      client.callTool({
+        arguments: { pull_number: 42, repository: "other-owner/other-repo" },
+        name: "get_pull_request",
+      }),
+    ).resolves.toMatchObject({ isError: true });
+    await expect(
+      client.callTool({ arguments: { pull_number: 42, repository: "beherarajesh90/agent-harness" }, name: "get_pull_request_files" }),
     ).resolves.toMatchObject({
       content: [{ text: JSON.stringify([{ number: 42 }]), type: "text" }],
     });
     await expect(
-      client.callTool({ arguments: { path: "payment-lab.ts", ref: "a".repeat(40) }, name: "get_file" }),
+      client.callTool({ arguments: { path: "payment-lab.ts", ref: "a".repeat(40), repository: "beherarajesh90/agent-harness" }, name: "get_file" }),
     ).resolves.toMatchObject({
       content: [{ text: JSON.stringify({ path: "payment-lab.ts", ref: "a".repeat(40) }), type: "text" }],
     });
     await expect(
-      client.callTool({ arguments: { ref: "a".repeat(40) }, name: "get_checks" }),
+      client.callTool({ arguments: { ref: "a".repeat(40), repository: "beherarajesh90/agent-harness" }, name: "get_checks" }),
     ).resolves.toMatchObject({
       content: [{ text: JSON.stringify({ ref: "a".repeat(40) }), type: "text" }],
     });
     await expect(
-      client.callTool({ arguments: { pull_number: 42 }, name: "get_qodo_reviews" }),
+      client.callTool({ arguments: { pull_number: 42, repository: "beherarajesh90/agent-harness" }, name: "get_qodo_reviews" }),
     ).resolves.toMatchObject({
       content: [{ text: JSON.stringify([{ pullNumber: 42 }]), type: "text" }],
     });
     await expect(
-      client.callTool({ arguments: { pull_number: 42 }, name: "get_review_comments" }),
+      client.callTool({ arguments: { pull_number: 42, repository: "beherarajesh90/agent-harness" }, name: "get_review_comments" }),
     ).resolves.toMatchObject({
       content: [{ text: JSON.stringify([{ pullNumber: 42 }]), type: "text" }],
     });

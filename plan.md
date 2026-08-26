@@ -1463,8 +1463,8 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [x] Implement `get_checks`.
 - [x] Implement `get_qodo_reviews`.
 - [x] Implement `get_review_comments`.
-- [ ] Validate configured repository allowlist on every tool call.
-- [ ] Validate PR branch prefix, exact path allowlist, expected SHA, file count, and byte limits before every future write.
+- [x] Validate the configured repository allowlist on every GitHub MCP tool call.
+- [x] Validate PR branch prefix, exact path allowlist, expected SHA, file count, and byte limits before every GitHub write.
 
 ### Agent and structured evidence
 
