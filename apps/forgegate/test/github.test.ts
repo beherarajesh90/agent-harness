@@ -12,6 +12,100 @@ const policy = {
 };
 
 describe("GitHub commit client", () => {
+  it("reads pull request reviews and review comments for Qodo classification", async () => {
+    const listReviews = vi.fn(async ({ page }: { page: number }) => ({
+      data: page === 1 ? Array.from({ length: 100 }, (_, id) => ({ id, user: { login: "qodo" }, state: "COMMENTED" })) : [{ id: 101, user: { login: "qodo" }, state: "APPROVED" }],
+    }));
+    const listReviewComments = vi.fn(async ({ page }: { page: number }) => ({
+      data: page === 1 ? Array.from({ length: 100 }, (_, id) => ({ id, body: "review" })) : [{ id: 12, body: "Add a regression test" }],
+    }));
+    const octokit = {
+      rest: {
+        pulls: { get: vi.fn(), listReviewComments, listReviews },
+      },
+    };
+    const client = createGitHubReadClient({
+      octokit: octokit as never,
+      policy,
+      repository: policy.repository,
+      token: "read-token",
+      writeOctokit: octokit as never,
+      writeToken: "write-token",
+    });
+
+    await expect(client.getQodoReviews(7)).resolves.toMatchObject({
+      complete: true,
+      reviews: [...Array.from({ length: 100 }, (_, id) => ({ id, user: { login: "qodo" }, state: "COMMENTED" })), { id: 101, user: { login: "qodo" }, state: "APPROVED" }],
+      truncated: false,
+    });
+    await expect(client.getReviewComments(7)).resolves.toMatchObject({
+      comments: [...Array.from({ length: 100 }, (_, id) => ({ id, body: "review" })), { id: 12, body: "Add a regression test" }],
+      complete: true,
+      truncated: false,
+    });
+    expect(listReviews).toHaveBeenNthCalledWith(1, { owner: "beherarajesh90", page: 1, per_page: 100, pull_number: 7, repo: "agent-harness" });
+    expect(listReviews).toHaveBeenNthCalledWith(2, { owner: "beherarajesh90", page: 2, per_page: 100, pull_number: 7, repo: "agent-harness" });
+    expect(listReviewComments).toHaveBeenNthCalledWith(1, { owner: "beherarajesh90", page: 1, per_page: 100, pull_number: 7, repo: "agent-harness" });
+    expect(listReviewComments).toHaveBeenNthCalledWith(2, { owner: "beherarajesh90", page: 2, per_page: 100, pull_number: 7, repo: "agent-harness" });
+  });
+
+  it("reads PR files, SHA-pinned file contents, and checks", async () => {
+    const listFiles = vi.fn(async ({ page }: { page: number }) => ({
+      data:
+        page === 1
+          ? Array.from({ length: 100 }, (_, index) => ({ filename: `file-${index}.ts`, sha: "a".repeat(40), status: "modified" }))
+          : [{ filename: "apps/forgegate/src/payment-lab.ts", sha: "a".repeat(40), status: "modified" }],
+    }));
+    const getContent = vi.fn(async () => ({
+      data: {
+        content: Buffer.from("payment source", "utf8").toString("base64"),
+        encoding: "base64",
+        path: "apps/forgegate/src/payment-lab.ts",
+        sha: "b".repeat(40),
+        type: "file",
+      },
+    }));
+    const listForRef = vi.fn(async () => ({ data: { check_runs: [{ name: "tests", conclusion: "success" }] } }));
+    const octokit = {
+      rest: {
+        checks: { listForRef },
+        pulls: { get: vi.fn(), listFiles },
+        repos: { getContent },
+      },
+    };
+    const client = createGitHubReadClient({
+      octokit: octokit as never,
+      policy,
+      repository: policy.repository,
+      token: "read-token",
+      writeOctokit: octokit as never,
+      writeToken: "write-token",
+    });
+
+    await expect(client.getPullRequestFiles(7)).resolves.toMatchObject({
+      complete: true,
+      files: [
+        ...Array.from({ length: 100 }, (_, index) => ({ filename: `file-${index}.ts`, sha: "a".repeat(40), status: "modified" })),
+        { filename: "apps/forgegate/src/payment-lab.ts", sha: "a".repeat(40), status: "modified" },
+      ],
+      truncated: false,
+    });
+    await expect(client.getFile("apps/forgegate/src/payment-lab.ts", "b".repeat(40))).resolves.toEqual({
+      content: "payment source",
+      path: "apps/forgegate/src/payment-lab.ts",
+      sha: "b".repeat(40),
+    });
+    await expect(client.getFile("apps/forgegate/src/payment-lab.ts", "main")).rejects.toThrow("commit SHA");
+    expect(getContent).toHaveBeenCalledOnce();
+    await expect(client.getChecks("b".repeat(40))).resolves.toEqual({
+      check_runs: [{ name: "tests", conclusion: "success" }],
+    });
+    expect(listFiles).toHaveBeenNthCalledWith(1, { owner: "beherarajesh90", page: 1, per_page: 100, pull_number: 7, repo: "agent-harness" });
+    expect(listFiles).toHaveBeenNthCalledWith(2, { owner: "beherarajesh90", page: 2, per_page: 100, pull_number: 7, repo: "agent-harness" });
+    expect(getContent).toHaveBeenCalledWith({ owner: "beherarajesh90", path: "apps/forgegate/src/payment-lab.ts", ref: "b".repeat(40), repo: "agent-harness" });
+    expect(listForRef).toHaveBeenCalledWith({ owner: "beherarajesh90", per_page: 100, ref: "b".repeat(40), repo: "agent-harness" });
+  });
+
   it("uses the expected head in the atomic commit when the branch races", async () => {
     const expectedHeadSha = "a".repeat(40);
     let currentHeadSha = expectedHeadSha;

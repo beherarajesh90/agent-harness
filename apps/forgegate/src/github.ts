@@ -19,6 +19,31 @@ export type CommitFilesResult = {
   url: string;
 };
 
+export type PullRequestFilesResult = {
+  complete: boolean;
+  files: unknown[];
+  truncated: boolean;
+};
+
+export type ReviewCommentsResult = {
+  comments: unknown[];
+  complete: boolean;
+  truncated: boolean;
+};
+
+export type QodoReviewsResult = {
+  complete: boolean;
+  reviews: unknown[];
+  truncated: boolean;
+};
+
+export function isFullCommitSha(ref: string) {
+  return /^[a-f0-9]{40}$/.test(ref);
+}
+
+const pullRequestFilesPageSize = 100;
+const pullRequestFilesMaxPages = 10;
+
 // Source: https://docs.github.com/en/graphql/reference/commits
 // createCommitOnBranch checks expectedHeadOid while creating and advancing the branch.
 const createCommitOnBranchMutation = `
@@ -65,6 +90,8 @@ export function createGitHubReadClient({
   const writeGithub = writeOctokit ?? new Octokit({ auth: writeToken });
 
   return {
+    repository,
+
     async getPullRequest(pullNumber: number) {
       const { data } = await github.rest.pulls.get({
         owner,
@@ -72,6 +99,90 @@ export function createGitHubReadClient({
         repo,
       });
       return data;
+    },
+
+    async getPullRequestFiles(pullNumber: number): Promise<PullRequestFilesResult> {
+      const files: unknown[] = [];
+      for (let page = 1; page <= pullRequestFilesMaxPages; page += 1) {
+        const { data } = await github.rest.pulls.listFiles({
+          owner,
+          page,
+          per_page: pullRequestFilesPageSize,
+          pull_number: pullNumber,
+          repo,
+        });
+        files.push(...data);
+        if (data.length < pullRequestFilesPageSize) {
+          return { complete: true, files, truncated: false };
+        }
+      }
+
+      return { complete: false, files, truncated: true };
+    },
+
+    async getFile(path: string, ref: string) {
+      if (!isFullCommitSha(ref)) {
+        throw new Error("GitHub file ref must be a full commit SHA");
+      }
+
+      const { data } = await github.rest.repos.getContent({ owner, path, ref, repo });
+      if (Array.isArray(data) || data.type !== "file" || data.encoding !== "base64") {
+        throw new Error("GitHub file read did not return a base64-encoded file");
+      }
+
+      return {
+        content: Buffer.from(data.content, "base64").toString("utf8"),
+        path: data.path,
+        sha: data.sha,
+      };
+    },
+
+    async getChecks(ref: string) {
+      const { data } = await github.rest.checks.listForRef({
+        owner,
+        per_page: 100,
+        ref,
+        repo,
+      });
+      return data;
+    },
+
+    async getQodoReviews(pullNumber: number): Promise<QodoReviewsResult> {
+      const reviews: unknown[] = [];
+      for (let page = 1; page <= pullRequestFilesMaxPages; page += 1) {
+        const { data } = await github.rest.pulls.listReviews({
+          owner,
+          page,
+          per_page: pullRequestFilesPageSize,
+          pull_number: pullNumber,
+          repo,
+        });
+        reviews.push(...data);
+        if (data.length < pullRequestFilesPageSize) {
+          return { complete: true, reviews, truncated: false };
+        }
+      }
+
+      return { complete: false, reviews, truncated: true };
+    },
+
+    async getReviewComments(pullNumber: number): Promise<ReviewCommentsResult> {
+      const comments: unknown[] = [];
+      for (let page = 1; page <= pullRequestFilesMaxPages; page += 1) {
+        const { data } = await github.rest.pulls.listReviewComments({
+          owner,
+          page,
+          per_page: pullRequestFilesPageSize,
+          pull_number: pullNumber,
+          repo,
+        });
+        comments.push(...data);
+        if (data.length < pullRequestFilesPageSize) {
+          return { comments, complete: true, truncated: false };
+        }
+      }
+
+      return { comments, complete: false, truncated: true };
     },
 
     async commitFiles(input: CommitFilesInput): Promise<CommitFilesResult> {
