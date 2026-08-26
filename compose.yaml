@@ -9,6 +9,8 @@ services:
       PORT: 3000
       HOST: 0.0.0.0
       TRUEFORGE_BASE_URL: http://trueforge:8790
+      TRUEFORGE_MODEL: ${TRUEFORGE_MODEL:-openrouter/openai-gpt-oss-120b}
+      FORGEGATE_DEMO_REPO: ${FORGEGATE_DEMO_REPO:-}
     ports:
       - "127.0.0.1:${FORGEGATE_PORT:-3100}:3000"
     depends_on:
