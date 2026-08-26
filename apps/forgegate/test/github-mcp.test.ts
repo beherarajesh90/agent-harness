@@ -23,7 +23,7 @@ describe("GitHub MCP server", () => {
 
   it("serves separate stateless HTTP requests", async () => {
     const getPullRequest = vi.fn(async (pullNumber: number) => ({ number: pullNumber }));
-    const getPullRequestFiles = vi.fn(async (pullNumber: number) => [{ pullNumber }]);
+    const getPullRequestFiles = vi.fn(async (pullNumber: number) => ({ complete: true, files: [{ pullNumber }], truncated: false }));
     const getFile = vi.fn(async (path: string, ref: string) => ({ content: "source", path, ref }));
     const getChecks = vi.fn(async (ref: string) => ({ check_runs: [{ ref }] }));
     const getQodoReviews = vi.fn(async (pullNumber: number) => [{ pullNumber, reviewer: "qodo" }]);
@@ -65,7 +65,7 @@ describe("GitHub MCP server", () => {
     await expect(
       client.callTool({ arguments: { pull_number: 42, repository: "beherarajesh90/agent-harness" }, name: "get_pull_request_files" }),
     ).resolves.toMatchObject({
-      content: [{ text: JSON.stringify([{ pullNumber: 42 }]), type: "text" }],
+      content: [{ text: JSON.stringify({ complete: true, files: [{ pullNumber: 42 }], truncated: false }), type: "text" }],
     });
     await expect(
       client.callTool({ arguments: { path: "apps/forgegate/src/payment-lab.ts", ref: "a".repeat(40), repository: "beherarajesh90/agent-harness" }, name: "get_file" }),
@@ -121,7 +121,7 @@ describe("GitHub MCP server", () => {
       number: pullNumber,
       title: "Fix payment retry idempotency",
     }));
-    const getPullRequestFiles = vi.fn(async (pullNumber: number) => [{ number: pullNumber }]);
+    const getPullRequestFiles = vi.fn(async (pullNumber: number) => ({ complete: true, files: [{ number: pullNumber }], truncated: false }));
     const getFile = vi.fn(async (path: string, ref: string) => ({ path, ref }));
     const getChecks = vi.fn(async (ref: string) => ({ ref }));
     const getQodoReviews = vi.fn(async (pullNumber: number) => [{ pullNumber }]);
@@ -182,7 +182,7 @@ describe("GitHub MCP server", () => {
     await expect(
       client.callTool({ arguments: { pull_number: 42, repository: "beherarajesh90/agent-harness" }, name: "get_pull_request_files" }),
     ).resolves.toMatchObject({
-      content: [{ text: JSON.stringify([{ number: 42 }]), type: "text" }],
+      content: [{ text: JSON.stringify({ complete: true, files: [{ number: 42 }], truncated: false }), type: "text" }],
     });
     await expect(
       client.callTool({ arguments: { path: "payment-lab.ts", ref: "a".repeat(40), repository: "beherarajesh90/agent-harness" }, name: "get_file" }),

@@ -19,6 +19,15 @@ export type CommitFilesResult = {
   url: string;
 };
 
+export type PullRequestFilesResult = {
+  complete: boolean;
+  files: unknown[];
+  truncated: boolean;
+};
+
+const pullRequestFilesPageSize = 100;
+const pullRequestFilesMaxPages = 10;
+
 // Source: https://docs.github.com/en/graphql/reference/commits
 // createCommitOnBranch checks expectedHeadOid while creating and advancing the branch.
 const createCommitOnBranchMutation = `
@@ -76,14 +85,23 @@ export function createGitHubReadClient({
       return data;
     },
 
-    async getPullRequestFiles(pullNumber: number) {
-      const { data } = await github.rest.pulls.listFiles({
-        owner,
-        per_page: 100,
-        pull_number: pullNumber,
-        repo,
-      });
-      return data;
+    async getPullRequestFiles(pullNumber: number): Promise<PullRequestFilesResult> {
+      const files: unknown[] = [];
+      for (let page = 1; page <= pullRequestFilesMaxPages; page += 1) {
+        const { data } = await github.rest.pulls.listFiles({
+          owner,
+          page,
+          per_page: pullRequestFilesPageSize,
+          pull_number: pullNumber,
+          repo,
+        });
+        files.push(...data);
+        if (data.length < pullRequestFilesPageSize) {
+          return { complete: true, files, truncated: false };
+        }
+      }
+
+      return { complete: false, files, truncated: true };
     },
 
     async getFile(path: string, ref: string) {

@@ -38,8 +38,11 @@ describe("GitHub commit client", () => {
   });
 
   it("reads PR files, SHA-pinned file contents, and checks", async () => {
-    const listFiles = vi.fn(async () => ({
-      data: [{ filename: "apps/forgegate/src/payment-lab.ts", sha: "a".repeat(40), status: "modified" }],
+    const listFiles = vi.fn(async ({ page }: { page: number }) => ({
+      data:
+        page === 1
+          ? Array.from({ length: 100 }, (_, index) => ({ filename: `file-${index}.ts`, sha: "a".repeat(40), status: "modified" }))
+          : [{ filename: "apps/forgegate/src/payment-lab.ts", sha: "a".repeat(40), status: "modified" }],
     }));
     const getContent = vi.fn(async () => ({
       data: {
@@ -67,9 +70,14 @@ describe("GitHub commit client", () => {
       writeToken: "write-token",
     });
 
-    await expect(client.getPullRequestFiles(7)).resolves.toEqual([
-      { filename: "apps/forgegate/src/payment-lab.ts", sha: "a".repeat(40), status: "modified" },
-    ]);
+    await expect(client.getPullRequestFiles(7)).resolves.toMatchObject({
+      complete: true,
+      files: [
+        ...Array.from({ length: 100 }, (_, index) => ({ filename: `file-${index}.ts`, sha: "a".repeat(40), status: "modified" })),
+        { filename: "apps/forgegate/src/payment-lab.ts", sha: "a".repeat(40), status: "modified" },
+      ],
+      truncated: false,
+    });
     await expect(client.getFile("apps/forgegate/src/payment-lab.ts", "b".repeat(40))).resolves.toEqual({
       content: "payment source",
       path: "apps/forgegate/src/payment-lab.ts",
@@ -78,7 +86,8 @@ describe("GitHub commit client", () => {
     await expect(client.getChecks("b".repeat(40))).resolves.toEqual({
       check_runs: [{ name: "tests", conclusion: "success" }],
     });
-    expect(listFiles).toHaveBeenCalledWith({ owner: "beherarajesh90", per_page: 100, pull_number: 7, repo: "agent-harness" });
+    expect(listFiles).toHaveBeenNthCalledWith(1, { owner: "beherarajesh90", page: 1, per_page: 100, pull_number: 7, repo: "agent-harness" });
+    expect(listFiles).toHaveBeenNthCalledWith(2, { owner: "beherarajesh90", page: 2, per_page: 100, pull_number: 7, repo: "agent-harness" });
     expect(getContent).toHaveBeenCalledWith({ owner: "beherarajesh90", path: "apps/forgegate/src/payment-lab.ts", ref: "b".repeat(40), repo: "agent-harness" });
     expect(listForRef).toHaveBeenCalledWith({ owner: "beherarajesh90", per_page: 100, ref: "b".repeat(40), repo: "agent-harness" });
   });
