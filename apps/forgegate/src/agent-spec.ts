@@ -64,6 +64,15 @@ export const experimentResultSchema = z
   })
   .strict();
 
+const investigationResponseSchema = z
+  .object({
+    decision: z.enum(["BLOCKED", "READY", "UNCERTAIN"]),
+    experimentResult: experimentResultSchema,
+    invariants: z.array(invariantCandidateSchema).min(1),
+    scenarios: z.array(scenarioPlanSchema).min(1),
+  })
+  .strict();
+
 export function validateAnalystArtifacts(input: { invariants: unknown; scenarios: unknown }) {
   const invariants = z.array(invariantCandidateSchema).parse(input.invariants);
   const scenarios = z.array(scenarioPlanSchema).parse(input.scenarios);
@@ -103,6 +112,15 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "Use the sandbox only for disposable work.",
       "Never commit, comment, trigger Qodo, merge, deploy, force-push, delete, access credentials, or run host commands without the configured tool boundary and required approval.",
     ].join(" "),
+    responseFormat: {
+      type: "json_schema",
+      jsonSchema: {
+        description: "Complete ForgeGate investigation evidence bundle.",
+        name: "forgegate_investigation",
+        schema: z.toJSONSchema(investigationResponseSchema),
+        strict: true,
+      },
+    },
     mcpServers: [
       {
         enableTools: [

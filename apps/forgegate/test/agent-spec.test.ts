@@ -27,7 +27,10 @@ describe("ForgeGate agent specification", () => {
       model: { name: "ollama-local/qwen35-4b" },
       skills: [],
     });
-    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").responseFormat).toBeUndefined();
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").responseFormat).toMatchObject({
+      type: "json_schema",
+      jsonSchema: { name: "forgegate_investigation", strict: true },
+    });
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("InvariantCandidate"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("ScenarioPlan"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("exactly two visible dynamic subagents"));
