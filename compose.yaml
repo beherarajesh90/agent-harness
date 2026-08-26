@@ -51,6 +51,20 @@ services:
       retries: 10
       start_period: 15s
 
+  github-mcp:
+    build:
+      context: .
+      dockerfile: apps/forgegate/Dockerfile
+    command: ["node", "apps/forgegate/dist/src/github-mcp-server.js"]
+    environment:
+      FORGEGATE_DEMO_REPO: ${FORGEGATE_DEMO_REPO:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      HOST: 0.0.0.0
+      PORT: 8800
+    expose:
+      - "8800"
+    profiles: ["github"]
+
   postgres:
     image: postgres:17
     env_file:

@@ -1361,13 +1361,13 @@ Last repository verification: 2026-08-26.
 - [x] A strict Node 24/pnpm workspace, Fastify health service, Vitest suite, and Docker Compose configuration now exist on `feature/phase-1-foundation`.
 - [x] `docker compose up --wait` started ForgeGate and TrueForge successfully through Docker Desktop; `127.0.0.1:3100/health/ready` and `127.0.0.1:8790/healthz` both responded successfully, while Postgres and Redis remained private.
 - [x] ForgeGate pins `@truefoundry/trueforge-sdk` at `0.1.3`; its SDK-backed readiness probe is verified against the pinned TrueForge `0.1.4` container.
-- [x] A deterministic GitHub write-policy guard now rejects repository, branch, SHA, operation, path, file-count, and byte-limit violations before any future GitHub client call; MCP transport and tools remain pending.
+- [x] A deterministic GitHub write-policy guard now rejects repository, branch, SHA, operation, path, file-count, and byte-limit violations before any future GitHub client call. A private read-only MCP service now exposes only `get_pull_request`; its mocked Streamable HTTP protocol flow is tested, while live custom-server GitHub credentials remain unverified.
 - [x] `Ubuntu-24.04` is the verified WSL2 target: it can access Docker Desktop and successfully started the full Compose stack with both health endpoints passing. `Ubuntu-26.04` remains unused for this project.
 - [x] WSL2 is available with Ubuntu 24.04. A user-local Node 24.19 runtime was previously installed for feasibility testing; install or verify a Node runtime in Ubuntu 24.04 only when a WSL-hosted Node task requires it.
 - [x] TrueForge v0.1.4 starts in WSL2 standalone mode and serves its API documentation on `localhost:8790`.
 - [x] Qwen3.5 4B responds through local Ollama and a WSL-reachable Ollama endpoint; TrueForge produced valid structured JSON, a visible `create_sub_agent` call/result, and a bounded Daytona patch/test result.
 - [x] Daytona was configured as the selected sandbox after the local fallback failed its internal PyPI dependency-install proof. TrueForge accepted the credential, provisioned a Daytona sandbox, executed `echo SANDBOX_OK && cat ...`, and returned exit code `0` with the expected output.
-- [~] Public demo repository configuration and a read-only GitHub PAT are verified through the official GitHub MCP Docker server; Qodo installation and a real Qodo review are not verified.
+- [~] Public demo repository configuration and a read-only GitHub PAT are verified through the official GitHub MCP Docker server. ForgeGate's private custom MCP service is Docker-profiled, has no host-published port, requires `GITHUB_TOKEN`, and passed a mocked end-to-end Streamable HTTP read flow; a live custom-server GitHub call, Qodo installation, and a real Qodo review are not verified.
 
 ## Recurring Milestone PR Gate
 
@@ -1395,7 +1395,7 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [x] Add baseline lint, typecheck, test, and build commands.
 - [x] Add Docker Compose topology for ForgeGate, TrueForge, Postgres, and Redis.
 - [x] Bind all published services to `127.0.0.1`.
-- [~] Pin tested TrueForge server image, SDK, MCP SDK, and package versions. TrueForge is pinned at `0.1.4` and the compatible published SDK at `0.1.3`; the MCP SDK pin awaits its implementation slice.
+- [x] Pin tested TrueForge server image, SDK, MCP SDK, and package versions: TrueForge `0.1.4`, TrueForge SDK `0.1.3`, MCP SDK `1.30.0`, Octokit `5.0.5`, and Zod `4.3.6`.
 - [x] Add health checks for ForgeGate and TrueForge.
 - [x] Prove clean startup through Docker Desktop and WSL2. `docker compose up --wait` passed from `Ubuntu-24.04` with ForgeGate and TrueForge health checks responding on loopback.
 
@@ -1424,7 +1424,7 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 
 ### Harness proof and external setup
 
-- [ ] Configure bounded GitHub MCP read tools against the chosen public demo repository.
+- [~] Configure bounded GitHub MCP read tools against the chosen public demo repository. The custom service exposes only `get_pull_request` and its mocked protocol flow passes; live custom-server GitHub verification remains.
 - [ ] Configure write tools as TrueForge approval-gated.
 - [ ] Verify rejected approval performs zero GitHub mutations.
 - [ ] Verify a session survives browser reconnect and event replay.
