@@ -138,7 +138,7 @@ export function createPaymentLaboratory(options: PaymentLaboratoryOptions = {}) 
 
       for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
-          const unsafeRetry = attempt === 1 && options.unsafeRetryForIntentIds?.has(input.intentId);
+          const unsafeRetry = attempt === 1;
           const providerIdempotencyKey = unsafeRetry
             ? `${input.idempotencyKey}:retry-${attempt}`
             : input.idempotencyKey;
