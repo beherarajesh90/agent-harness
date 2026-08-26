@@ -28,6 +28,9 @@ describe("ForgeGate agent specification", () => {
       skills: [{ name: "forgegate" }],
     });
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").responseFormat).toBeUndefined();
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("InvariantCandidate"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("ScenarioPlan"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("exactly two visible dynamic subagents"));
   });
 
   it("requires an invariant to cite two files at the tested SHA", () => {
