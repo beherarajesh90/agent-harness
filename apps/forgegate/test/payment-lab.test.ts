@@ -92,6 +92,21 @@ describe("payment laboratory", () => {
     });
   });
 
+  it("reproduces unsafe evidence for 20 consecutive runs", () => {
+    for (let run = 0; run < 20; run += 1) {
+      expect(runUnsafeRetryFixture()).toEqual({
+        charges: 102,
+        intents: 100,
+        ledgerEntries: 100,
+        verdict: "fail",
+        violations: [
+          "one-charge-and-ledger-entry-per-intent:pi-001",
+          "one-charge-and-ledger-entry-per-intent:pi-002",
+        ],
+      });
+    }
+  });
+
   it("passes the safe fixture for 20 consecutive runs", () => {
     for (let run = 0; run < 20; run += 1) {
       expect(runSafeFixture()).toEqual({

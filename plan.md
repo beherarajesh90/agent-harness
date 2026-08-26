@@ -1434,21 +1434,21 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 
 ## Phase 2 - Deterministic Payment Laboratory
 
-- [ ] Implement payment-intent state transitions.
-- [ ] Implement the fake payment provider.
-- [ ] Implement SQLite charge and ledger repositories.
-- [ ] Implement retry worker behavior.
-- [ ] Implement duplicate webhook handling.
-- [ ] Implement idempotency handling.
-- [ ] Implement deterministic fault scheduling.
-- [ ] Implement independent invariant oracle.
-- [ ] Assert primary invariant: one intent has one charge and one ledger entry.
+- [x] Implement payment-intent state transitions.
+- [x] Implement the fake payment provider.
+- [x] Implement SQLite charge and ledger repositories.
+- [x] Implement retry worker behavior.
+- [x] Implement duplicate webhook handling.
+- [x] Implement idempotency handling.
+- [x] Implement deterministic fault scheduling.
+- [x] Implement independent invariant oracle.
+- [x] Assert primary invariant: one intent has one charge and one ledger entry.
 - [ ] Assert supporting retry, webhook, state-transition, failed-settlement, and reconciliation invariants.
-- [ ] Implement mainline safe behavior fixture.
-- [ ] Verify safe behavior passes 20 consecutive deterministic runs.
-- [ ] Implement unsafe retry fixture.
-- [ ] Verify unsafe fixture fails 20 consecutive runs with identical evidence.
-- [ ] Verify unsafe evidence reports 100 intents, 102 charges, and 100 ledger entries.
+- [x] Implement mainline safe behavior fixture.
+- [x] Verify safe behavior passes 20 consecutive deterministic runs.
+- [x] Implement unsafe retry fixture.
+- [x] Verify unsafe fixture fails 20 consecutive runs with identical evidence.
+- [x] Verify unsafe evidence reports 100 intents, 102 charges, and 100 ledger entries.
 - [ ] Implement `pnpm demo:seed`.
 - [ ] Verify seed creates a fresh `forgegate/demo-<timestamp>` branch from `master`.
 - [ ] Verify seed opens a non-draft real PR without reset, force-push, or branch deletion.
