@@ -29,12 +29,18 @@ export type HarnessEvent = {
 };
 
 export type InvestigationSnapshot = {
+  artifacts: InvestigationArtifact[];
   events: HarnessEvent[];
   pullRequestUrl: string;
   sessionId: string;
   stage: Stage;
   status: Status;
   turnId: string;
+};
+
+export type InvestigationArtifact = {
+  data: Record<string, unknown>;
+  type: "ExperimentResult" | "InvariantCandidate" | "ScenarioPlan";
 };
 
 type TrueForgeEventItem = { event: Record<string, unknown>; turnId: string };
@@ -73,6 +79,7 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : terminal ? "READY" : "RUNNING";
 
   return {
+    artifacts: events.flatMap((event) => artifactFromPayload(event.payload)),
     events,
     pullRequestUrl,
     sessionId,
@@ -80,6 +87,19 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
     status,
     turnId: last?.turnId ?? "",
   };
+}
+
+function artifactFromPayload(payload: Record<string, unknown>): InvestigationArtifact[] {
+  const type = payload.artifactType;
+  const data = payload.artifact;
+  if ((type !== "ExperimentResult" && type !== "InvariantCandidate" && type !== "ScenarioPlan") || !isRecord(data)) {
+    return [];
+  }
+  return [{ data, type }];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function createInvestigationService(gateway: InvestigationGateway) {

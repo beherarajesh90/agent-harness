@@ -14,8 +14,18 @@ describe("investigation control plane", () => {
       { eventId: "event-1", sequence: 1 },
       { eventId: "event-2", sequence: 2 },
     ]);
+    expect(snapshot.artifacts).toEqual([]);
     expect(snapshot.status).toBe("READY");
     expect(snapshot.stage).toBe("DECISION");
+  });
+
+  it("projects known structured artifacts from event payloads", () => {
+    const snapshot = projectInvestigation("session-1", "url", [
+      { event: { artifact: { invariantId: "payment-one-charge", seed: 42 }, artifactType: "ScenarioPlan", type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifact: { id: "payment-one-charge" }, artifactType: "Unknown", type: "tool.response" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.artifacts).toEqual([{ data: { invariantId: "payment-one-charge", seed: 42 }, type: "ScenarioPlan" }]);
   });
 
   it("creates, reconstructs, and cancels an investigation", async () => {
@@ -90,9 +100,9 @@ describe("investigation control plane", () => {
 
   it("exposes create, snapshot, and cancel endpoints", async () => {
     const service = {
-      cancel: vi.fn(async () => ({ events: [], pullRequestUrl: "url", sessionId: "session-1", stage: "CONTEXT" as const, status: "CANCELLED" as const, turnId: "turn-1" })),
+      cancel: vi.fn(async () => ({ artifacts: [], events: [], pullRequestUrl: "url", sessionId: "session-1", stage: "CONTEXT" as const, status: "CANCELLED" as const, turnId: "turn-1" })),
       create: vi.fn(async () => ({ sessionId: "session-1", turnId: "turn-1" })),
-      get: vi.fn(async () => ({ events: [], pullRequestUrl: "url", sessionId: "session-1", stage: "CONTEXT" as const, status: "RUNNING" as const, turnId: "turn-1" })),
+      get: vi.fn(async () => ({ artifacts: [], events: [], pullRequestUrl: "url", sessionId: "session-1", stage: "CONTEXT" as const, status: "RUNNING" as const, turnId: "turn-1" })),
     };
     const app = buildApp({ investigationService: service });
 
@@ -105,7 +115,7 @@ describe("investigation control plane", () => {
   });
 
   it("classifies service failures without hiding them as not found", async () => {
-    const snapshot = { events: [], pullRequestUrl: "url", sessionId: "session-1", stage: "CONTEXT" as const, status: "RUNNING" as const, turnId: "turn-1" };
+    const snapshot = { artifacts: [], events: [], pullRequestUrl: "url", sessionId: "session-1", stage: "CONTEXT" as const, status: "RUNNING" as const, turnId: "turn-1" };
     const service = {
       cancel: vi.fn(async () => snapshot),
       create: vi.fn(async () => ({ sessionId: "session-1", turnId: "turn-1" })),
@@ -141,6 +151,7 @@ describe("investigation control plane", () => {
         cancel: vi.fn(),
         create: vi.fn(),
         get: vi.fn(async () => ({
+          artifacts: [],
           events: [
             { eventId: "event-1", occurredAt: "2026-01-01T00:00:00Z", payload: {}, sequence: 1, sessionId: "session-1", source: "SYSTEM" as const, stage: "CONTEXT" as const, turnId: "turn-1", type: "turn.created" },
             { eventId: "event-2", occurredAt: "2026-01-01T00:00:01Z", payload: {}, sequence: 2, sessionId: "session-1", source: "SYSTEM" as const, stage: "DECISION" as const, turnId: "turn-1", type: "turn.done" },

@@ -86,6 +86,7 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "Spawn exactly two visible dynamic subagents: invariant-analyst and failure-mode-analyst.",
       "The invariant-analyst must return one or more InvariantCandidate JSON objects with id, statement, confidence, testedSha, and at least two evidence references containing path, startLine, endLine, and the same testedSha.",
       "The failure-mode-analyst must return one or more ScenarioPlan JSON objects with invariantId, testedSha, seed, injectedFaults, ordering, and expectedOutcome.",
+      "When an artifact is emitted into an event, preserve it under artifactType (InvariantCandidate, ScenarioPlan, or ExperimentResult) and artifact fields.",
       "Do not accept prose as an artifact; validate every candidate and scenario against the ForgeGate schemas before using it.",
       "Use the sandbox only for disposable work.",
       "Never commit, comment, trigger Qodo, merge, deploy, force-push, delete, access credentials, or run host commands without the configured tool boundary and required approval.",
