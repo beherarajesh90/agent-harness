@@ -146,3 +146,6 @@ vite.config.ts.timestamp-*
 playwright-report/
 test-results/
 graphify-out/
+
+# Agent skill assets are installed externally and must not be committed
+**/SKILL.md
