@@ -72,26 +72,35 @@ export function buildApp({
     reply.raw.writeHead(200, { "cache-control": "no-cache", connection: "keep-alive", "content-type": "text/event-stream" });
     let cursor = after;
     let closed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const close = () => {
       if (closed) return;
       closed = true;
-      clearInterval(timer);
+      if (timer) clearTimeout(timer);
       if (!reply.raw.writableEnded) reply.raw.end();
     };
     const pump = async () => {
+      if (closed) return;
       try {
         const snapshot = await investigationService.get(request.params.sessionId);
+        if (closed) return;
         for (const event of snapshot.events.filter((item) => item.sequence > cursor)) {
+          if (closed) return;
           reply.raw.write(`id: ${event.sequence}\nevent: harness\ndata: ${JSON.stringify(event)}\n\n`);
           cursor = event.sequence;
         }
-        if (["READY", "BLOCKED", "UNCERTAIN", "ERROR", "CANCELLED"].includes(snapshot.status)) close();
+        if (closed) return;
+        if (["READY", "BLOCKED", "UNCERTAIN", "ERROR", "CANCELLED"].includes(snapshot.status)) {
+          close();
+          return;
+        }
+        timer = setTimeout(() => void pump(), 250);
       } catch {
+        if (closed) return;
         reply.raw.write(`event: error\ndata: ${JSON.stringify({ code: "STREAM_FAILED", message: "event stream failed" })}\n\n`);
         close();
       }
     };
-    const timer = setInterval(() => void pump(), 250);
     request.raw.on("close", close);
     await pump();
   });
