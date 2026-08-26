@@ -1468,6 +1468,7 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 
 ### Agent and structured evidence
 
+- [x] Create a TrueForge session and root turn from the saved specification.
 - [x] Create saved ForgeGate agent specification.
 - [x] Add ForgeGate skill with evidence hierarchy, stopping rules, and approval policy.
 - [x] Configure dynamic subagents.
