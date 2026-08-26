@@ -1,9 +1,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import type { CommitFilesInput, CommitFilesResult } from "./github.js";
+
 export function createGitHubMcpServer({
+  commitFiles,
   getPullRequest,
 }: {
+  commitFiles: (input: CommitFilesInput) => Promise<CommitFilesResult>;
   getPullRequest: (pullNumber: number) => Promise<unknown>;
 }) {
   const server = new McpServer({ name: "forgegate-github", version: "0.1.0" });
@@ -29,6 +33,43 @@ export function createGitHubMcpServer({
       } catch {
         return {
           content: [{ text: "GitHub pull request read failed.", type: "text" }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.registerTool(
+    "commit_files",
+    {
+      annotations: {
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+        readOnlyHint: false,
+      },
+      description: "Commit bounded payment-lab files to the configured demo branch after TrueForge approval.",
+      inputSchema: z.object({
+        branch: z.string().min(1),
+        expected_head_sha: z.string().length(40),
+        files: z.array(z.object({ content: z.string(), path: z.string().min(1) })).min(1),
+        message: z.string().min(1).max(200),
+        repository: z.string().min(1),
+      }),
+    },
+    async ({ branch, expected_head_sha, files, message, repository }) => {
+      try {
+        const result = await commitFiles({
+          branch,
+          expectedHeadSha: expected_head_sha,
+          files,
+          message,
+          repository,
+        });
+        return { content: [{ text: JSON.stringify(result), type: "text" }] };
+      } catch {
+        return {
+          content: [{ text: "GitHub commit rejected by policy or failed.", type: "text" }],
           isError: true,
         };
       }

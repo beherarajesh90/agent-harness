@@ -2,10 +2,12 @@ import { createServer } from "node:http";
 
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
+import type { CommitFilesInput, CommitFilesResult } from "./github.js";
 import { createGitHubMcpServer } from "./github-mcp.js";
 import { asMcpTransport } from "./mcp-transport.js";
 
 type GitHubReadClient = {
+  commitFiles: (input: CommitFilesInput) => Promise<CommitFilesResult>;
   getPullRequest: (pullNumber: number) => Promise<unknown>;
 };
 

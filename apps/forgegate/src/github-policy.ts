@@ -6,22 +6,26 @@ const allowedOperations = new Set([
 
 export class GitHubPolicyError extends Error {}
 
+export type GitHubMutationPolicy = {
+  repository: string;
+  branchPrefix: string;
+  pathPrefix: string;
+  maxFiles: number;
+  maxBytes: number;
+};
+
+export type GitHubMutation = {
+  repository: string;
+  branch: string;
+  expectedHeadSha: string;
+  actualHeadSha: string;
+  operation: string;
+  files: { path: string; content: string }[];
+};
+
 export function assertGitHubMutationAllowed(
-  policy: {
-    repository: string;
-    branchPrefix: string;
-    pathPrefix: string;
-    maxFiles: number;
-    maxBytes: number;
-  },
-  mutation: {
-    repository: string;
-    branch: string;
-    expectedHeadSha: string;
-    actualHeadSha: string;
-    operation: string;
-    files: { path: string; content: string }[];
-  },
+  policy: GitHubMutationPolicy,
+  mutation: GitHubMutation,
 ) {
   if (mutation.repository !== policy.repository) {
     throw new GitHubPolicyError("repository is not allowed");

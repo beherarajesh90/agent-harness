@@ -22,7 +22,7 @@ describe("GitHub MCP server", () => {
 
   it("serves separate stateless HTTP requests", async () => {
     const getPullRequest = vi.fn(async (pullNumber: number) => ({ number: pullNumber }));
-    const server = createGitHubMcpHttpServer({ getPullRequest });
+    const server = createGitHubMcpHttpServer({ getPullRequest, commitFiles: vi.fn() });
 
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
@@ -37,7 +37,10 @@ describe("GitHub MCP server", () => {
     );
 
     await expect(client.listTools()).resolves.toMatchObject({
-      tools: [expect.objectContaining({ name: "get_pull_request" })],
+      tools: [
+        expect.objectContaining({ name: "get_pull_request" }),
+        expect.objectContaining({ name: "commit_files" }),
+      ],
     });
     await expect(
       client.callTool({ arguments: { pull_number: 42 }, name: "get_pull_request" }),
@@ -56,7 +59,11 @@ describe("GitHub MCP server", () => {
       number: pullNumber,
       title: "Fix payment retry idempotency",
     }));
-    const server = createGitHubMcpServer({ getPullRequest });
+    const commitFiles = vi.fn(async () => ({
+      commitSha: "b".repeat(40),
+      url: "https://github.com/beherarajesh90/agent-harness/commit/" + "b".repeat(40),
+    }));
+    const server = createGitHubMcpServer({ commitFiles, getPullRequest });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     const client = new Client({ name: "forgegate-test", version: "1.0.0" });
 
@@ -64,7 +71,10 @@ describe("GitHub MCP server", () => {
     await client.connect(clientTransport);
 
     await expect(client.listTools()).resolves.toMatchObject({
-      tools: [expect.objectContaining({ name: "get_pull_request" })],
+      tools: [
+        expect.objectContaining({ name: "get_pull_request" }),
+        expect.objectContaining({ name: "commit_files" }),
+      ],
     });
 
     await expect(
@@ -80,6 +90,30 @@ describe("GitHub MCP server", () => {
         },
       ],
     });
+
+    await expect(
+      client.callTool({
+        arguments: {
+          branch: "forgegate/demo-payment-retry",
+          expected_head_sha: "a".repeat(40),
+          files: [{ content: "fix", path: "payment-lab/retry.ts" }],
+          message: "fix: enforce payment idempotency",
+          repository: "beherarajesh90/agent-harness",
+        },
+        name: "commit_files",
+      }),
+    ).resolves.toMatchObject({
+      content: [
+        {
+          text: JSON.stringify({
+            commitSha: "b".repeat(40),
+            url: "https://github.com/beherarajesh90/agent-harness/commit/" + "b".repeat(40),
+          }),
+          type: "text",
+        },
+      ],
+    });
+    expect(commitFiles).toHaveBeenCalledOnce();
     expect(getPullRequest).toHaveBeenCalledWith(42);
 
     await client.close();
