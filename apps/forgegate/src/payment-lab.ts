@@ -124,10 +124,13 @@ export function createPaymentLaboratory(options: PaymentLaboratoryOptions = {}) 
   return {
     processPayment(input: PaymentInput): PaymentResult {
       const existing = findIntentByIdempotencyKey.get(input.idempotencyKey) as
-        | { id: string; status: "pending" | "settled" }
+        | { id: string; status: PaymentStatus }
         | undefined;
       if (existing?.status === "settled") {
         return { intentId: existing.id, status: "settled" };
+      }
+      if (existing?.status === "failed") {
+        throw new Error(`payment intent ${existing.id} is failed`);
       }
       if (!existing) {
         createIntent.run(input.intentId, input.amount, input.idempotencyKey);

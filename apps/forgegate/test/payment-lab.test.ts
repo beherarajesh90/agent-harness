@@ -101,6 +101,27 @@ describe("payment laboratory", () => {
     });
   });
 
+  it("does not settle a replay of a failed payment intent", () => {
+    const declinedIntentIds = new Set(["pi-106"]);
+    const laboratory = createPaymentLaboratory({
+      faultSchedule: { failBeforeChargeForIntentIds: declinedIntentIds },
+    });
+    const input = { amount: 500, idempotencyKey: "checkout-106", intentId: "pi-106" };
+
+    expect(() => laboratory.processPayment(input)).toThrow("provider declined pi-106");
+    declinedIntentIds.clear();
+
+    expect(() => laboratory.processPayment(input)).toThrow("payment intent pi-106 is failed");
+    expect(laboratory.intentStatus("pi-106")).toBe("failed");
+    expect(laboratory.evaluateInvariants()).toEqual({
+      charges: 0,
+      intents: 1,
+      ledgerEntries: 0,
+      verdict: "pass",
+      violations: [],
+    });
+  });
+
   it("produces deterministic duplicate-charge evidence for the unsafe retry fixture", () => {
     expect(runUnsafeRetryFixture()).toEqual({
       charges: 102,
