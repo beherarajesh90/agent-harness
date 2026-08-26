@@ -1,0 +1,22 @@
+import { describe, expect, it } from "vitest";
+
+import { createPaymentLaboratory } from "../src/payment-lab.js";
+
+describe("payment laboratory", () => {
+  it("creates one charge and one ledger entry for a settled payment intent", () => {
+    const laboratory = createPaymentLaboratory();
+
+    const result = laboratory.processPayment({
+      amount: 500,
+      idempotencyKey: "checkout-100",
+      intentId: "pi-100",
+    });
+
+    expect(result).toEqual({ intentId: "pi-100", status: "settled" });
+    expect(laboratory.evidence()).toEqual({
+      charges: 1,
+      intents: 1,
+      ledgerEntries: 1,
+    });
+  });
+});
