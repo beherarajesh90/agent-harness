@@ -1449,7 +1449,7 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [x] Implement unsafe retry fixture.
 - [x] Verify unsafe fixture fails 20 consecutive runs with identical evidence.
 - [x] Verify unsafe evidence reports 100 intents, 102 charges, and 100 ledger entries.
-- [ ] Implement `pnpm demo:seed`.
+- [x] Implement `pnpm demo:seed`.
 - [ ] Verify seed creates a fresh `forgegate/demo-<timestamp>` branch from `master`.
 - [ ] Verify seed opens a non-draft real PR without reset, force-push, or branch deletion.
 
