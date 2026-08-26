@@ -1,4 +1,4 @@
-import { invariantCandidateSchema, scenarioPlanSchema } from "./agent-spec.js";
+import { experimentResultSchema, invariantCandidateSchema, scenarioPlanSchema } from "./agent-spec.js";
 
 export const stages = [
   "CONTEXT",
@@ -79,7 +79,10 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const last = events.at(-1);
   const terminal = last?.type === "turn.done";
   const state = last?.payload.state as { status?: string } | undefined;
-  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : terminal ? artifacts.length > 0 ? "READY" : "UNCERTAIN" : "RUNNING";
+  const artifactTypes = new Set(artifacts.map((artifact) => artifact.type));
+  const requiredArtifactTypes: InvestigationArtifact["type"][] = ["InvariantCandidate", "ScenarioPlan", "ExperimentResult"];
+  const completeEvidence = requiredArtifactTypes.every((type) => artifactTypes.has(type));
+  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : terminal ? completeEvidence ? "READY" : "UNCERTAIN" : "RUNNING";
 
   return {
     artifacts,
@@ -109,6 +112,7 @@ function readArtifact(type: unknown, value: unknown): InvestigationArtifact[] {
     if (!isRecord(candidate)) return [];
     if (type === "InvariantCandidate" && !invariantCandidateSchema.safeParse(candidate).success) return [];
     if (type === "ScenarioPlan" && !scenarioPlanSchema.safeParse(candidate).success) return [];
+    if (type === "ExperimentResult" && !experimentResultSchema.safeParse(candidate).success) return [];
     return [{ data: candidate, type }];
   });
 }

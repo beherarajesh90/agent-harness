@@ -46,6 +46,18 @@ describe("investigation control plane", () => {
     expect(snapshot.artifacts[0]!.type).toBe("InvariantCandidate");
   });
 
+  it("requires all evidence artifact types before projecting READY", () => {
+    const sha = "a".repeat(40);
+    const items = [
+      { event: { state: { status: "done" }, type: "turn.done" }, turnId: "turn-1" },
+      { event: { artifactType: "InvariantCandidate", artifact: { confidence: 1, evidence: [{ endLine: 1, path: "a.ts", sha, startLine: 1 }, { endLine: 2, path: "b.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha }, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ScenarioPlan", artifact: { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge", "timeout"], seed: 1, testedSha: sha }, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], expected: { charges: 100, intents: 100, ledgerEntries: 100 }, observed: { charges: 100, intents: 100, ledgerEntries: 100 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "pass" }, type: "tool.response" }, turnId: "turn-1" },
+    ];
+
+    expect(projectInvestigation("session-1", "url", items).status).toBe("READY");
+  });
+
   it("creates, reconstructs, and cancels an investigation", async () => {
     const gateway = {
       cancel: vi.fn(async () => undefined),

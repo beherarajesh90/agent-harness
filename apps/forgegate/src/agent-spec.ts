@@ -52,6 +52,18 @@ export const scenarioPlanSchema = z
   })
   .strict();
 
+export const experimentResultSchema = z
+  .object({
+    artifactLinks: z.array(z.string().min(1)).min(1),
+    expected: z.object({ charges: z.number().int().nonnegative(), intents: z.number().int().nonnegative(), ledgerEntries: z.number().int().nonnegative() }).strict(),
+    observed: z.object({ charges: z.number().int().nonnegative(), intents: z.number().int().nonnegative(), ledgerEntries: z.number().int().nonnegative() }).strict(),
+    repetitions: z.number().int().positive(),
+    seed: z.number().int().nonnegative(),
+    testedSha: shaSchema,
+    verdict: z.enum(["pass", "fail"]),
+  })
+  .strict();
+
 export function validateAnalystArtifacts(input: { invariants: unknown; scenarios: unknown }) {
   const invariants = z.array(invariantCandidateSchema).parse(input.invariants);
   const scenarios = z.array(scenarioPlanSchema).parse(input.scenarios);
