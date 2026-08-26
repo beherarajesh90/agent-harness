@@ -26,7 +26,7 @@ describe("GitHub MCP server", () => {
     const getPullRequestFiles = vi.fn(async (pullNumber: number) => ({ complete: true, files: [{ pullNumber }], truncated: false }));
     const getFile = vi.fn(async (path: string, ref: string) => ({ content: "source", path, ref }));
     const getChecks = vi.fn(async (ref: string) => ({ check_runs: [{ ref }] }));
-    const getQodoReviews = vi.fn(async (pullNumber: number) => [{ pullNumber, reviewer: "qodo" }]);
+    const getQodoReviews = vi.fn(async (pullNumber: number) => ({ complete: true, reviews: [{ pullNumber, reviewer: "qodo" }], truncated: false }));
     const getReviewComments = vi.fn(async (pullNumber: number) => ({ complete: true, comments: [{ body: "review", pullNumber }], truncated: false }));
     const approvalStore = createGitHubApprovalStore();
     const server = createGitHubMcpHttpServer(
@@ -80,7 +80,7 @@ describe("GitHub MCP server", () => {
     await expect(
       client.callTool({ arguments: { pull_number: 42, repository: "beherarajesh90/agent-harness" }, name: "get_qodo_reviews" }),
     ).resolves.toMatchObject({
-      content: [{ text: JSON.stringify([{ pullNumber: 42, reviewer: "qodo" }]), type: "text" }],
+      content: [{ text: JSON.stringify({ complete: true, reviews: [{ pullNumber: 42, reviewer: "qodo" }], truncated: false }), type: "text" }],
     });
     await expect(
       client.callTool({ arguments: { pull_number: 42, repository: "beherarajesh90/agent-harness" }, name: "get_review_comments" }),
@@ -124,7 +124,7 @@ describe("GitHub MCP server", () => {
     const getPullRequestFiles = vi.fn(async (pullNumber: number) => ({ complete: true, files: [{ number: pullNumber }], truncated: false }));
     const getFile = vi.fn(async (path: string, ref: string) => ({ path, ref }));
     const getChecks = vi.fn(async (ref: string) => ({ ref }));
-    const getQodoReviews = vi.fn(async (pullNumber: number) => [{ pullNumber }]);
+    const getQodoReviews = vi.fn(async (pullNumber: number) => ({ complete: true, reviews: [{ pullNumber }], truncated: false }));
     const getReviewComments = vi.fn(async (pullNumber: number) => ({ complete: true, comments: [{ pullNumber }], truncated: false }));
     const commitFiles = vi.fn(async () => ({
       commitSha: "b".repeat(40),
@@ -201,7 +201,7 @@ describe("GitHub MCP server", () => {
     await expect(
       client.callTool({ arguments: { pull_number: 42, repository: "beherarajesh90/agent-harness" }, name: "get_qodo_reviews" }),
     ).resolves.toMatchObject({
-      content: [{ text: JSON.stringify([{ pullNumber: 42 }]), type: "text" }],
+      content: [{ text: JSON.stringify({ complete: true, reviews: [{ pullNumber: 42 }], truncated: false }), type: "text" }],
     });
     await expect(
       client.callTool({ arguments: { pull_number: 42, repository: "beherarajesh90/agent-harness" }, name: "get_review_comments" }),

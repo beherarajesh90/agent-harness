@@ -31,6 +31,12 @@ export type ReviewCommentsResult = {
   truncated: boolean;
 };
 
+export type QodoReviewsResult = {
+  complete: boolean;
+  reviews: unknown[];
+  truncated: boolean;
+};
+
 export function isFullCommitSha(ref: string) {
   return /^[a-f0-9]{40}$/.test(ref);
 }
@@ -141,14 +147,23 @@ export function createGitHubReadClient({
       return data;
     },
 
-    async getQodoReviews(pullNumber: number) {
-      const { data } = await github.rest.pulls.listReviews({
-        owner,
-        per_page: 100,
-        pull_number: pullNumber,
-        repo,
-      });
-      return data;
+    async getQodoReviews(pullNumber: number): Promise<QodoReviewsResult> {
+      const reviews: unknown[] = [];
+      for (let page = 1; page <= pullRequestFilesMaxPages; page += 1) {
+        const { data } = await github.rest.pulls.listReviews({
+          owner,
+          page,
+          per_page: pullRequestFilesPageSize,
+          pull_number: pullNumber,
+          repo,
+        });
+        reviews.push(...data);
+        if (data.length < pullRequestFilesPageSize) {
+          return { complete: true, reviews, truncated: false };
+        }
+      }
+
+      return { complete: false, reviews, truncated: true };
     },
 
     async getReviewComments(pullNumber: number): Promise<ReviewCommentsResult> {

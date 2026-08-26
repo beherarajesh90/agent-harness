@@ -13,7 +13,9 @@ const policy = {
 
 describe("GitHub commit client", () => {
   it("reads pull request reviews and review comments for Qodo classification", async () => {
-    const listReviews = vi.fn(async () => ({ data: [{ id: 11, user: { login: "qodo" }, state: "COMMENTED" }] }));
+    const listReviews = vi.fn(async ({ page }: { page: number }) => ({
+      data: page === 1 ? Array.from({ length: 100 }, (_, id) => ({ id, user: { login: "qodo" }, state: "COMMENTED" })) : [{ id: 101, user: { login: "qodo" }, state: "APPROVED" }],
+    }));
     const listReviewComments = vi.fn(async ({ page }: { page: number }) => ({
       data: page === 1 ? Array.from({ length: 100 }, (_, id) => ({ id, body: "review" })) : [{ id: 12, body: "Add a regression test" }],
     }));
@@ -31,15 +33,18 @@ describe("GitHub commit client", () => {
       writeToken: "write-token",
     });
 
-    await expect(client.getQodoReviews(7)).resolves.toEqual([
-      { id: 11, user: { login: "qodo" }, state: "COMMENTED" },
-    ]);
+    await expect(client.getQodoReviews(7)).resolves.toMatchObject({
+      complete: true,
+      reviews: [...Array.from({ length: 100 }, (_, id) => ({ id, user: { login: "qodo" }, state: "COMMENTED" })), { id: 101, user: { login: "qodo" }, state: "APPROVED" }],
+      truncated: false,
+    });
     await expect(client.getReviewComments(7)).resolves.toMatchObject({
       comments: [...Array.from({ length: 100 }, (_, id) => ({ id, body: "review" })), { id: 12, body: "Add a regression test" }],
       complete: true,
       truncated: false,
     });
-    expect(listReviews).toHaveBeenCalledWith({ owner: "beherarajesh90", per_page: 100, pull_number: 7, repo: "agent-harness" });
+    expect(listReviews).toHaveBeenNthCalledWith(1, { owner: "beherarajesh90", page: 1, per_page: 100, pull_number: 7, repo: "agent-harness" });
+    expect(listReviews).toHaveBeenNthCalledWith(2, { owner: "beherarajesh90", page: 2, per_page: 100, pull_number: 7, repo: "agent-harness" });
     expect(listReviewComments).toHaveBeenNthCalledWith(1, { owner: "beherarajesh90", page: 1, per_page: 100, pull_number: 7, repo: "agent-harness" });
     expect(listReviewComments).toHaveBeenNthCalledWith(2, { owner: "beherarajesh90", page: 2, per_page: 100, pull_number: 7, repo: "agent-harness" });
   });
