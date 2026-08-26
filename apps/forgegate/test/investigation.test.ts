@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { buildApp } from "../src/app.js";
-import { createInvestigationService, IdempotencyConflictError, projectInvestigation } from "../src/investigation.js";
+import { createInvestigationService, IdempotencyConflictError, InvestigationNotFoundError, projectInvestigation } from "../src/investigation.js";
 
 describe("investigation control plane", () => {
   it("projects newest-first TrueForge events into ordered SSE events", () => {
@@ -101,6 +101,37 @@ describe("investigation control plane", () => {
     await expect(app.inject({ headers: { "idempotency-key": "request-1" }, method: "POST", payload: { pullRequestUrl: "other-url" }, url: "/api/investigations" })).resolves.toMatchObject({ statusCode: 409 });
     await expect(app.inject({ method: "GET", url: "/api/investigations/session-1" })).resolves.toMatchObject({ statusCode: 200 });
     await expect(app.inject({ method: "POST", url: "/api/investigations/session-1/cancel" })).resolves.toMatchObject({ statusCode: 202 });
+    await app.close();
+  });
+
+  it("classifies service failures without hiding them as not found", async () => {
+    const snapshot = { events: [], pullRequestUrl: "url", sessionId: "session-1", stage: "CONTEXT" as const, status: "RUNNING" as const, turnId: "turn-1" };
+    const service = {
+      cancel: vi.fn(async () => snapshot),
+      create: vi.fn(async () => ({ sessionId: "session-1", turnId: "turn-1" })),
+      get: vi.fn(async () => snapshot),
+    };
+    const app = buildApp({ investigationService: service });
+
+    service.get.mockRejectedValueOnce(new InvestigationNotFoundError());
+    await expect(app.inject({ method: "GET", url: "/api/investigations/missing" })).resolves.toMatchObject({ statusCode: 404 });
+    service.get.mockRejectedValueOnce(new Error("database failed"));
+    await expect(app.inject({ method: "GET", url: "/api/investigations/session-1" })).resolves.toMatchObject({ statusCode: 502 });
+    service.get.mockRejectedValueOnce(new Error("TrueForge timeout"));
+    await expect(app.inject({ method: "GET", url: "/api/investigations/session-1" })).resolves.toMatchObject({ statusCode: 503 });
+
+    service.create.mockRejectedValueOnce(new Error("provider failed"));
+    await expect(app.inject({ method: "POST", payload: { pullRequestUrl: "url" }, url: "/api/investigations" })).resolves.toMatchObject({ statusCode: 502 });
+    service.create.mockRejectedValueOnce(new Error("TrueForge unavailable"));
+    await expect(app.inject({ method: "POST", payload: { pullRequestUrl: "url" }, url: "/api/investigations" })).resolves.toMatchObject({ statusCode: 503 });
+
+    service.cancel.mockRejectedValueOnce(new InvestigationNotFoundError());
+    await expect(app.inject({ method: "POST", url: "/api/investigations/session-1/cancel" })).resolves.toMatchObject({ statusCode: 404 });
+    service.cancel.mockRejectedValueOnce(new Error("cancel failed"));
+    await expect(app.inject({ method: "POST", url: "/api/investigations/session-1/cancel" })).resolves.toMatchObject({ statusCode: 502 });
+    service.cancel.mockRejectedValueOnce(new Error("TrueForge timeout"));
+    await expect(app.inject({ method: "POST", url: "/api/investigations/session-1/cancel" })).resolves.toMatchObject({ statusCode: 503 });
+
     await app.close();
   });
 

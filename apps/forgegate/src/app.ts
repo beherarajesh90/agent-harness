@@ -1,5 +1,5 @@
-import Fastify from "fastify";
-import { IdempotencyConflictError } from "./investigation.js";
+import Fastify, { type FastifyReply } from "fastify";
+import { IdempotencyConflictError, InvestigationNotFoundError } from "./investigation.js";
 import type { InvestigationSnapshot } from "./investigation.js";
 
 type InvestigationService = {
@@ -40,7 +40,7 @@ export function buildApp({
       if (error instanceof IdempotencyConflictError) {
         return reply.code(409).send({ code: "IDEMPOTENCY_CONFLICT", message: error.message });
       }
-      return reply.code(422).send({ code: "INVESTIGATION_REJECTED", message: "investigation could not be started" });
+      return sendServiceFailure(reply, error, "INVESTIGATION_FAILED", "investigation could not be started");
     }
   });
 
@@ -48,8 +48,11 @@ export function buildApp({
     if (!investigationService) return reply.code(503).send({ code: "UNAVAILABLE", message: "investigation service unavailable" });
     try {
       return await investigationService.get(request.params.sessionId);
-    } catch {
-      return reply.code(404).send({ code: "NOT_FOUND", message: "investigation not found" });
+    } catch (error) {
+      if (error instanceof InvestigationNotFoundError) {
+        return reply.code(404).send({ code: "NOT_FOUND", message: error.message });
+      }
+      return sendServiceFailure(reply, error, "INVESTIGATION_READ_FAILED", "investigation could not be read");
     }
   });
 
@@ -58,8 +61,11 @@ export function buildApp({
     try {
       const snapshot = await investigationService.cancel(request.params.sessionId);
       return reply.code(202).send({ sessionId: snapshot.sessionId, status: snapshot.status });
-    } catch {
-      return reply.code(404).send({ code: "NOT_FOUND", message: "investigation not found" });
+    } catch (error) {
+      if (error instanceof InvestigationNotFoundError) {
+        return reply.code(404).send({ code: "NOT_FOUND", message: error.message });
+      }
+      return sendServiceFailure(reply, error, "INVESTIGATION_CANCEL_FAILED", "investigation could not be cancelled");
     }
   });
 
@@ -106,4 +112,18 @@ export function buildApp({
   });
 
   return app;
+}
+
+function sendServiceFailure(reply: FastifyReply, error: unknown, code: string, message: string) {
+  const unavailable = isUnavailableError(error);
+  return reply.code(unavailable ? 503 : 502).send({
+    code: unavailable ? "DEPENDENCY_UNAVAILABLE" : code,
+    message: unavailable ? "TrueForge is unavailable" : message,
+  });
+}
+
+function isUnavailableError(error: unknown) {
+  const statusCode = typeof error === "object" && error !== null && "statusCode" in error ? error.statusCode : undefined;
+  return statusCode === 408 || statusCode === 429 || statusCode === 503 || statusCode === 504
+    || (error instanceof Error && /timeout|timed out|unavailable|connection refused|econn/i.test(error.message));
 }

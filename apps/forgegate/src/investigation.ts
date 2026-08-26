@@ -55,6 +55,13 @@ export class IdempotencyConflictError extends Error {
   }
 }
 
+export class InvestigationNotFoundError extends Error {
+  constructor() {
+    super("investigation not found");
+    this.name = "InvestigationNotFoundError";
+  }
+}
+
 export function projectInvestigation(sessionId: string, pullRequestUrl: string, items: TrueForgeEventItem[]): InvestigationSnapshot {
   const events = items
     .slice()
@@ -83,7 +90,7 @@ export function createInvestigationService(gateway: InvestigationGateway) {
   return {
     async cancel(sessionId: string) {
       const record = await resolveRecord(sessionId);
-      if (!record) throw new Error("investigation not found");
+      if (!record) throw new InvestigationNotFoundError();
       await gateway.cancel(sessionId);
       return get(sessionId);
     },
@@ -127,7 +134,7 @@ export function createInvestigationService(gateway: InvestigationGateway) {
     },
     async get(sessionId: string) {
       const record = await resolveRecord(sessionId);
-      if (!record) throw new Error("investigation not found");
+      if (!record) throw new InvestigationNotFoundError();
       return projectInvestigation(sessionId, record.pullRequestUrl, await gateway.listEvents(sessionId));
     },
   };
@@ -140,7 +147,7 @@ export function createInvestigationService(gateway: InvestigationGateway) {
 
   async function get(sessionId: string) {
     const record = await resolveRecord(sessionId);
-    if (!record) throw new Error("investigation not found");
+    if (!record) throw new InvestigationNotFoundError();
     return projectInvestigation(sessionId, record.pullRequestUrl, await gateway.listEvents(sessionId));
   }
 }
