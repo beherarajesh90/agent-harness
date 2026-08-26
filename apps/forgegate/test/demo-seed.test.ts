@@ -45,8 +45,8 @@ describe("seedDemo", () => {
       pullRequestUrl: "https://github.com/beherarajesh90/agent-harness/pull/42",
     });
     expect(calls).toEqual([
-      "read-file:apps/forgegate/src/payment-lab.ts:master",
       "read-branch:master",
+      `read-file:apps/forgegate/src/payment-lab.ts:${"a".repeat(40)}`,
       `branch:forgegate/demo-20260826-123456789:${"a".repeat(40)}`,
       `commit:forgegate/demo-20260826-123456789:apps/forgegate/src/payment-lab.ts:${"b".repeat(40)}`,
       "pr:forgegate/demo-20260826-123456789:master",

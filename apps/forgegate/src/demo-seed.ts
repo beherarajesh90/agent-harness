@@ -22,13 +22,13 @@ export async function seedDemo({
   client: DemoSeedClient;
   now?: Date;
 }) {
-  const source = await client.getFile(paymentLabPath, baseBranch);
+  const master = await client.getBranch(baseBranch);
+  const source = await client.getFile(paymentLabPath, master.sha);
   if (!source.content.includes(safeRetryMarker)) {
     throw new Error("safe retry marker was not found on master");
   }
 
   const branch = `forgegate/demo-${formatTimestamp(now)}`;
-  const master = await client.getBranch(baseBranch);
   await client.createBranch(branch, master.sha);
   await client.updateFile({
     branch,
