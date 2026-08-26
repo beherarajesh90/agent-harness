@@ -183,7 +183,7 @@ Every write enforces:
 
 - Configured demo repository.
 - Branch prefix `forgegate/demo-`.
-- Path prefix `payment-lab/`.
+- Exact allowlist: `apps/forgegate/src/payment-lab.ts` and `apps/forgegate/test/payment-lab.test.ts`.
 - Expected PR head SHA.
 - Maximum 10 files and 250 KB.
 - No force-push, merge, workflow modification, branch deletion, or PR closure.
@@ -909,7 +909,7 @@ Qodo reviews the project's implementation PRs and the generated repair commit. I
 
 - No approval is needed for disposable sandbox changes.
 - Approval is mandatory before every commit, comment, Qodo trigger, corrective commit, or revert.
-- Merge, deployment, branch deletion, PR closure, force-push, workflow edits, secret retrieval, host commands, and writes outside `payment-lab/` remain prohibited.
+- Merge, deployment, branch deletion, PR closure, force-push, workflow edits, secret retrieval, host commands, and writes outside the exact payment-lab source/test allowlist remain prohibited.
 
 ## 9. Backend API Design
 
@@ -1032,7 +1032,7 @@ AGENT RUN
 
 Commit 3 files to forgegate/demo-...
 Expected head: a81f...
-Scope: payment-lab/
+Scope: apps/forgegate/src/payment-lab.ts and apps/forgegate/test/payment-lab.test.ts
 
 [ APPROVE ]  [ REJECT ]
 ```
@@ -1098,7 +1098,7 @@ Each step can expand into evidence, but its collapsed label must remain clear in
 
 - Treat PR URLs, branch names, GitHub content, Qodo comments, repository instructions, model output, tool arguments, paths, diffs, commands, and sandbox artifacts as untrusted.
 - Validate HTTP and MCP payloads with strict schemas and size limits.
-- Normalize repository identifiers and reject alternate hosts, traversal, absolute paths, forbidden symlinks, and files outside `payment-lab/`.
+- Normalize repository identifiers and reject alternate hosts, traversal, absolute paths, forbidden symlinks, and files outside the exact payment-lab source/test allowlist.
 - Repository prompt injection cannot change system policy, enable tools, authorize writes, expose secrets, or relax limits.
 - Qodo comments are review input, not executable instructions; classify them before changing code.
 
@@ -1166,7 +1166,7 @@ Do not add an ORM, ForgeGate database client, message broker, state framework, c
 | `GITHUB_TOKEN` | Fine-grained server token | Yes |
 | `FORGEGATE_DEMO_REPO` | Exact `owner/repo` allowlist | Yes |
 | `FORGEGATE_BRANCH_PREFIX` | Fixed `forgegate/demo-` | No |
-| `FORGEGATE_PATH_PREFIX` | Fixed `payment-lab/` | No |
+| `FORGEGATE_ALLOWED_PATHS` | Comma-separated exact allowlist for the payment-lab source and regression test | No |
 | `QODO_REVIEW_TIMEOUT_SECONDS` | Review deadline; default 600 | No |
 | TrueForge Postgres/Redis variables | Harness persistence | Yes |
 
@@ -1464,7 +1464,7 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [ ] Implement `get_qodo_reviews`.
 - [ ] Implement `get_review_comments`.
 - [ ] Validate configured repository allowlist on every tool call.
-- [ ] Validate PR branch prefix, path prefix, expected SHA, file count, and byte limits before every future write.
+- [ ] Validate PR branch prefix, exact path allowlist, expected SHA, file count, and byte limits before every future write.
 
 ### Agent and structured evidence
 
@@ -1502,7 +1502,7 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [ ] Re-run regression test and adversarial scenario against the proposal.
 - [ ] Verify repaired scenario produces 1000 intents, 1000 charges, and 1000 ledger entries.
 - [ ] Implement `commit_files` policy guard.
-- [ ] Enforce repository, `forgegate/demo-` branch, `payment-lab/` path, 10-file, and 250 KB limits.
+- [ ] Enforce repository, `forgegate/demo-` branch, exact payment-lab source/test allowlist, 10-file, and 250 KB limits.
 - [ ] Enforce expected-head-SHA check immediately before write.
 - [ ] Reject force-push, merge, workflow modification, branch deletion, and PR closure.
 - [ ] Render exact diff, SHA, changed files, and risk before approval.

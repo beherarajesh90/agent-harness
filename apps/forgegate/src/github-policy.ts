@@ -9,7 +9,7 @@ export class GitHubPolicyError extends Error {}
 export type GitHubMutationPolicy = {
   repository: string;
   branchPrefix: string;
-  pathPrefix: string;
+  allowedPaths: string[];
   maxFiles: number;
   maxBytes: number;
 };
@@ -59,7 +59,7 @@ export function assertGitHubMutationAllowed(
   }
 
   const bytes = mutation.files.reduce((total, file) => {
-    assertAllowedPath(file.path, policy.pathPrefix);
+    assertAllowedPath(file.path, policy.allowedPaths);
     return total + Buffer.byteLength(file.content, "utf8");
   }, 0);
 
@@ -70,7 +70,10 @@ export function assertGitHubMutationAllowed(
 
 function assertGitHubMutationPolicy(policy: GitHubMutationPolicy) {
   assertValidPrefix(policy.branchPrefix, "branch prefix", false);
-  assertValidPrefix(policy.pathPrefix, "path prefix", true);
+  if (!Array.isArray(policy.allowedPaths) || policy.allowedPaths.length === 0) {
+    throw new GitHubPolicyError("allowed paths are invalid");
+  }
+  policy.allowedPaths.forEach((path) => assertValidPath(path));
   assertPositiveSafeInteger(policy.maxFiles, "max files");
   assertPositiveSafeInteger(policy.maxBytes, "max bytes");
 }
@@ -89,6 +92,20 @@ function assertValidPrefix(value: string, name: string, requireTrailingSlash: bo
   }
 }
 
+function assertValidPath(value: string) {
+  if (
+    !value ||
+    value.trim() !== value ||
+    value.startsWith("/") ||
+    value.endsWith("/") ||
+    value.includes("\\") ||
+    value.includes("..") ||
+    !/^[A-Za-z0-9._/-]+$/.test(value)
+  ) {
+    throw new GitHubPolicyError("allowed paths are invalid");
+  }
+}
+
 function assertPositiveSafeInteger(value: number, name: string) {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new GitHubPolicyError(`${name} must be a positive integer`);
@@ -99,10 +116,9 @@ function isCommitSha(value: string) {
   return /^[a-f0-9]{40}$/.test(value);
 }
 
-function assertAllowedPath(path: string, pathPrefix: string) {
+function assertAllowedPath(path: string, allowedPaths: string[]) {
   if (
-    !path.startsWith(pathPrefix) ||
-    path === pathPrefix ||
+    !allowedPaths.includes(path) ||
     path.startsWith("/") ||
     path.includes("\\") ||
     path.split("/").includes("..")
