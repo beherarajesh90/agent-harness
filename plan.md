@@ -1443,7 +1443,7 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [x] Implement deterministic fault scheduling.
 - [x] Implement independent invariant oracle.
 - [x] Assert primary invariant: one intent has one charge and one ledger entry.
-- [ ] Assert supporting retry, webhook, state-transition, failed-settlement, and reconciliation invariants.
+- [x] Assert supporting retry, webhook, state-transition, failed-settlement, and reconciliation invariants.
 - [x] Implement mainline safe behavior fixture.
 - [x] Verify safe behavior passes 20 consecutive deterministic runs.
 - [x] Implement unsafe retry fixture.

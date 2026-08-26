@@ -11,6 +11,8 @@ type PaymentResult = {
   status: "settled";
 };
 
+type PaymentStatus = "pending" | "settled" | "failed";
+
 type WebhookInput = {
   eventId: string;
   intentId: string;
@@ -18,12 +20,14 @@ type WebhookInput = {
 
 type PaymentLaboratoryOptions = {
   faultSchedule?: {
+    failBeforeChargeForIntentIds?: ReadonlySet<string>;
     timeoutAfterChargeForIntentIds?: ReadonlySet<string>;
   };
   unsafeRetryForIntentIds?: ReadonlySet<string>;
 };
 
 class ProviderTimeoutError extends Error {}
+class ProviderDeclinedError extends Error {}
 
 export function createPaymentLaboratory(options: PaymentLaboratoryOptions = {}) {
   const database = new DatabaseSync(":memory:");
@@ -67,6 +71,7 @@ export function createPaymentLaboratory(options: PaymentLaboratoryOptions = {}) 
     "INSERT INTO ledger_entries (intent_id, amount) VALUES (?, ?)",
   );
   const settleIntent = database.prepare("UPDATE payment_intents SET status = 'settled' WHERE id = ?");
+  const failIntent = database.prepare("UPDATE payment_intents SET status = 'failed' WHERE id = ?");
   const recordWebhook = database.prepare(
     "INSERT OR IGNORE INTO webhook_events (event_id, intent_id) VALUES (?, ?)",
   );
@@ -79,7 +84,12 @@ export function createPaymentLaboratory(options: PaymentLaboratoryOptions = {}) 
   const totalIntents = database.prepare("SELECT COUNT(*) AS total FROM payment_intents");
   const totalLedgerEntries = database.prepare("SELECT COUNT(*) AS total FROM ledger_entries");
   const totalProviderCharges = providerDatabase.prepare("SELECT COUNT(*) AS total FROM provider_charges");
-  const intentIds = database.prepare("SELECT id FROM payment_intents");
+  const totalLedgerAmount = database.prepare("SELECT COALESCE(SUM(amount), 0) AS total FROM ledger_entries");
+  const totalProviderChargeAmount = providerDatabase.prepare(
+    "SELECT COALESCE(SUM(amount), 0) AS total FROM provider_charges",
+  );
+  const intentRows = database.prepare("SELECT id, status FROM payment_intents");
+  const findIntentById = database.prepare("SELECT status FROM payment_intents WHERE id = ?");
   const ledgerEntriesForIntent = database.prepare(
     "SELECT COUNT(*) AS total FROM ledger_entries WHERE intent_id = ?",
   );
@@ -93,6 +103,9 @@ export function createPaymentLaboratory(options: PaymentLaboratoryOptions = {}) 
 
   function chargeProvider(input: PaymentInput, providerIdempotencyKey: string) {
     providerAttempts += 1;
+    if (options.faultSchedule?.failBeforeChargeForIntentIds?.has(input.intentId)) {
+      throw new ProviderDeclinedError(`provider declined ${input.intentId}`);
+    }
     const existing = findProviderCharge.get(providerIdempotencyKey) as { id: number } | undefined;
     if (existing) {
       return existing.id;
@@ -141,6 +154,9 @@ export function createPaymentLaboratory(options: PaymentLaboratoryOptions = {}) 
           if (error instanceof ProviderTimeoutError && attempt === 0) {
             continue;
           }
+          if (error instanceof ProviderDeclinedError) {
+            failIntent.run(input.intentId);
+          }
           throw error;
         }
       }
@@ -151,6 +167,10 @@ export function createPaymentLaboratory(options: PaymentLaboratoryOptions = {}) 
     handleWebhook(input: WebhookInput) {
       const result = recordWebhook.run(input.eventId, input.intentId);
       return { accepted: Number(result.changes) === 1 };
+    },
+
+    intentStatus(intentId: string) {
+      return (findIntentById.get(intentId) as { status: PaymentStatus } | undefined)?.status;
     },
 
     activity() {
@@ -166,11 +186,24 @@ export function createPaymentLaboratory(options: PaymentLaboratoryOptions = {}) 
     },
 
     evaluateInvariants() {
-      const violations = (intentIds.all() as { id: string }[]).flatMap(({ id }) =>
-        total(chargesForIntent, id) === 1 && total(ledgerEntriesForIntent, id) === 1
-          ? []
-          : [`one-charge-and-ledger-entry-per-intent:${id}`],
+      const violations = (intentRows.all() as { id: string; status: PaymentStatus }[]).flatMap(
+        ({ id, status }) => {
+          const charges = total(chargesForIntent, id);
+          const ledgerEntries = total(ledgerEntriesForIntent, id);
+          if (status === "settled") {
+            return charges === 1 && ledgerEntries === 1
+              ? []
+              : [`one-charge-and-ledger-entry-per-intent:${id}`];
+          }
+          if (status === "failed") {
+            return charges === 0 && ledgerEntries === 0 ? [] : [`failed-payment-is-not-settled:${id}`];
+          }
+          return [`payment-intent-is-not-terminal:${id}`];
+        },
       );
+      if (total(totalProviderChargeAmount) !== total(totalLedgerAmount)) {
+        violations.push("provider-and-ledger-amounts-reconcile");
+      }
 
       return {
         charges: total(totalProviderCharges),

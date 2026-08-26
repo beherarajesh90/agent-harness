@@ -79,6 +79,28 @@ describe("payment laboratory", () => {
     expect(laboratory.activity()).toEqual({ providerAttempts: 2 });
   });
 
+  it("records a declined payment as failed without charging or settling it", () => {
+    const laboratory = createPaymentLaboratory({
+      faultSchedule: { failBeforeChargeForIntentIds: new Set(["pi-105"]) },
+    });
+
+    expect(() =>
+      laboratory.processPayment({
+        amount: 500,
+        idempotencyKey: "checkout-105",
+        intentId: "pi-105",
+      }),
+    ).toThrow("provider declined pi-105");
+    expect(laboratory.intentStatus("pi-105")).toBe("failed");
+    expect(laboratory.evaluateInvariants()).toEqual({
+      charges: 0,
+      intents: 1,
+      ledgerEntries: 0,
+      verdict: "pass",
+      violations: [],
+    });
+  });
+
   it("produces deterministic duplicate-charge evidence for the unsafe retry fixture", () => {
     expect(runUnsafeRetryFixture()).toEqual({
       charges: 102,
@@ -88,8 +110,13 @@ describe("payment laboratory", () => {
       violations: [
         "one-charge-and-ledger-entry-per-intent:pi-001",
         "one-charge-and-ledger-entry-per-intent:pi-002",
+        "provider-and-ledger-amounts-reconcile",
       ],
     });
+  });
+
+  it("flags provider and ledger amounts that do not reconcile", () => {
+    expect(runUnsafeRetryFixture().violations).toContain("provider-and-ledger-amounts-reconcile");
   });
 
   it("reproduces unsafe evidence for 20 consecutive runs", () => {
@@ -102,6 +129,7 @@ describe("payment laboratory", () => {
         violations: [
           "one-charge-and-ledger-entry-per-intent:pi-001",
           "one-charge-and-ledger-entry-per-intent:pi-002",
+          "provider-and-ledger-amounts-reconcile",
         ],
       });
     }
@@ -138,5 +166,6 @@ describe("payment laboratory", () => {
       intents: 1,
       ledgerEntries: 1,
     });
+    expect(laboratory.intentStatus("pi-104")).toBe("settled");
   });
 });
