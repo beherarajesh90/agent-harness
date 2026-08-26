@@ -103,4 +103,25 @@ describe("payment laboratory", () => {
       });
     }
   });
+
+  it("ignores a duplicate webhook without another charge or ledger entry", () => {
+    const laboratory = createPaymentLaboratory();
+    laboratory.processPayment({
+      amount: 500,
+      idempotencyKey: "checkout-104",
+      intentId: "pi-104",
+    });
+
+    expect(laboratory.handleWebhook({ eventId: "evt-104", intentId: "pi-104" })).toEqual({
+      accepted: true,
+    });
+    expect(laboratory.handleWebhook({ eventId: "evt-104", intentId: "pi-104" })).toEqual({
+      accepted: false,
+    });
+    expect(laboratory.evidence()).toEqual({
+      charges: 1,
+      intents: 1,
+      ledgerEntries: 1,
+    });
+  });
 });

@@ -11,6 +11,11 @@ type PaymentResult = {
   status: "settled";
 };
 
+type WebhookInput = {
+  eventId: string;
+  intentId: string;
+};
+
 type PaymentLaboratoryOptions = {
   faultSchedule?: {
     timeoutAfterChargeForIntentIds?: ReadonlySet<string>;
@@ -38,6 +43,10 @@ export function createPaymentLaboratory(options: PaymentLaboratoryOptions = {}) 
       intent_id TEXT NOT NULL UNIQUE,
       amount INTEGER NOT NULL
     ) STRICT;
+    CREATE TABLE webhook_events (
+      event_id TEXT PRIMARY KEY,
+      intent_id TEXT NOT NULL
+    ) STRICT;
   `);
   providerDatabase.exec(`
     CREATE TABLE provider_charges (
@@ -58,6 +67,9 @@ export function createPaymentLaboratory(options: PaymentLaboratoryOptions = {}) 
     "INSERT INTO ledger_entries (intent_id, amount) VALUES (?, ?)",
   );
   const settleIntent = database.prepare("UPDATE payment_intents SET status = 'settled' WHERE id = ?");
+  const recordWebhook = database.prepare(
+    "INSERT OR IGNORE INTO webhook_events (event_id, intent_id) VALUES (?, ?)",
+  );
   const findProviderCharge = providerDatabase.prepare(
     "SELECT id FROM provider_charges WHERE idempotency_key = ?",
   );
@@ -134,6 +146,11 @@ export function createPaymentLaboratory(options: PaymentLaboratoryOptions = {}) 
       }
 
       throw new Error("payment retry loop ended unexpectedly");
+    },
+
+    handleWebhook(input: WebhookInput) {
+      const result = recordWebhook.run(input.eventId, input.intentId);
+      return { accepted: Number(result.changes) === 1 };
     },
 
     activity() {
