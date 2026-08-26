@@ -5,6 +5,7 @@ import { createGitHubMutationPolicy } from "./github-policy.js";
 
 const repository = requiredEnvironment("FORGEGATE_DEMO_REPO");
 const token = requiredEnvironment("GITHUB_TOKEN");
+const writeToken = requiredEnvironment("GITHUB_WRITE_TOKEN");
 const approvalSecret = requiredEnvironment("FORGEGATE_APPROVAL_SECRET");
 const port = Number(process.env.PORT ?? 8800);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -19,6 +20,7 @@ const github = createGitHubReadClient({
   }),
   repository,
   token,
+  writeToken,
 });
 const server = createGitHubMcpHttpServer(github, {
   approvalSecret,

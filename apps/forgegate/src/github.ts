@@ -24,11 +24,15 @@ export function createGitHubReadClient({
   token,
   octokit,
   policy,
+  writeOctokit,
+  writeToken,
 }: {
   octokit?: Octokit;
   policy?: GitHubMutationPolicy;
   repository: string;
   token: string;
+  writeOctokit?: Octokit;
+  writeToken: string;
 }) {
   const [owner, repo, ...rest] = repository.split("/");
 
@@ -37,6 +41,7 @@ export function createGitHubReadClient({
   }
 
   const github = octokit ?? new Octokit({ auth: token });
+  const writeGithub = writeOctokit ?? new Octokit({ auth: writeToken });
 
   return {
     async getPullRequest(pullNumber: number) {
@@ -53,7 +58,7 @@ export function createGitHubReadClient({
         throw new GitHubPolicyError("GitHub mutation policy is not configured");
       }
 
-      const { data: branch } = await github.rest.repos.getBranch({
+      const { data: branch } = await writeGithub.rest.repos.getBranch({
         branch: input.branch,
         owner,
         repo,
@@ -69,14 +74,14 @@ export function createGitHubReadClient({
         repository: input.repository,
       });
 
-      const { data: headCommit } = await github.rest.git.getCommit({
+      const { data: headCommit } = await writeGithub.rest.git.getCommit({
         commit_sha: actualHeadSha,
         owner,
         repo,
       });
       const blobs = await Promise.all(
         input.files.map(async (file) => {
-          const { data } = await github.rest.git.createBlob({
+          const { data } = await writeGithub.rest.git.createBlob({
             content: file.content,
             encoding: "utf-8",
             owner,
@@ -85,20 +90,20 @@ export function createGitHubReadClient({
           return { mode: "100644" as const, path: file.path, sha: data.sha, type: "blob" as const };
         }),
       );
-      const { data: tree } = await github.rest.git.createTree({
+      const { data: tree } = await writeGithub.rest.git.createTree({
         base_tree: headCommit.tree.sha,
         owner,
         repo,
         tree: blobs,
       });
-      const { data: commit } = await github.rest.git.createCommit({
+      const { data: commit } = await writeGithub.rest.git.createCommit({
         message: input.message,
         owner,
         parents: [actualHeadSha],
         repo,
         tree: tree.sha,
       });
-      await github.rest.git.updateRef({
+      await writeGithub.rest.git.updateRef({
         force: false,
         owner,
         ref: `heads/${input.branch}`,
