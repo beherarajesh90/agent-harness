@@ -1,8 +1,10 @@
 import { createGitHubReadClient } from "./github.js";
+import { createGitHubApprovalStore } from "./github-approval.js";
 import { createGitHubMcpHttpServer } from "./github-mcp-http.js";
 
 const repository = requiredEnvironment("FORGEGATE_DEMO_REPO");
 const token = requiredEnvironment("GITHUB_TOKEN");
+const approvalSecret = requiredEnvironment("FORGEGATE_APPROVAL_SECRET");
 const port = Number(process.env.PORT ?? 8800);
 const host = process.env.HOST ?? "0.0.0.0";
 
@@ -17,7 +19,10 @@ const github = createGitHubReadClient({
   repository,
   token,
 });
-const server = createGitHubMcpHttpServer(github);
+const server = createGitHubMcpHttpServer(github, {
+  approvalSecret,
+  approvalStore: createGitHubApprovalStore(),
+});
 
 await new Promise<void>((resolve) => server.listen({ host, port }, resolve));
 

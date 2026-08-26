@@ -58,6 +58,7 @@ services:
     command: ["node", "apps/forgegate/dist/src/github-mcp-server.js"]
     environment:
       FORGEGATE_DEMO_REPO: ${FORGEGATE_DEMO_REPO:-}
+      FORGEGATE_APPROVAL_SECRET: ${FORGEGATE_APPROVAL_SECRET:-}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       HOST: 0.0.0.0
       PORT: 8800

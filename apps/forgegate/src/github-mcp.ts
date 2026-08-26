@@ -1,13 +1,16 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import type { CommitApprovalPayload } from "./github-approval.js";
 import type { CommitFilesInput, CommitFilesResult } from "./github.js";
 
 export function createGitHubMcpServer({
   commitFiles,
+  consumeApproval,
   getPullRequest,
 }: {
   commitFiles: (input: CommitFilesInput) => Promise<CommitFilesResult>;
+  consumeApproval: (token: string, payload: CommitApprovalPayload) => boolean;
   getPullRequest: (pullNumber: number) => Promise<unknown>;
 }) {
   const server = new McpServer({ name: "forgegate-github", version: "0.1.0" });
@@ -55,17 +58,22 @@ export function createGitHubMcpServer({
         files: z.array(z.object({ content: z.string(), path: z.string().min(1) })).min(1),
         message: z.string().min(1).max(200),
         repository: z.string().min(1),
+        approval_token: z.string().min(1),
       }),
     },
-    async ({ branch, expected_head_sha, files, message, repository }) => {
+    async ({ approval_token, branch, expected_head_sha, files, message, repository }) => {
       try {
-        const result = await commitFiles({
+        const input = {
           branch,
           expectedHeadSha: expected_head_sha,
           files,
           message,
           repository,
-        });
+        };
+        if (!consumeApproval(approval_token, input)) {
+          throw new Error("approval is missing, stale, or does not match the commit payload");
+        }
+        const result = await commitFiles(input);
         return { content: [{ text: JSON.stringify(result), type: "text" }] };
       } catch {
         return {
