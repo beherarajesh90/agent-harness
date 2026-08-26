@@ -55,4 +55,23 @@ describe("payment laboratory", () => {
       violations: [],
     });
   });
+
+  it("reuses a provider charge after a timeout triggers a retry", () => {
+    const laboratory = createPaymentLaboratory({
+      faultSchedule: { timeoutAfterChargeForIntentIds: new Set(["pi-103"]) },
+    });
+
+    laboratory.processPayment({
+      amount: 500,
+      idempotencyKey: "checkout-103",
+      intentId: "pi-103",
+    });
+
+    expect(laboratory.evidence()).toEqual({
+      charges: 1,
+      intents: 1,
+      ledgerEntries: 1,
+    });
+    expect(laboratory.activity()).toEqual({ providerAttempts: 2 });
+  });
 });
