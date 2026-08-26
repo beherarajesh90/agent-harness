@@ -23,4 +23,17 @@ describe("ForgeGate health checks", () => {
 
     await app.close();
   });
+
+  it("reports unavailable when TrueForge is not ready", async () => {
+    const app = buildApp({
+      isTrueForgeReady: async () => false,
+    });
+
+    const response = await app.inject({ method: "GET", url: "/health/ready" });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({ status: "unavailable" });
+
+    await app.close();
+  });
 });
