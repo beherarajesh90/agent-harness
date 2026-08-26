@@ -27,7 +27,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
       expect.objectContaining({
         input: [
           expect.objectContaining({
-            content: expect.stringMatching(/Do not finish after setup[\s\S]*read payment-lab source[\s\S]*experimentResult/),
+            content: expect.stringMatching(/Do not finish after setup[\s\S]*do not use raw GitHub curl responses[\s\S]*read payment-lab source[\s\S]*experimentResult/),
             type: "user.message",
           }),
         ],

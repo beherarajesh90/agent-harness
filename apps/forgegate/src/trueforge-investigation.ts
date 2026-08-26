@@ -31,6 +31,8 @@ export function createTrueForgeInvestigationLauncher({
             `Investigate ${pullRequestUrl} in ${configuredRepository}.`,
             "Read the PR and exact head SHA before making claims.",
             "Do not finish after setup, cloning, or one tool call. Continue until the complete investigation checklist is finished.",
+            "Use the forgegate-github MCP tools for PR metadata, changed files, exact-SHA payment-lab source/tests, checks, reviews, and comments; do not use raw GitHub curl responses for these reads.",
+            "Do not fetch plan.md, list the repository root recursively, or request oversized responses. Read only the exact payment-lab source/test paths needed for the investigation.",
             "Checklist: read PR metadata; read changed files; read payment-lab source and tests at the exact PR head SHA; inspect checks/reviews/comments; run the baseline payment test in the sandbox; then delegate both analysts and reconcile their outputs.",
             "Spawn exactly two visible dynamic subagents:",
             "- invariant-analyst: return InvariantCandidate JSON objects with at least two exact-SHA repository evidence references.",
