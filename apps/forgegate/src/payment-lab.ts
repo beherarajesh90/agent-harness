@@ -26,6 +26,16 @@ type PaymentLaboratoryOptions = {
   unsafeRetryForIntentIds?: ReadonlySet<string>;
 };
 
+export type ExperimentResult = {
+  artifactLinks: string[];
+  expected: { charges: number; intents: number; ledgerEntries: number };
+  observed: { charges: number; intents: number; ledgerEntries: number };
+  repetitions: number;
+  seed: number;
+  testedSha: string;
+  verdict: "pass" | "fail";
+};
+
 class ProviderTimeoutError extends Error {}
 class ProviderDeclinedError extends Error {}
 
@@ -251,4 +261,37 @@ export function runSafeFixture() {
   }
 
   return laboratory.evaluateInvariants();
+}
+
+export function runPaymentExperiment({
+  mode,
+  repetitions,
+  seed,
+  testedSha,
+}: {
+  mode: "safe" | "unsafe";
+  repetitions: number;
+  seed: number;
+  testedSha: string;
+}): ExperimentResult {
+  if (!Number.isInteger(repetitions) || repetitions < 1) throw new Error("repetitions must be a positive integer");
+  if (!Number.isInteger(seed) || seed < 0) throw new Error("seed must be a non-negative integer");
+  if (!/^[a-f0-9]{40}$/.test(testedSha)) throw new Error("testedSha must be a commit SHA");
+
+  const run = mode === "unsafe" ? runUnsafeRetryFixture : runSafeFixture;
+  const observed = run();
+  for (let repetition = 1; repetition < repetitions; repetition += 1) {
+    const next = run();
+    if (JSON.stringify(next) !== JSON.stringify(observed)) throw new Error("experiment was not deterministic");
+  }
+
+  return {
+    artifactLinks: ["payment-lab:evidence"],
+    expected: { charges: 100, intents: 100, ledgerEntries: 100 },
+    observed: { charges: observed.charges, intents: observed.intents, ledgerEntries: observed.ledgerEntries },
+    repetitions,
+    seed,
+    testedSha,
+    verdict: observed.verdict as ExperimentResult["verdict"],
+  };
 }

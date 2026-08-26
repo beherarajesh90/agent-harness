@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createPaymentLaboratory,
+  runPaymentExperiment,
   runSafeFixture,
   runUnsafeRetryFixture,
 } from "../src/payment-lab.js";
@@ -188,5 +189,18 @@ describe("payment laboratory", () => {
       ledgerEntries: 1,
     });
     expect(laboratory.intentStatus("pi-104")).toBe("settled");
+  });
+
+  it("returns structured deterministic experiment evidence", () => {
+    expect(runPaymentExperiment({ mode: "unsafe", repetitions: 2, seed: 42, testedSha: "a".repeat(40) })).toEqual({
+      artifactLinks: ["payment-lab:evidence"],
+      expected: { charges: 100, intents: 100, ledgerEntries: 100 },
+      observed: { charges: 102, intents: 100, ledgerEntries: 100 },
+      repetitions: 2,
+      seed: 42,
+      testedSha: "a".repeat(40),
+      verdict: "fail",
+    });
+    expect(runPaymentExperiment({ mode: "safe", repetitions: 2, seed: 42, testedSha: "a".repeat(40) }).verdict).toBe("pass");
   });
 });
