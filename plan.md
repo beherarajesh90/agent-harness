@@ -1485,14 +1485,15 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 
 ### Event projection and investigation API
 
-- [ ] Implement create-investigation API with repository/PR validation and idempotency handling.
-- [ ] Implement snapshot reconstruction from TrueForge events.
-- [ ] Implement normalized SSE event stream.
+- [x] Implement create-investigation API with repository/PR validation.
+- [ ] Complete matching/conflicting idempotency-key handling.
+- [x] Implement snapshot reconstruction from TrueForge events.
+- [x] Implement normalized SSE event stream.
 - [ ] Merge model deltas into base events.
 - [ ] Deduplicate by TrueForge `sequence`; use `eventId` only for tracing and mismatch detection.
-- [ ] Implement `Last-Event-ID` resume behavior.
-- [ ] Implement get-investigation API.
-- [ ] Implement cancel API.
+- [x] Implement `Last-Event-ID` resume behavior.
+- [x] Implement get-investigation API.
+- [x] Implement cancel API.
 - [ ] Implement live and readiness health APIs.
 
 ## Phase 4 - Repair and Approval
