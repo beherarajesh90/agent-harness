@@ -10,20 +10,24 @@ type TrueForgeSessions = {
 
 export function createTrueForgeInvestigationLauncher({
   modelName,
+  repository,
   sessions,
 }: {
   modelName: string;
+  repository: string;
   sessions: TrueForgeSessions;
 }) {
-  return async ({ pullRequestUrl, repository }: { pullRequestUrl: string; repository: string }) => {
-    assertConfiguredPullRequest(pullRequestUrl, repository);
+  const configuredRepository = assertConfiguredRepository(repository);
+
+  return async ({ pullRequestUrl }: { pullRequestUrl: string }) => {
+    assertConfiguredPullRequest(pullRequestUrl, configuredRepository);
 
     const session = await sessions.create({ agent: { spec: createForgeGateAgentSpec(modelName) } });
     const turn = await sessions.createTurn(session.data.id, {
       input: [
         {
           content: [
-            `Investigate ${pullRequestUrl} in ${repository}.`,
+            `Investigate ${pullRequestUrl} in ${configuredRepository}.`,
             "Read the PR and exact head SHA before making claims.",
             "Spawn exactly two visible dynamic subagents:",
             "- invariant-analyst: identify payment invariants with at least two repository evidence references.",
@@ -37,6 +41,14 @@ export function createTrueForgeInvestigationLauncher({
 
     return { sessionId: session.data.id, turnId: turn.data.id };
   };
+}
+
+function assertConfiguredRepository(repository: string) {
+  const [owner, repo, ...rest] = repository.split("/");
+  if (!owner || !repo || rest.length > 0) {
+    throw new Error("repository must be owner/repo");
+  }
+  return repository;
 }
 
 function assertConfiguredPullRequest(pullRequestUrl: string, repository: string) {

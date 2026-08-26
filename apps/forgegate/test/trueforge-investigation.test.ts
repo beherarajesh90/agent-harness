@@ -10,13 +10,13 @@ describe("createTrueForgeInvestigationLauncher", () => {
     };
     const launch = createTrueForgeInvestigationLauncher({
       modelName: "ollama-local/qwen35-4b",
+      repository: "beherarajesh90/agent-harness",
       sessions,
     });
 
     await expect(
       launch({
         pullRequestUrl: "https://github.com/beherarajesh90/agent-harness/pull/7",
-        repository: "beherarajesh90/agent-harness",
       }),
     ).resolves.toEqual({ sessionId: "session-1", turnId: "turn-1" });
     expect(sessions.create).toHaveBeenCalledWith({
@@ -39,15 +39,25 @@ describe("createTrueForgeInvestigationLauncher", () => {
     const sessions = { create: vi.fn(), createTurn: vi.fn() };
     const launch = createTrueForgeInvestigationLauncher({
       modelName: "ollama-local/qwen35-4b",
+      repository: "beherarajesh90/agent-harness",
       sessions,
     });
 
     await expect(
       launch({
         pullRequestUrl: "https://github.com/other/repository/pull/7",
-        repository: "beherarajesh90/agent-harness",
       }),
     ).rejects.toThrow("pull request URL is not in the configured repository");
     expect(sessions.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects an invalid configured repository", () => {
+    expect(() =>
+      createTrueForgeInvestigationLauncher({
+        modelName: "ollama-local/qwen35-4b",
+        repository: "other/repository/extra",
+        sessions: { create: vi.fn(), createTurn: vi.fn() },
+      }),
+    ).toThrow("repository must be owner/repo");
   });
 });
