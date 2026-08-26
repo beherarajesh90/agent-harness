@@ -14,7 +14,10 @@ import { asMcpTransport } from "./mcp-transport.js";
 
 type GitHubReadClient = {
   commitFiles: (input: CommitFilesInput) => Promise<CommitFilesResult>;
+  getChecks: (ref: string) => Promise<unknown>;
+  getFile: (path: string, ref: string) => Promise<unknown>;
   getPullRequest: (pullNumber: number) => Promise<unknown>;
+  getPullRequestFiles: (pullNumber: number) => Promise<unknown>;
 };
 
 export function createGitHubMcpHttpServer(

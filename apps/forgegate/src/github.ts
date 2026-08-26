@@ -74,6 +74,39 @@ export function createGitHubReadClient({
       return data;
     },
 
+    async getPullRequestFiles(pullNumber: number) {
+      const { data } = await github.rest.pulls.listFiles({
+        owner,
+        per_page: 100,
+        pull_number: pullNumber,
+        repo,
+      });
+      return data;
+    },
+
+    async getFile(path: string, ref: string) {
+      const { data } = await github.rest.repos.getContent({ owner, path, ref, repo });
+      if (Array.isArray(data) || data.type !== "file" || data.encoding !== "base64") {
+        throw new Error("GitHub file read did not return a base64-encoded file");
+      }
+
+      return {
+        content: Buffer.from(data.content, "base64").toString("utf8"),
+        path: data.path,
+        sha: data.sha,
+      };
+    },
+
+    async getChecks(ref: string) {
+      const { data } = await github.rest.checks.listForRef({
+        owner,
+        per_page: 100,
+        ref,
+        repo,
+      });
+      return data;
+    },
+
     async commitFiles(input: CommitFilesInput): Promise<CommitFilesResult> {
       if (!policy) {
         throw new GitHubPolicyError("GitHub mutation policy is not configured");
