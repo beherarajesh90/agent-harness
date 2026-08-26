@@ -1360,8 +1360,8 @@ Last repository verification: 2026-08-26.
 - [ ] A GitHub PR and Qodo review for the planning branch are not verified from this repository.
 - [x] A strict Node 24/pnpm workspace, Fastify health service, Vitest suite, and Docker Compose configuration now exist on `feature/phase-1-foundation`.
 - [x] `docker compose up --wait` started ForgeGate and TrueForge successfully through Docker Desktop; `127.0.0.1:3100/health/ready` and `127.0.0.1:8790/healthz` both responded successfully, while Postgres and Redis remained private.
-- [?] The `Ubuntu-26.04` WSL2 distribution cannot currently run Docker because Docker Desktop WSL integration is not enabled for it; WSL-specific Compose proof remains pending.
-- [x] WSL2 is available with Ubuntu 26.04, and a user-local Node 24.19 runtime was installed for feasibility testing.
+- [x] `Ubuntu-24.04` is the verified WSL2 target: it can access Docker Desktop and successfully started the full Compose stack with both health endpoints passing. `Ubuntu-26.04` remains unused for this project.
+- [x] WSL2 is available with Ubuntu 24.04. A user-local Node 24.19 runtime was previously installed for feasibility testing; install or verify a Node runtime in Ubuntu 24.04 only when a WSL-hosted Node task requires it.
 - [x] TrueForge v0.1.4 starts in WSL2 standalone mode and serves its API documentation on `localhost:8790`.
 - [x] Qwen3.5 4B responds through local Ollama and a WSL-reachable Ollama endpoint; TrueForge produced valid structured JSON, a visible `create_sub_agent` call/result, and a bounded Daytona patch/test result.
 - [x] Daytona was configured as the selected sandbox after the local fallback failed its internal PyPI dependency-install proof. TrueForge accepted the credential, provisioned a Daytona sandbox, executed `echo SANDBOX_OK && cat ...`, and returned exit code `0` with the expected output.
@@ -1395,7 +1395,7 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [x] Bind all published services to `127.0.0.1`.
 - [~] Pin tested TrueForge server image, SDK, MCP SDK, and package versions. TrueForge is pinned at `0.1.4`; SDK and MCP SDK pins await their implementation slice.
 - [x] Add health checks for ForgeGate and TrueForge.
-- [?] Prove clean startup through Docker Desktop and WSL2. Docker Desktop proof passed; WSL2 integration is not enabled for `Ubuntu-26.04`.
+- [x] Prove clean startup through Docker Desktop and WSL2. `docker compose up --wait` passed from `Ubuntu-24.04` with ForgeGate and TrueForge health checks responding on loopback.
 
 ### Local model feasibility
 
