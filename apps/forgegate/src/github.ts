@@ -19,6 +19,27 @@ export type CommitFilesResult = {
   url: string;
 };
 
+// Source: https://docs.github.com/en/graphql/reference/commits
+// createCommitOnBranch checks expectedHeadOid while creating and advancing the branch.
+const createCommitOnBranchMutation = `
+  mutation ForgeGateCommit(
+    $branch: String!
+    $expectedHeadOid: GitObjectID!
+    $repository: String!
+    $additions: [FileAddition!]
+    $message: String!
+  ) {
+    createCommitOnBranch(input: {
+      branch: { branchName: $branch, repositoryNameWithOwner: $repository }
+      expectedHeadOid: $expectedHeadOid
+      fileChanges: { additions: $additions }
+      message: { headline: $message }
+    }) {
+      commit { oid url }
+    }
+  }
+`;
+
 export function createGitHubReadClient({
   repository,
   token,
@@ -74,46 +95,26 @@ export function createGitHubReadClient({
         repository: input.repository,
       });
 
-      const { data: headCommit } = await writeGithub.rest.git.getCommit({
-        commit_sha: actualHeadSha,
-        owner,
-        repo,
-      });
-      const blobs = await Promise.all(
-        input.files.map(async (file) => {
-          const { data } = await writeGithub.rest.git.createBlob({
-            content: file.content,
-            encoding: "utf-8",
-            owner,
-            repo,
-          });
-          return { mode: "100644" as const, path: file.path, sha: data.sha, type: "blob" as const };
-        }),
-      );
-      const { data: tree } = await writeGithub.rest.git.createTree({
-        base_tree: headCommit.tree.sha,
-        owner,
-        repo,
-        tree: blobs,
-      });
-      const { data: commit } = await writeGithub.rest.git.createCommit({
+      const result = await writeGithub.graphql<{
+        createCommitOnBranch: { commit: { oid: string; url: string } | null } | null;
+      }>(createCommitOnBranchMutation, {
+        additions: input.files.map((file) => ({
+          contents: Buffer.from(file.content, "utf8").toString("base64"),
+          path: file.path,
+        })),
+        branch: input.branch,
+        expectedHeadOid: actualHeadSha,
         message: input.message,
-        owner,
-        parents: [actualHeadSha],
-        repo,
-        tree: tree.sha,
+        repository,
       });
-      await writeGithub.rest.git.updateRef({
-        force: false,
-        owner,
-        ref: `heads/${input.branch}`,
-        repo,
-        sha: commit.sha,
-      });
+      const commit = result.createCommitOnBranch?.commit;
+      if (!commit) {
+        throw new Error("GitHub did not return the created commit");
+      }
 
       return {
-        commitSha: commit.sha,
-        url: `https://github.com/${repository}/commit/${commit.sha}`,
+        commitSha: commit.oid,
+        url: commit.url,
       };
     },
   };
