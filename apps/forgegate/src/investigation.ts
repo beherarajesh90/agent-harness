@@ -1,4 +1,5 @@
 import { experimentResultSchema, invariantCandidateSchema, scenarioPlanSchema, validateAnalystArtifacts, validateInvestigationArtifacts } from "./agent-spec.js";
+import type { InvestigationDecision } from "./agent-spec.js";
 
 export const stages = [
   "CONTEXT",
@@ -32,6 +33,7 @@ export type HarnessEvent = {
 
 export type InvestigationSnapshot = {
   artifacts: InvestigationArtifact[];
+  decision?: InvestigationDecision;
   events: HarnessEvent[];
   pullRequestUrl: string;
   sessionId: string;
@@ -80,6 +82,7 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   }).sort((left, right) => left.sequence - right.sequence);
   const trustedHeadSha = findPullRequestHeadSha(events);
   const artifacts = events.flatMap((event) => artifactFromPayload(event.payload, trustedHeadSha));
+  const decision = findFinalDecision(events, trustedHeadSha);
   const last = events.at(-1);
   const terminal = last?.type === "turn.done";
   const state = last?.payload.state as { status?: string } | undefined;
@@ -87,10 +90,11 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const requiredArtifactTypes: InvestigationArtifact["type"][] = ["InvariantCandidate", "ScenarioPlan", "ExperimentResult"];
   const completeEvidence = Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts);
   const experimentFailed = artifacts.some((artifact) => artifact.type === "ExperimentResult" && (artifact.data.verdict === "fail" || paymentInvariantViolated(artifact.data)));
-  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : ((state?.status === "blocked" || experimentFailed) && completeEvidence) ? "BLOCKED" : terminal ? completeEvidence ? "READY" : "UNCERTAIN" : "RUNNING";
+  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : ((state?.status === "blocked" || experimentFailed) && completeEvidence && !decision) ? "BLOCKED" : terminal ? completeEvidence ? decision ?? "READY" : "UNCERTAIN" : "RUNNING";
 
   return {
     artifacts,
+    ...(decision ? { decision } : {}),
     events,
     pullRequestUrl,
     sessionId,
@@ -101,6 +105,14 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
 }
 
 function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: string): InvestigationArtifact[] {
+  const bundle = readFinalBundle(payload, trustedHeadSha);
+  if (bundle) {
+    return [
+      ...bundle.invariants.map((data) => ({ data, type: "InvariantCandidate" as const })),
+      ...bundle.scenarios.map((data) => ({ data, type: "ScenarioPlan" as const })),
+      { data: bundle.experimentResult, type: "ExperimentResult" as const },
+    ];
+  }
   const wrapped = readArtifact(payload.artifactType, payload.artifact, trustedHeadSha);
   if (wrapped.length > 0) return wrapped;
 
@@ -108,23 +120,31 @@ function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: 
   const content = output?.content;
   if (typeof content === "string") {
     const parsed = parseJson(content);
-    if (isRecord(parsed) && Array.isArray(parsed.invariants) && Array.isArray(parsed.scenarios) && parsed.experimentResult !== undefined) {
-      try {
-        const validated = validateInvestigationArtifacts({ invariants: parsed.invariants, scenarios: parsed.scenarios, experimentResult: parsed.experimentResult });
-        const experimentResult = validated.experimentResult;
-        if (trustedHeadSha && [...validated.invariants, ...validated.scenarios, experimentResult].some((artifact) => artifact.testedSha !== trustedHeadSha)) return [];
-        return [
-          ...validated.invariants.map((data) => ({ data, type: "InvariantCandidate" as const })),
-          ...validated.scenarios.map((data) => ({ data, type: "ScenarioPlan" as const })),
-          { data: experimentResult, type: "ExperimentResult" as const },
-        ];
-      } catch {
-        return [];
-      }
-    }
+    if (isRecord(parsed) && Array.isArray(parsed.invariants) && Array.isArray(parsed.scenarios) && parsed.experimentResult !== undefined) return [];
   }
   const type = payload.title === "invariant-analyst" ? "InvariantCandidate" : payload.title === "failure-mode-analyst" ? "ScenarioPlan" : undefined;
   return type && typeof content === "string" ? readArtifact(type, parseJson(content), trustedHeadSha) : [];
+}
+
+function readFinalBundle(payload: Record<string, unknown>, trustedHeadSha?: string) {
+  const output = isRecord(payload.state) && isRecord(payload.state.output) ? payload.state.output : undefined;
+  const parsed = typeof output?.content === "string" ? parseJson(output.content) : undefined;
+  if (!isRecord(parsed) || !Array.isArray(parsed.invariants) || !Array.isArray(parsed.scenarios) || parsed.experimentResult === undefined) return undefined;
+  try {
+    const bundle = validateInvestigationArtifacts({ decision: parsed.decision, invariants: parsed.invariants, scenarios: parsed.scenarios, experimentResult: parsed.experimentResult });
+    if (trustedHeadSha && [...bundle.invariants, ...bundle.scenarios, bundle.experimentResult].some((artifact) => artifact.testedSha !== trustedHeadSha)) return undefined;
+    return bundle;
+  } catch {
+    return undefined;
+  }
+}
+
+function findFinalDecision(events: HarnessEvent[], trustedHeadSha?: string): InvestigationDecision | undefined {
+  for (const event of [...events].reverse()) {
+    const bundle = readFinalBundle(event.payload, trustedHeadSha);
+    if (bundle?.decision) return bundle.decision;
+  }
+  return undefined;
 }
 
 function hasConsistentEvidence(artifacts: InvestigationArtifact[]) {

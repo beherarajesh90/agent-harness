@@ -20,6 +20,9 @@ const evidenceReferenceSchema = z
 export type InvariantCandidate = z.infer<typeof invariantCandidateSchema>;
 export type ScenarioPlan = z.infer<typeof scenarioPlanSchema>;
 export type ExperimentResult = z.infer<typeof experimentResultSchema>;
+export type InvestigationDecision = "BLOCKED" | "READY" | "UNCERTAIN";
+
+const investigationDecisionSchema = z.enum(["BLOCKED", "READY", "UNCERTAIN"]);
 
 export const invariantCandidateSchema = z
   .object({
@@ -74,7 +77,7 @@ export const experimentResultSchema = z
 
 const investigationResponseSchema = z
   .object({
-    decision: z.enum(["BLOCKED", "READY", "UNCERTAIN"]),
+    decision: investigationDecisionSchema,
     experimentResult: experimentResultSchema,
     invariants: z.array(invariantCandidateSchema).min(1),
     scenarios: z.array(scenarioPlanSchema).min(1),
@@ -107,9 +110,10 @@ export function validateAnalystArtifacts(input: { invariants: unknown; scenarios
   return { invariants, scenarios };
 }
 
-export function validateInvestigationArtifacts(input: { invariants: unknown; scenarios: unknown; experimentResult: unknown }) {
+export function validateInvestigationArtifacts(input: { decision?: unknown; invariants: unknown; scenarios: unknown; experimentResult: unknown }) {
   const { invariants, scenarios } = validateAnalystArtifacts(input);
   const experimentResult = experimentResultSchema.parse(input.experimentResult);
+  const decision = input.decision === undefined ? undefined : investigationDecisionSchema.parse(input.decision);
   const testedSha = invariants[0]?.testedSha ?? scenarios[0]?.testedSha;
   if (!testedSha || experimentResult.testedSha !== testedSha) {
     throw new Error("all investigation artifacts must use the same tested SHA");
@@ -117,7 +121,10 @@ export function validateInvestigationArtifacts(input: { invariants: unknown; sce
   if (scenarios.some((scenario) => scenario.seed !== experimentResult.seed)) {
     throw new Error("experiment seed must match every scenario seed");
   }
-  return { invariants, scenarios, experimentResult };
+  if (decision === "READY" && experimentResult.verdict !== "pass") {
+    throw new Error("READY requires a passing experiment");
+  }
+  return { decision, invariants, scenarios, experimentResult };
 }
 
 export function createForgeGateAgentSpec(modelName: string): AgentSpec {
