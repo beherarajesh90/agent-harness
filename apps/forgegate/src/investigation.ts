@@ -78,15 +78,16 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
     seenSequences.add(event.sequence);
     return true;
   }).sort((left, right) => left.sequence - right.sequence);
-  const artifacts = events.flatMap((event) => artifactFromPayload(event.payload));
+  const trustedHeadSha = findPullRequestHeadSha(events);
+  const artifacts = events.flatMap((event) => artifactFromPayload(event.payload, trustedHeadSha));
   const last = events.at(-1);
   const terminal = last?.type === "turn.done";
   const state = last?.payload.state as { status?: string } | undefined;
   const artifactTypes = new Set(artifacts.map((artifact) => artifact.type));
   const requiredArtifactTypes: InvestigationArtifact["type"][] = ["InvariantCandidate", "ScenarioPlan", "ExperimentResult"];
-  const completeEvidence = requiredArtifactTypes.every((type) => artifactTypes.has(type));
+  const completeEvidence = Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type));
   const experimentFailed = artifacts.some((artifact) => artifact.type === "ExperimentResult" && artifact.data.verdict === "fail");
-  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : state?.status === "blocked" || experimentFailed ? "BLOCKED" : terminal ? completeEvidence ? "READY" : "UNCERTAIN" : "RUNNING";
+  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : ((state?.status === "blocked" || experimentFailed) && completeEvidence) ? "BLOCKED" : terminal ? completeEvidence ? "READY" : "UNCERTAIN" : "RUNNING";
 
   return {
     artifacts,
@@ -99,8 +100,8 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   };
 }
 
-function artifactFromPayload(payload: Record<string, unknown>): InvestigationArtifact[] {
-  const wrapped = readArtifact(payload.artifactType, payload.artifact);
+function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: string): InvestigationArtifact[] {
+  const wrapped = readArtifact(payload.artifactType, payload.artifact, trustedHeadSha);
   if (wrapped.length > 0) return wrapped;
 
   const output = isRecord(payload.state) && isRecord(payload.state.output) ? payload.state.output : undefined;
@@ -111,6 +112,7 @@ function artifactFromPayload(payload: Record<string, unknown>): InvestigationArt
       try {
         const validated = validateAnalystArtifacts({ invariants: parsed.invariants, scenarios: parsed.scenarios });
         const experimentResult = experimentResultSchema.parse(parsed.experimentResult);
+        if (trustedHeadSha && [...validated.invariants, ...validated.scenarios, experimentResult].some((artifact) => artifact.testedSha !== trustedHeadSha)) return [];
         return [
           ...validated.invariants.map((data) => ({ data, type: "InvariantCandidate" as const })),
           ...validated.scenarios.map((data) => ({ data, type: "ScenarioPlan" as const })),
@@ -122,10 +124,10 @@ function artifactFromPayload(payload: Record<string, unknown>): InvestigationArt
     }
   }
   const type = payload.title === "invariant-analyst" ? "InvariantCandidate" : payload.title === "failure-mode-analyst" ? "ScenarioPlan" : undefined;
-  return type && typeof content === "string" ? readArtifact(type, parseJson(content)) : [];
+  return type && typeof content === "string" ? readArtifact(type, parseJson(content), trustedHeadSha) : [];
 }
 
-function readArtifact(type: unknown, value: unknown): InvestigationArtifact[] {
+function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string): InvestigationArtifact[] {
   if (type !== "ExperimentResult" && type !== "InvariantCandidate" && type !== "ScenarioPlan") return [];
   const values = Array.isArray(value) ? value : [value];
   return values.flatMap((candidate) => {
@@ -133,8 +135,20 @@ function readArtifact(type: unknown, value: unknown): InvestigationArtifact[] {
     if (type === "InvariantCandidate" && !invariantCandidateSchema.safeParse(candidate).success) return [];
     if (type === "ScenarioPlan" && !scenarioPlanSchema.safeParse(candidate).success) return [];
     if (type === "ExperimentResult" && !experimentResultSchema.safeParse(candidate).success) return [];
+    if (trustedHeadSha && candidate.testedSha !== trustedHeadSha) return [];
     return [{ data: candidate, type }];
   });
+}
+
+function findPullRequestHeadSha(events: HarnessEvent[]) {
+  for (const event of events) {
+    if (event.type !== "tool.response" || typeof event.payload.content !== "string") continue;
+    const response = parseJson(event.payload.content);
+    if (isRecord(response) && isRecord(response.head) && typeof response.head.sha === "string" && /^[a-f0-9]{40}$/.test(response.head.sha)) {
+      return response.head.sha;
+    }
+  }
+  return undefined;
 }
 
 function parseJson(content: string): unknown {

@@ -101,9 +101,8 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
 }
 
 function hasCompleteEvidence(events: InvestigationEvent[]) {
-  const types = new Set(projectInvestigation("controller", "", events).artifacts.map((artifact) => artifact.type));
-  const required: ("ExperimentResult" | "InvariantCandidate" | "ScenarioPlan")[] = ["InvariantCandidate", "ScenarioPlan", "ExperimentResult"];
-  return required.every((type) => types.has(type));
+  const status = projectInvestigation("controller", "", events).status;
+  return status === "READY" || status === "BLOCKED";
 }
 
 function assertConfiguredRepository(repository: string) {

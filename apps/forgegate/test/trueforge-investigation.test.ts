@@ -68,10 +68,11 @@ describe("createTrueForgeInvestigationLauncher", () => {
       receivedPrompt = request.input[0]!.content;
       void sessionId;
       events = [
-        { event: { artifactType: "InvariantCandidate", artifact: { confidence: 1, evidence: [{ endLine: 1, path: "a.ts", sha: "a".repeat(40), startLine: 1 }, { endLine: 2, path: "b.ts", sha: "a".repeat(40), startLine: 1 }], id: "i1", statement: "one charge", testedSha: "a".repeat(40) }, type: "tool.response" }, turnId: "turn-2" },
-        { event: { artifactType: "ScenarioPlan", artifact: { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge", "timeout"], seed: 1, testedSha: "a".repeat(40) }, type: "tool.response" }, turnId: "turn-2" },
-        { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], expected: { charges: 100, intents: 100, ledgerEntries: 100 }, observed: { charges: 100, intents: 100, ledgerEntries: 100 }, repetitions: 1, seed: 1, testedSha: "a".repeat(40), verdict: "pass" }, type: "tool.response" }, turnId: "turn-2" },
-        { event: { type: "turn.done" }, turnId: "turn-2" },
+        { event: { content: JSON.stringify({ head: { sha: "a".repeat(40) } }), sequence: 1, type: "tool.response" }, turnId: "turn-2" },
+        { event: { artifactType: "InvariantCandidate", artifact: { confidence: 1, evidence: [{ endLine: 1, path: "a.ts", sha: "a".repeat(40), startLine: 1 }, { endLine: 2, path: "b.ts", sha: "a".repeat(40), startLine: 1 }], id: "i1", statement: "one charge", testedSha: "a".repeat(40) }, sequence: 2, type: "tool.response" }, turnId: "turn-2" },
+        { event: { artifactType: "ScenarioPlan", artifact: { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge", "timeout"], seed: 1, testedSha: "a".repeat(40) }, sequence: 3, type: "tool.response" }, turnId: "turn-2" },
+        { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], expected: { charges: 100, intents: 100, ledgerEntries: 100 }, observed: { charges: 100, intents: 100, ledgerEntries: 100 }, repetitions: 1, seed: 1, testedSha: "a".repeat(40), verdict: "pass" }, sequence: 4, type: "tool.response" }, turnId: "turn-2" },
+        { event: { sequence: 5, state: { status: "done" }, type: "turn.done" }, turnId: "turn-2" },
       ];
       return { data: { id: "turn-2" } };
     });
