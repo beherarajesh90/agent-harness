@@ -86,7 +86,7 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const artifactTypes = new Set(artifacts.map((artifact) => artifact.type));
   const requiredArtifactTypes: InvestigationArtifact["type"][] = ["InvariantCandidate", "ScenarioPlan", "ExperimentResult"];
   const completeEvidence = Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type));
-  const experimentFailed = artifacts.some((artifact) => artifact.type === "ExperimentResult" && artifact.data.verdict === "fail");
+  const experimentFailed = artifacts.some((artifact) => artifact.type === "ExperimentResult" && (artifact.data.verdict === "fail" || paymentInvariantViolated(artifact.data)));
   const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : ((state?.status === "blocked" || experimentFailed) && completeEvidence) ? "BLOCKED" : terminal ? completeEvidence ? "READY" : "UNCERTAIN" : "RUNNING";
 
   return {
@@ -149,6 +149,12 @@ function findPullRequestHeadSha(events: HarnessEvent[]) {
     }
   }
   return undefined;
+}
+
+function paymentInvariantViolated(data: Record<string, unknown>) {
+  const observed = data.observed;
+  if (!isRecord(observed)) return false;
+  return observed.charges !== observed.intents || observed.ledgerEntries !== observed.intents;
 }
 
 function parseJson(content: string): unknown {
