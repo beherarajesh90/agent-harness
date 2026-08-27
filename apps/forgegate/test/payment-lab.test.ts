@@ -203,4 +203,12 @@ describe("payment laboratory", () => {
     });
     expect(runPaymentExperiment({ mode: "safe", repetitions: 2, seed: 42, testedSha: "a".repeat(40) }).verdict).toBe("pass");
   });
+
+  it("uses the seed to select a deterministic unsafe fault schedule", () => {
+    const first = runPaymentExperiment({ mode: "unsafe", repetitions: 2, seed: 1, testedSha: "a".repeat(40) });
+    const second = runPaymentExperiment({ mode: "unsafe", repetitions: 2, seed: 2, testedSha: "a".repeat(40) });
+
+    expect(first.observed).not.toEqual(second.observed);
+    expect(runPaymentExperiment({ mode: "unsafe", repetitions: 2, seed: 1, testedSha: "a".repeat(40) })).toEqual(first);
+  });
 });

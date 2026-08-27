@@ -229,8 +229,13 @@ export function createPaymentLaboratory(options: PaymentLaboratoryOptions = {}) 
   };
 }
 
-export function runUnsafeRetryFixture() {
-  const unsafeIntentIds = new Set(["pi-001", "pi-002"]);
+export function runUnsafeRetryFixture(seed?: number) {
+  const faultCount = seed === undefined ? 2 : ((seed + 1) % 3) + 1;
+  const unsafeIntentIds = new Set(
+    seed === undefined
+      ? ["pi-001", "pi-002"]
+      : Array.from({ length: faultCount }, (_, index) => `pi-${String(((seed * 31 + index * 17) % 100) + 1).padStart(3, "0")}`),
+  );
   const laboratory = createPaymentLaboratory({
     faultSchedule: { timeoutAfterChargeForIntentIds: unsafeIntentIds },
     unsafeRetryForIntentIds: unsafeIntentIds,
@@ -278,7 +283,7 @@ export function runPaymentExperiment({
   if (!Number.isInteger(seed) || seed < 0) throw new Error("seed must be a non-negative integer");
   if (!/^[a-f0-9]{40}$/.test(testedSha)) throw new Error("testedSha must be a commit SHA");
 
-  const run = mode === "unsafe" ? runUnsafeRetryFixture : runSafeFixture;
+  const run = mode === "unsafe" ? () => runUnsafeRetryFixture(seed) : runSafeFixture;
   const observed = run();
   for (let repetition = 1; repetition < repetitions; repetition += 1) {
     const next = run();

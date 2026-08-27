@@ -163,6 +163,7 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "When an artifact is emitted into an event, preserve it under artifactType (InvariantCandidate, ScenarioPlan, or ExperimentResult) and artifact fields.",
       "Use the existing payment-lab:evidence identifier in ExperimentResult artifactLinks; never put an explanation or sentence in artifactLinks.",
       "Run the baseline payment test on master before checking out the exact PR head SHA; use the baseline counts as expected and the PR experiment counts as observed.",
+      "Use the ScenarioPlan seed to drive a deterministic fault schedule; repeated runs with the same seed must reproduce the same observations, and different seeds must be allowed to exercise different schedules.",
       "Mark the verdict fail when the observed counts violate an accepted invariant, even if the scenario reproduces the expected failure.",
       "Do not accept prose as an artifact; validate every candidate and scenario against the ForgeGate schemas before using it.",
       "Before claiming READY, require every accepted artifact to use one testedSha, every ScenarioPlan invariantId to reference an accepted invariant, and every ScenarioPlan seed to match the ExperimentResult seed.",
