@@ -19,6 +19,7 @@ const evidenceReferenceSchema = z
 
 export type InvariantCandidate = z.infer<typeof invariantCandidateSchema>;
 export type ScenarioPlan = z.infer<typeof scenarioPlanSchema>;
+export type ExperimentResult = z.infer<typeof experimentResultSchema>;
 
 export const invariantCandidateSchema = z
   .object({
@@ -78,22 +79,45 @@ const investigationResponseSchema = z
     invariants: z.array(invariantCandidateSchema).min(1),
     scenarios: z.array(scenarioPlanSchema).min(1),
   })
-  .strict();
+  .strict()
+  .superRefine((bundle, context) => {
+    try {
+      validateInvestigationArtifacts(bundle);
+    } catch (error) {
+      context.addIssue({ code: "custom", message: error instanceof Error ? error.message : "inconsistent investigation artifacts" });
+    }
+  });
 
 export function validateAnalystArtifacts(input: { invariants: unknown; scenarios: unknown }) {
   const invariants = z.array(invariantCandidateSchema).parse(input.invariants);
   const scenarios = z.array(scenarioPlanSchema).parse(input.scenarios);
+  const testedSha = invariants[0]?.testedSha;
+  if (testedSha && invariants.some((invariant) => invariant.testedSha !== testedSha)) {
+    throw new Error("all invariants must use the same tested SHA");
+  }
   const invariantIds = new Set(invariants.map((invariant) => invariant.id));
   for (const scenario of scenarios) {
     if (!invariantIds.has(scenario.invariantId)) {
-      throw new z.ZodError([{
-        code: "custom",
-        message: "scenario must reference an accepted invariant",
-        path: ["scenarios"],
-      }]);
+      throw new Error("scenario must reference an accepted invariant");
+    }
+    if (testedSha && scenario.testedSha !== testedSha) {
+      throw new Error("all analyst artifacts must use the same tested SHA");
     }
   }
   return { invariants, scenarios };
+}
+
+export function validateInvestigationArtifacts(input: { invariants: unknown; scenarios: unknown; experimentResult: unknown }) {
+  const { invariants, scenarios } = validateAnalystArtifacts(input);
+  const experimentResult = experimentResultSchema.parse(input.experimentResult);
+  const testedSha = invariants[0]?.testedSha ?? scenarios[0]?.testedSha;
+  if (!testedSha || experimentResult.testedSha !== testedSha) {
+    throw new Error("all investigation artifacts must use the same tested SHA");
+  }
+  if (scenarios.some((scenario) => scenario.seed !== experimentResult.seed)) {
+    throw new Error("experiment seed must match every scenario seed");
+  }
+  return { invariants, scenarios, experimentResult };
 }
 
 export function createForgeGateAgentSpec(modelName: string): AgentSpec {
@@ -119,6 +143,7 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "Run the baseline payment test on master before checking out the exact PR head SHA; use the baseline counts as expected and the PR experiment counts as observed.",
       "Mark the verdict fail when the observed counts violate an accepted invariant, even if the scenario reproduces the expected failure.",
       "Do not accept prose as an artifact; validate every candidate and scenario against the ForgeGate schemas before using it.",
+      "Before claiming READY, require every accepted artifact to use one testedSha, every ScenarioPlan invariantId to reference an accepted invariant, and every ScenarioPlan seed to match the ExperimentResult seed.",
       "InvariantCandidate evidence objects use sha (not testedSha) and must reference apps/forgegate/src/payment-lab.ts or apps/forgegate/test/payment-lab.test.ts at the exact testedSha.",
       "ScenarioPlan injectedFaults is string[] and expectedOutcome is a string; return raw JSON without markdown fences.",
       "Use the sandbox only for disposable work.",

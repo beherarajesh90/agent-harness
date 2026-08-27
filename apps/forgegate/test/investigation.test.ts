@@ -59,6 +59,19 @@ describe("investigation control plane", () => {
     expect(projectInvestigation("session-1", "url", items).status).toBe("READY");
   });
 
+  it("does not project READY when artifact relationships are inconsistent", () => {
+    const sha = "a".repeat(40);
+    const items = [
+      { event: { content: JSON.stringify({ head: { sha } }), sequence: 1, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "InvariantCandidate", artifact: { confidence: 1, evidence: [{ endLine: 1, path: "a.ts", sha, startLine: 1 }, { endLine: 2, path: "b.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha }, sequence: 2, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ScenarioPlan", artifact: { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "wrong-id", ordering: ["charge"], seed: 1, testedSha: sha }, sequence: 3, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 1, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 2, testedSha: sha, verdict: "pass" }, sequence: 4, type: "tool.response" }, turnId: "turn-1" },
+      { event: { sequence: 5, state: { status: "done" }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+
+    expect(projectInvestigation("session-1", "url", items).status).toBe("UNCERTAIN");
+  });
+
   it("projects artifacts from a valid final investigation bundle", () => {
     const sha = "a".repeat(40);
     const bundle = {

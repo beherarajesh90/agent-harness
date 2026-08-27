@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createForgeGateAgentSpec, experimentResultSchema, invariantCandidateSchema, scenarioPlanSchema, validateAnalystArtifacts } from "../src/agent-spec.js";
+import { createForgeGateAgentSpec, experimentResultSchema, invariantCandidateSchema, scenarioPlanSchema, validateAnalystArtifacts, validateInvestigationArtifacts } from "../src/agent-spec.js";
 
 describe("ForgeGate agent specification", () => {
   it("enables only the configured GitHub tools and gates commits", () => {
@@ -98,6 +98,25 @@ describe("ForgeGate agent specification", () => {
 
     expect(validateAnalystArtifacts({ invariants: [invariant], scenarios: [scenario] })).toEqual({ invariants: [invariant], scenarios: [scenario] });
     expect(() => validateAnalystArtifacts({ invariants: [invariant], scenarios: [{ ...scenario, invariantId: "unknown" }] })).toThrow("accepted invariant");
+  });
+
+  it("requires experiment evidence to match the accepted artifact set", () => {
+    const sha = "a".repeat(40);
+    const invariant = {
+      confidence: 1,
+      evidence: [
+        { endLine: 1, path: "a.ts", sha, startLine: 1 },
+        { endLine: 2, path: "b.ts", sha, startLine: 1 },
+      ],
+      id: "i1",
+      statement: "one charge",
+      testedSha: sha,
+    };
+    const scenario = { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], seed: 1, testedSha: sha };
+    const experimentResult = { artifactLinks: ["payment-lab:evidence"], expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 1, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "pass" as const };
+
+    expect(validateInvestigationArtifacts({ invariants: [invariant], scenarios: [scenario], experimentResult })).toMatchObject({ experimentResult });
+    expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios: [{ ...scenario, seed: 2 }], experimentResult })).toThrow("experiment seed");
   });
 
   it("rejects placeholder analyst artifacts", () => {
