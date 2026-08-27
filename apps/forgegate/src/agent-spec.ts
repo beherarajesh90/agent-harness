@@ -116,6 +116,8 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "The failure-mode-analyst must return one or more ScenarioPlan JSON objects with invariantId, testedSha, seed, injectedFaults, ordering, and expectedOutcome.",
       "When an artifact is emitted into an event, preserve it under artifactType (InvariantCandidate, ScenarioPlan, or ExperimentResult) and artifact fields.",
       "Use the existing payment-lab:evidence identifier in ExperimentResult artifactLinks; never put an explanation or sentence in artifactLinks.",
+      "Run the baseline payment test on master before checking out the exact PR head SHA; use the baseline counts as expected and the PR experiment counts as observed.",
+      "Mark the verdict fail when the observed counts violate an accepted invariant, even if the scenario reproduces the expected failure.",
       "Do not accept prose as an artifact; validate every candidate and scenario against the ForgeGate schemas before using it.",
       "InvariantCandidate evidence objects use sha (not testedSha) and must reference apps/forgegate/src/payment-lab.ts or apps/forgegate/test/payment-lab.test.ts at the exact testedSha.",
       "ScenarioPlan injectedFaults is string[] and expectedOutcome is a string; return raw JSON without markdown fences.",

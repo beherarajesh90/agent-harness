@@ -39,6 +39,8 @@ describe("ForgeGate agent specification", () => {
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("injectedFaults is string[]"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("expectedOutcome is a string"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("payment-lab:evidence"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Run the baseline payment test on master before checking out the exact PR head SHA"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Mark the verdict fail when the observed counts violate an accepted invariant"));
   });
 
   it("requires an invariant to cite two files at the tested SHA", () => {
