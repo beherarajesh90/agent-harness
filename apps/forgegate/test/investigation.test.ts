@@ -131,6 +131,16 @@ describe("investigation control plane", () => {
     ]);
   });
 
+  it("merges model deltas into their base event", () => {
+    const snapshot = projectInvestigation("session-1", "url", [
+      { event: { baseEventId: "model-1", delta: { content: "complete" }, id: "delta-1", sequence: 2, type: "model.message.delta" }, turnId: "turn-1" },
+      { event: { content: "partial", id: "model-1", sequence: 1, type: "model.message" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.events).toHaveLength(1);
+    expect(snapshot.events[0]).toMatchObject({ eventId: "model-1", payload: { content: "complete" }, sequence: 1 });
+  });
+
   it("creates, reconstructs, and cancels an investigation", async () => {
     const gateway = {
       cancel: vi.fn(async () => undefined),

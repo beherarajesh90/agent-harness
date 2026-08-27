@@ -71,7 +71,7 @@ export class InvestigationNotFoundError extends Error {
 }
 
 export function projectInvestigation(sessionId: string, pullRequestUrl: string, items: TrueForgeEventItem[]): InvestigationSnapshot {
-  const projected = items.map((item, index) => toHarnessEvent(sessionId, item, items.length - index));
+  const projected = mergeModelDeltas(items.map((item, index) => toHarnessEvent(sessionId, item, items.length - index)));
   const seenSequences = new Set<number>();
   const events = projected.filter((event) => {
     if (seenSequences.has(event.sequence)) return false;
@@ -149,6 +149,19 @@ function findPullRequestHeadSha(events: HarnessEvent[]) {
     }
   }
   return undefined;
+}
+
+function mergeModelDeltas(events: HarnessEvent[]) {
+  const byId = new Map(events.map((event) => [event.eventId, event]));
+  return events.filter((event) => {
+    const baseEventId = event.payload.baseEventId;
+    const delta = event.payload.delta;
+    if (typeof baseEventId !== "string" || !isRecord(delta)) return true;
+    const base = byId.get(baseEventId);
+    if (!base) return true;
+    base.payload = { ...base.payload, ...delta };
+    return false;
+  });
 }
 
 function paymentInvariantViolated(data: Record<string, unknown>) {
