@@ -83,4 +83,35 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(createTurn).toHaveBeenCalledOnce();
     expect(receivedPrompt).toContain("Phase INVARIANTS");
   });
+
+  it.each(["cancelled", "error", "blocked"])("does not continue a %s terminal turn", async (status) => {
+    const createTurn = vi.fn(async () => ({ data: { id: "unexpected" } }));
+    const listEvents = vi.fn(async () => [{ event: { state: { status }, type: "turn.done" }, turnId: "turn-1" }]);
+    const controller = createInvestigationPhaseController({ createTurn, listEvents, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).not.toHaveBeenCalled();
+  });
+
+  it("surfaces phase controller failures through the launcher callback", async () => {
+    const onControllerError = vi.fn();
+    const launch = createTrueForgeInvestigationLauncher({
+      modelName: "ollama-local/qwen35-4b",
+      repository: "beherarajesh90/agent-harness",
+      sessions: {
+        create: vi.fn(async () => ({ data: { id: "session-1" } })),
+        createTurn: vi.fn(async () => ({ data: { id: "turn-1" } })),
+      },
+      listEvents: async () => {
+        throw new Error("controller unavailable");
+      },
+      onControllerError,
+    });
+
+    await launch({ pullRequestUrl: "https://github.com/beherarajesh90/agent-harness/pull/7" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(onControllerError).toHaveBeenCalledWith(expect.objectContaining({ message: "controller unavailable" }));
+  });
 });

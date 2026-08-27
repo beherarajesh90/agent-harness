@@ -29,11 +29,13 @@ export function createTrueForgeInvestigationLauncher({
   repository,
   sessions,
   listEvents,
+  onControllerError,
 }: {
   modelName: string;
   repository: string;
   sessions: TrueForgeSessions;
   listEvents?: (sessionId: string) => Promise<InvestigationEvent[]>;
+  onControllerError?: (error: unknown) => void;
 }) {
   const configuredRepository = assertConfiguredRepository(repository);
 
@@ -71,7 +73,8 @@ export function createTrueForgeInvestigationLauncher({
     });
 
     if (listEvents) {
-      void createInvestigationPhaseController({ createTurn: sessions.createTurn.bind(sessions), listEvents }).continue(session.data.id, turn.data.id).catch(() => undefined);
+      const reportError = onControllerError ?? ((error: unknown) => console.error("ForgeGate phase controller failed", error));
+      void createInvestigationPhaseController({ createTurn: sessions.createTurn.bind(sessions), listEvents }).continue(session.data.id, turn.data.id).catch(reportError);
     }
     return { sessionId: session.data.id, turnId: turn.data.id };
   };
@@ -85,6 +88,7 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
     for (const prompt of continuationPrompts) {
       const completed = await waitForTurn(sessionId, turnId);
       if (!completed) return;
+      if (isTerminalTurn(completed.event)) return;
       const events = await listEvents(sessionId);
       if (hasCompleteEvidence(events)) return;
       turnId = (await createTurn(sessionId, { input: [{ content: prompt, type: "user.message" }] })).data.id;
@@ -94,11 +98,18 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
   async function waitForTurn(sessionId: string, turnId: string) {
     for (let poll = 0; poll < maxPolls; poll += 1) {
       const events = await listEvents(sessionId);
-      if (events.some((item) => item.turnId === turnId && item.event.type === "turn.done")) return true;
+      const completed = events.find((item) => item.turnId === turnId && item.event.type === "turn.done");
+      if (completed) return completed;
       if (poll < maxPolls - 1) await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
     }
-    return false;
+    return undefined;
   }
+}
+
+function isTerminalTurn(event: Record<string, unknown>) {
+  const state = event.state;
+  const status = typeof state === "object" && state !== null && !Array.isArray(state) ? (state as { status?: unknown }).status : event.status;
+  return status === "cancelled" || status === "error" || status === "blocked";
 }
 
 function hasCompleteEvidence(events: InvestigationEvent[]) {
