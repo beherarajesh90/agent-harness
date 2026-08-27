@@ -35,6 +35,9 @@ describe("ForgeGate agent specification", () => {
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("InvariantCandidate"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("ScenarioPlan"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("exactly two visible dynamic subagents"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("evidence objects use sha"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("injectedFaults is string[]"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("expectedOutcome is a string"));
   });
 
   it("requires an invariant to cite two files at the tested SHA", () => {

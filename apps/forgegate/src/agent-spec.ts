@@ -109,6 +109,8 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "The failure-mode-analyst must return one or more ScenarioPlan JSON objects with invariantId, testedSha, seed, injectedFaults, ordering, and expectedOutcome.",
       "When an artifact is emitted into an event, preserve it under artifactType (InvariantCandidate, ScenarioPlan, or ExperimentResult) and artifact fields.",
       "Do not accept prose as an artifact; validate every candidate and scenario against the ForgeGate schemas before using it.",
+      "InvariantCandidate evidence objects use sha (not testedSha) and must reference apps/forgegate/src/payment-lab.ts or apps/forgegate/test/payment-lab.test.ts at the exact testedSha.",
+      "ScenarioPlan injectedFaults is string[] and expectedOutcome is a string; return raw JSON without markdown fences.",
       "Use the sandbox only for disposable work.",
       "Never commit, comment, trigger Qodo, merge, deploy, force-push, delete, access credentials, or run host commands without the configured tool boundary and required approval.",
     ].join(" "),

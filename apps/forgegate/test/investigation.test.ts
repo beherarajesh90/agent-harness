@@ -58,6 +58,22 @@ describe("investigation control plane", () => {
     expect(projectInvestigation("session-1", "url", items).status).toBe("READY");
   });
 
+  it("projects artifacts from a valid final investigation bundle", () => {
+    const sha = "a".repeat(40);
+    const bundle = {
+      decision: "BLOCKED",
+      invariants: [{ confidence: 1, evidence: [{ endLine: 2, path: "a.ts", sha, startLine: 1 }, { endLine: 4, path: "b.ts", sha, startLine: 3 }], id: "i1", statement: "one charge", testedSha: sha }],
+      scenarios: [{ expectedOutcome: "duplicate charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge", "retry"], seed: 1, testedSha: sha }],
+      experimentResult: { artifactLinks: ["payment-lab:evidence"], expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 2, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "fail" },
+    };
+
+    const snapshot = projectInvestigation("session-1", "url", [
+      { event: { state: { output: { content: JSON.stringify(bundle) } }, type: "turn.done" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.artifacts.map((artifact) => artifact.type)).toEqual(["InvariantCandidate", "ScenarioPlan", "ExperimentResult"]);
+  });
+
   it("creates, reconstructs, and cancels an investigation", async () => {
     const gateway = {
       cancel: vi.fn(async () => undefined),

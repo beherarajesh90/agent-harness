@@ -1,4 +1,4 @@
-import { experimentResultSchema, invariantCandidateSchema, scenarioPlanSchema } from "./agent-spec.js";
+import { experimentResultSchema, invariantCandidateSchema, scenarioPlanSchema, validateAnalystArtifacts } from "./agent-spec.js";
 
 export const stages = [
   "CONTEXT",
@@ -101,6 +101,22 @@ function artifactFromPayload(payload: Record<string, unknown>): InvestigationArt
 
   const output = isRecord(payload.state) && isRecord(payload.state.output) ? payload.state.output : undefined;
   const content = output?.content;
+  if (typeof content === "string") {
+    const parsed = parseJson(content);
+    if (isRecord(parsed) && Array.isArray(parsed.invariants) && Array.isArray(parsed.scenarios) && parsed.experimentResult !== undefined) {
+      try {
+        const validated = validateAnalystArtifacts({ invariants: parsed.invariants, scenarios: parsed.scenarios });
+        const experimentResult = experimentResultSchema.parse(parsed.experimentResult);
+        return [
+          ...validated.invariants.map((data) => ({ data, type: "InvariantCandidate" as const })),
+          ...validated.scenarios.map((data) => ({ data, type: "ScenarioPlan" as const })),
+          { data: experimentResult, type: "ExperimentResult" as const },
+        ];
+      } catch {
+        return [];
+      }
+    }
+  }
   const type = payload.title === "invariant-analyst" ? "InvariantCandidate" : payload.title === "failure-mode-analyst" ? "ScenarioPlan" : undefined;
   return type && typeof content === "string" ? readArtifact(type, parseJson(content)) : [];
 }
