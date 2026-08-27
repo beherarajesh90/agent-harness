@@ -1,4 +1,4 @@
-import { experimentResultSchema, invariantCandidateSchema, scenarioPlanSchema, validateAnalystArtifacts, validateInvestigationArtifacts } from "./agent-spec.js";
+import { experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, scenarioPlanSchema, validateAnalystArtifacts, validateInvestigationArtifacts } from "./agent-spec.js";
 import type { InvestigationDecision } from "./agent-spec.js";
 
 export const stages = [
@@ -110,7 +110,7 @@ function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: 
     return [
       ...bundle.invariants.map((data) => ({ data, type: "InvariantCandidate" as const })),
       ...bundle.scenarios.map((data) => ({ data, type: "ScenarioPlan" as const })),
-      { data: bundle.experimentResult, type: "ExperimentResult" as const },
+      ...(bundle.experimentResult ? [{ data: bundle.experimentResult, type: "ExperimentResult" as const }] : []),
     ];
   }
   const wrapped = readArtifact(payload.artifactType, payload.artifact, trustedHeadSha);
@@ -129,9 +129,19 @@ function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: 
 function readFinalBundle(payload: Record<string, unknown>, trustedHeadSha?: string) {
   const output = isRecord(payload.state) && isRecord(payload.state.output) ? payload.state.output : undefined;
   const parsed = typeof output?.content === "string" ? parseJson(output.content) : undefined;
-  if (!isRecord(parsed) || !Array.isArray(parsed.invariants) || !Array.isArray(parsed.scenarios) || parsed.experimentResult === undefined) return undefined;
+  if (!isRecord(parsed)) return undefined;
+  const parsedResponse = investigationResponseSchema.safeParse(parsed);
+  if (!parsedResponse.success) return undefined;
+  if (parsedResponse.data.decision === "UNCERTAIN") {
+    return {
+      decision: parsedResponse.data.decision,
+      experimentResult: parsedResponse.data.experimentResult,
+      invariants: parsedResponse.data.invariants ?? [],
+      scenarios: parsedResponse.data.scenarios ?? [],
+    };
+  }
   try {
-    const bundle = validateInvestigationArtifacts({ decision: parsed.decision, invariants: parsed.invariants, scenarios: parsed.scenarios, experimentResult: parsed.experimentResult });
+    const bundle = validateInvestigationArtifacts(parsedResponse.data);
     if (trustedHeadSha && [...bundle.invariants, ...bundle.scenarios, bundle.experimentResult].some((artifact) => artifact.testedSha !== trustedHeadSha)) return undefined;
     return bundle;
   } catch {

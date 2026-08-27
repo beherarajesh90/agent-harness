@@ -61,7 +61,7 @@ export function createTrueForgeInvestigationLauncher({
             "After both analysts finish, run the selected ScenarioPlan in the sandbox with the independent payment oracle and record ExperimentResult evidence.",
             "Use payment-lab:evidence as the ExperimentResult artifact link; never put an explanation or sentence in artifactLinks.",
             "Use baseline counts as ExperimentResult.expected and PR-head adversarial counts as observed; mark verdict fail when the observed counts violate an accepted invariant.",
-            "The final response must be a JSON object with invariants, scenarios, experimentResult, and decision fields; do not claim READY without complete evidence.",
+            "The final response must be a JSON object with a decision field. For READY or BLOCKED include complete consistent invariants, scenarios, and experimentResult evidence; for UNCERTAIN include only evidence actually obtained and omit unavailable fields. Never invent missing artifacts.",
             "Completion predicate: do not emit a final response until all required reads, two analyst outputs, baseline, adversarial experiment, schema validation, and decision are present; after every tool response issue the next required tool call.",
             "Validate both artifact types against the ForgeGate schemas; reject prose-only or stale-SHA artifacts.",
             "Artifact contract: evidence objects use sha (not testedSha); ScenarioPlan injectedFaults is string[] and expectedOutcome is a string; return raw JSON without markdown fences.",

@@ -122,6 +122,7 @@ describe("investigation control plane", () => {
   it("blocks duplicate-payment evidence even when the model reports pass", () => {
     const sha = "a".repeat(40);
     const bundle = {
+      decision: "BLOCKED",
       invariants: [{ confidence: 1, evidence: [{ endLine: 2, path: "a.ts", sha, startLine: 1 }, { endLine: 4, path: "b.ts", sha, startLine: 3 }], id: "i1", statement: "one charge per intent", testedSha: sha }],
       scenarios: [{ expectedOutcome: "one charge per intent", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge", "retry"], seed: 1, testedSha: sha }],
       experimentResult: { artifactLinks: ["payment-lab:evidence"], expected: { charges: 102, intents: 100, ledgerEntries: 100 }, observed: { charges: 102, intents: 100, ledgerEntries: 100 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "pass" },

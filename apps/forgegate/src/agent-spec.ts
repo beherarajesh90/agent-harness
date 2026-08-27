@@ -75,15 +75,20 @@ export const experimentResultSchema = z
     "experiment artifact links must be concrete paths or identifiers",
   );
 
-const investigationResponseSchema = z
+export const investigationResponseSchema = z
   .object({
     decision: investigationDecisionSchema,
-    experimentResult: experimentResultSchema,
-    invariants: z.array(invariantCandidateSchema).min(1),
-    scenarios: z.array(scenarioPlanSchema).min(1),
+    experimentResult: experimentResultSchema.optional(),
+    invariants: z.array(invariantCandidateSchema).optional(),
+    scenarios: z.array(scenarioPlanSchema).optional(),
   })
   .strict()
   .superRefine((bundle, context) => {
+    if (bundle.decision === "UNCERTAIN" && (!bundle.invariants?.length || !bundle.scenarios?.length || !bundle.experimentResult)) return;
+    if (!bundle.invariants?.length || !bundle.scenarios?.length || !bundle.experimentResult) {
+      context.addIssue({ code: "custom", message: `${bundle.decision} requires complete investigation evidence` });
+      return;
+    }
     try {
       validateInvestigationArtifacts(bundle);
     } catch (error) {
@@ -110,8 +115,8 @@ export function validateAnalystArtifacts(input: { invariants: unknown; scenarios
   return { invariants, scenarios };
 }
 
-export function validateInvestigationArtifacts(input: { decision?: unknown; invariants: unknown; scenarios: unknown; experimentResult: unknown }) {
-  const { invariants, scenarios } = validateAnalystArtifacts(input);
+export function validateInvestigationArtifacts(input: { decision?: unknown; invariants?: unknown; scenarios?: unknown; experimentResult?: unknown }) {
+  const { invariants, scenarios } = validateAnalystArtifacts({ invariants: input.invariants, scenarios: input.scenarios });
   const experimentResult = experimentResultSchema.parse(input.experimentResult);
   const decision = input.decision === undefined ? undefined : investigationDecisionSchema.parse(input.decision);
   const testedSha = invariants[0]?.testedSha ?? scenarios[0]?.testedSha;

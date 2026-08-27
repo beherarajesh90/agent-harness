@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createForgeGateAgentSpec, experimentResultSchema, invariantCandidateSchema, scenarioPlanSchema, validateAnalystArtifacts, validateInvestigationArtifacts } from "../src/agent-spec.js";
+import { createForgeGateAgentSpec, experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, scenarioPlanSchema, validateAnalystArtifacts, validateInvestigationArtifacts } from "../src/agent-spec.js";
 
 describe("ForgeGate agent specification", () => {
   it("enables only the configured GitHub tools and gates commits", () => {
@@ -117,6 +117,10 @@ describe("ForgeGate agent specification", () => {
 
     expect(validateInvestigationArtifacts({ invariants: [invariant], scenarios: [scenario], experimentResult })).toMatchObject({ experimentResult });
     expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios: [{ ...scenario, seed: 2 }], experimentResult })).toThrow("experiment seed");
+  });
+
+  it("allows UNCERTAIN without inventing unavailable evidence", () => {
+    expect(investigationResponseSchema.parse({ decision: "UNCERTAIN" })).toEqual({ decision: "UNCERTAIN" });
   });
 
   it("rejects placeholder analyst artifacts", () => {
