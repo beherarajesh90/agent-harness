@@ -29,6 +29,8 @@ export const invariantCandidateSchema = z
     testedSha: shaSchema,
   })
   .strict()
+  .refine((candidate) => candidate.confidence > 0, "accepted invariants must have positive confidence")
+  .refine((candidate) => !/placeholder|unable to determine/i.test(candidate.statement), "placeholder invariant is not evidence")
   .superRefine((candidate, context) => {
     candidate.evidence.forEach((reference, index) => {
       if (reference.sha !== candidate.testedSha) {
@@ -50,7 +52,8 @@ export const scenarioPlanSchema = z
     seed: z.number().int().nonnegative(),
     testedSha: shaSchema,
   })
-  .strict();
+  .strict()
+  .refine((scenario) => !JSON.stringify(scenario).match(/placeholder|unable to determine/i), "placeholder scenario is not evidence");
 
 export const experimentResultSchema = z
   .object({
@@ -62,7 +65,11 @@ export const experimentResultSchema = z
     testedSha: shaSchema,
     verdict: z.enum(["pass", "fail"]),
   })
-  .strict();
+  .strict()
+  .refine(
+    (result) => result.artifactLinks.every((link) => !/placeholder|unable to determine/i.test(link) && !/\s/.test(link) && /[/:]/.test(link)),
+    "experiment artifact links must be concrete paths or identifiers",
+  );
 
 const investigationResponseSchema = z
   .object({
@@ -108,6 +115,7 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "The invariant-analyst must return one or more InvariantCandidate JSON objects with id, statement, confidence, testedSha, and at least two evidence references containing path, startLine, endLine, and the same testedSha.",
       "The failure-mode-analyst must return one or more ScenarioPlan JSON objects with invariantId, testedSha, seed, injectedFaults, ordering, and expectedOutcome.",
       "When an artifact is emitted into an event, preserve it under artifactType (InvariantCandidate, ScenarioPlan, or ExperimentResult) and artifact fields.",
+      "Use the existing payment-lab:evidence identifier in ExperimentResult artifactLinks; never put an explanation or sentence in artifactLinks.",
       "Do not accept prose as an artifact; validate every candidate and scenario against the ForgeGate schemas before using it.",
       "InvariantCandidate evidence objects use sha (not testedSha) and must reference apps/forgegate/src/payment-lab.ts or apps/forgegate/test/payment-lab.test.ts at the exact testedSha.",
       "ScenarioPlan injectedFaults is string[] and expectedOutcome is a string; return raw JSON without markdown fences.",

@@ -48,13 +48,13 @@ describe("GitHub MCP server", () => {
 
     await expect(client.listTools()).resolves.toMatchObject({
       tools: [
-        expect.objectContaining({ name: "get_pull_request" }),
-        expect.objectContaining({ name: "get_qodo_reviews" }),
-        expect.objectContaining({ name: "get_review_comments" }),
-        expect.objectContaining({ name: "get_pull_request_files" }),
-        expect.objectContaining({ name: "get_file" }),
-        expect.objectContaining({ name: "get_checks" }),
-        expect.objectContaining({ name: "commit_files" }),
+        expect.objectContaining({ name: "get_pull_request", outputSchema: expect.any(Object) }),
+        expect.objectContaining({ name: "get_qodo_reviews", outputSchema: expect.any(Object) }),
+        expect.objectContaining({ name: "get_review_comments", outputSchema: expect.any(Object) }),
+        expect.objectContaining({ name: "get_pull_request_files", outputSchema: expect.any(Object) }),
+        expect.objectContaining({ name: "get_file", outputSchema: expect.any(Object) }),
+        expect.objectContaining({ name: "get_checks", outputSchema: expect.any(Object) }),
+        expect.objectContaining({ name: "commit_files", outputSchema: expect.any(Object) }),
       ],
     });
     await expect(

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createForgeGateAgentSpec, invariantCandidateSchema, scenarioPlanSchema, validateAnalystArtifacts } from "../src/agent-spec.js";
+import { createForgeGateAgentSpec, experimentResultSchema, invariantCandidateSchema, scenarioPlanSchema, validateAnalystArtifacts } from "../src/agent-spec.js";
 
 describe("ForgeGate agent specification", () => {
   it("enables only the configured GitHub tools and gates commits", () => {
@@ -38,6 +38,7 @@ describe("ForgeGate agent specification", () => {
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("evidence objects use sha"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("injectedFaults is string[]"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("expectedOutcome is a string"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("payment-lab:evidence"));
   });
 
   it("requires an invariant to cite two files at the tested SHA", () => {
@@ -95,5 +96,35 @@ describe("ForgeGate agent specification", () => {
 
     expect(validateAnalystArtifacts({ invariants: [invariant], scenarios: [scenario] })).toEqual({ invariants: [invariant], scenarios: [scenario] });
     expect(() => validateAnalystArtifacts({ invariants: [invariant], scenarios: [{ ...scenario, invariantId: "unknown" }] })).toThrow("accepted invariant");
+  });
+
+  it("rejects placeholder analyst artifacts", () => {
+    const sha = "a".repeat(40);
+    const placeholder = {
+      confidence: 0,
+      evidence: [
+        { endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 },
+        { endLine: 1, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 },
+      ],
+      id: "placeholder",
+      statement: "Invariant placeholder",
+      testedSha: sha,
+    };
+
+    expect(() => validateAnalystArtifacts({ invariants: [placeholder], scenarios: [] })).toThrow();
+  });
+
+  it("rejects prose in experiment artifact links", () => {
+    const result = {
+      artifactLinks: ["Please note that required evidence is missing."],
+      expected: { charges: 102, intents: 100, ledgerEntries: 100 },
+      observed: { charges: 102, intents: 100, ledgerEntries: 100 },
+      repetitions: 20,
+      seed: 103,
+      testedSha: "a".repeat(40),
+      verdict: "fail" as const,
+    };
+
+    expect(experimentResultSchema.safeParse(result).success).toBe(false);
   });
 });

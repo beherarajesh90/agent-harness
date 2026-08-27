@@ -20,7 +20,7 @@ type PhaseControllerOptions = {
 const continuationPrompts = [
   "Continue with Phase INVARIANTS. Spawn the invariant-analyst now, wait for its completed output, validate every InvariantCandidate against the ForgeGate schema, and preserve each accepted artifact.",
   "Continue with Phase HYPOTHESES. Pass the validated invariant artifacts to the failure-mode-analyst, wait for its completed output, validate every ScenarioPlan, and preserve each accepted artifact.",
-  "Continue with Phase EXPERIMENT and EVIDENCE. Run the validated ScenarioPlan in the disposable sandbox against the exact PR SHA and return a schema-valid ExperimentResult with repetitions, observed counts, verdict, and artifact link.",
+  "Continue with Phase EXPERIMENT and EVIDENCE. Run the validated ScenarioPlan in the disposable sandbox against the exact PR SHA, and return a schema-valid ExperimentResult with repetitions, observed counts, verdict, and the existing payment-lab:evidence identifier as the artifact link only.",
   "Continue with Phase DECISION. Reconcile the persisted InvariantCandidate, ScenarioPlan, and ExperimentResult artifacts. Return the final JSON bundle and decision; READY is allowed only when all three artifact types are valid and consistent.",
 ] as const;
 
@@ -57,6 +57,7 @@ export function createTrueForgeInvestigationLauncher({
             "- invariant-analyst: return InvariantCandidate JSON objects with at least two exact-SHA repository evidence references.",
             "- failure-mode-analyst: wait for the accepted invariant JSON from invariant-analyst, then return deterministic ScenarioPlan JSON objects tied to it.",
             "After both analysts finish, run the selected ScenarioPlan in the sandbox with the independent payment oracle and record ExperimentResult evidence.",
+            "Use payment-lab:evidence as the ExperimentResult artifact link; never put an explanation or sentence in artifactLinks.",
             "The final response must be a JSON object with invariants, scenarios, experimentResult, and decision fields; do not claim READY without complete evidence.",
             "Completion predicate: do not emit a final response until all required reads, two analyst outputs, baseline, adversarial experiment, schema validation, and decision are present; after every tool response issue the next required tool call.",
             "Validate both artifact types against the ForgeGate schemas; reject prose-only or stale-SHA artifacts.",
