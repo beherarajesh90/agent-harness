@@ -90,6 +90,7 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
       if (!completed) return;
       if (isTerminalTurn(completed.event)) return;
       const events = await listEvents(sessionId);
+      if (hasExplicitUncertainDecision(events)) return;
       if (hasCompleteEvidence(events)) return;
       turnId = (await createTurn(sessionId, { input: [{ content: prompt, type: "user.message" }] })).data.id;
     }
@@ -115,6 +116,10 @@ function isTerminalTurn(event: Record<string, unknown>) {
 function hasCompleteEvidence(events: InvestigationEvent[]) {
   const status = projectInvestigation("controller", "", events).status;
   return status === "READY" || status === "BLOCKED";
+}
+
+function hasExplicitUncertainDecision(events: InvestigationEvent[]) {
+  return projectInvestigation("controller", "", events).decision === "UNCERTAIN";
 }
 
 function assertConfiguredRepository(repository: string) {

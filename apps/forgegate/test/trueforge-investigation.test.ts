@@ -94,6 +94,16 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(createTurn).not.toHaveBeenCalled();
   });
 
+  it("does not continue after an explicit UNCERTAIN decision", async () => {
+    const createTurn = vi.fn(async () => ({ data: { id: "unexpected" } }));
+    const listEvents = vi.fn(async () => [{ event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" }]);
+    const controller = createInvestigationPhaseController({ createTurn, listEvents, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).not.toHaveBeenCalled();
+  });
+
   it("surfaces phase controller failures through the launcher callback", async () => {
     const onControllerError = vi.fn();
     const launch = createTrueForgeInvestigationLauncher({
