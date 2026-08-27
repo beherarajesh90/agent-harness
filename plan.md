@@ -1472,29 +1472,29 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [x] Create saved ForgeGate agent specification.
 - [x] Add ForgeGate skill with evidence hierarchy, stopping rules, and approval policy.
 - [x] Configure dynamic subagents.
-- [ ] Implement visible invariant analyst subagent.
-- [ ] Implement visible failure-mode analyst subagent.
-- [ ] Require two repository evidence references for each accepted invariant.
-- [ ] Produce `InvariantCandidate` artifacts.
-- [ ] Produce deterministic `ScenarioPlan` artifacts.
-- [ ] Run baseline comparison against `master`.
-- [ ] Check out exact PR SHA in selected sandbox.
-- [ ] Run the generated adversarial scenario and independent oracle.
-- [ ] Produce `ExperimentResult` with SHA, seed, repetitions, observed values, verdict, and artifact links.
-- [ ] Reach a real `BLOCKED` decision for the seeded unsafe PR.
+- [x] Implement visible invariant analyst subagent.
+- [x] Implement visible failure-mode analyst subagent.
+- [x] Require two repository evidence references for each accepted invariant.
+- [x] Produce `InvariantCandidate` artifacts.
+- [x] Produce deterministic `ScenarioPlan` artifacts.
+- [x] Run baseline comparison against `master`.
+- [x] Check out exact PR SHA in selected sandbox.
+- [x] Run the generated adversarial scenario and independent oracle.
+- [x] Produce `ExperimentResult` with SHA, seed, repetitions, observed values, verdict, and artifact links.
+- [x] Reach a real `BLOCKED` decision for the seeded unsafe PR.
 
 ### Event projection and investigation API
 
 - [x] Implement create-investigation API with repository/PR validation.
-- [ ] Complete matching/conflicting idempotency-key handling.
+- [x] Complete matching/conflicting idempotency-key handling.
 - [x] Implement snapshot reconstruction from TrueForge events.
 - [x] Implement normalized SSE event stream.
-- [ ] Merge model deltas into base events.
-- [ ] Deduplicate by TrueForge `sequence`; use `eventId` only for tracing and mismatch detection.
+- [x] Merge model deltas into base events.
+- [x] Deduplicate by TrueForge `sequence`; use `eventId` only for tracing and mismatch detection.
 - [x] Implement `Last-Event-ID` resume behavior.
 - [x] Implement get-investigation API.
 - [x] Implement cancel API.
-- [ ] Implement live and readiness health APIs.
+- [x] Implement live and readiness health APIs.
 
 ## Phase 4 - Repair and Approval
 
