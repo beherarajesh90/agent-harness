@@ -57,6 +57,8 @@ describe("ForgeGate agent specification", () => {
 
     expect(invariantCandidateSchema.parse(candidate)).toEqual(candidate);
     expect(invariantCandidateSchema.safeParse({ ...candidate, evidence: candidate.evidence.slice(0, 1) }).success).toBe(false);
+    expect(invariantCandidateSchema.safeParse({ ...candidate, evidence: [candidate.evidence[0], candidate.evidence[0]] }).success).toBe(false);
+    expect(invariantCandidateSchema.safeParse({ ...candidate, evidence: [{ ...candidate.evidence[0], path: "README.md" }, candidate.evidence[1]] }).success).toBe(false);
     expect(invariantCandidateSchema.safeParse({ ...candidate, testedSha: "master" }).success).toBe(false);
   });
 
@@ -105,8 +107,8 @@ describe("ForgeGate agent specification", () => {
     const invariant = {
       confidence: 1,
       evidence: [
-        { endLine: 1, path: "a.ts", sha, startLine: 1 },
-        { endLine: 2, path: "b.ts", sha, startLine: 1 },
+        { endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 },
+        { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 },
       ],
       id: "i1",
       statement: "one charge",

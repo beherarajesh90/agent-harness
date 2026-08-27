@@ -4,6 +4,7 @@ import { z } from "zod";
 type AgentSpec = TrueForgeApi.AgentSpec;
 
 const shaSchema = z.string().regex(/^[a-f0-9]{40}$/, "expected a commit SHA");
+const allowedEvidencePaths = new Set(["apps/forgegate/src/payment-lab.ts", "apps/forgegate/test/payment-lab.test.ts"]);
 
 const evidenceReferenceSchema = z
   .object({
@@ -36,7 +37,16 @@ export const invariantCandidateSchema = z
   .refine((candidate) => candidate.confidence > 0, "accepted invariants must have positive confidence")
   .refine((candidate) => !/placeholder|unable to determine/i.test(candidate.statement), "placeholder invariant is not evidence")
   .superRefine((candidate, context) => {
+    const references = new Set<string>();
     candidate.evidence.forEach((reference, index) => {
+      if (!allowedEvidencePaths.has(reference.path)) {
+        context.addIssue({ code: "custom", message: "evidence must reference an allowed payment-lab path", path: ["evidence", index, "path"] });
+      }
+      const location = `${reference.path}:${reference.startLine}:${reference.endLine}`;
+      if (references.has(location)) {
+        context.addIssue({ code: "custom", message: "evidence references must be distinct", path: ["evidence", index] });
+      }
+      references.add(location);
       if (reference.sha !== candidate.testedSha) {
         context.addIssue({
           code: "custom",
@@ -148,7 +158,7 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "Require two evidence references at the tested SHA for every accepted invariant.",
       "Stop as UNCERTAIN when evidence is missing, stale, or inconsistent.",
       "Spawn exactly two visible dynamic subagents: invariant-analyst and failure-mode-analyst.",
-      "The invariant-analyst must return one or more InvariantCandidate JSON objects with id, statement, confidence, testedSha, and at least two evidence references containing path, startLine, endLine, and the same testedSha.",
+      "The invariant-analyst must return one or more InvariantCandidate JSON objects with id, statement, confidence, testedSha, and at least two distinct evidence references containing path, startLine, endLine, and the same testedSha.",
       "The failure-mode-analyst must return one or more ScenarioPlan JSON objects with invariantId, testedSha, seed, injectedFaults, ordering, and expectedOutcome.",
       "When an artifact is emitted into an event, preserve it under artifactType (InvariantCandidate, ScenarioPlan, or ExperimentResult) and artifact fields.",
       "Use the existing payment-lab:evidence identifier in ExperimentResult artifactLinks; never put an explanation or sentence in artifactLinks.",
