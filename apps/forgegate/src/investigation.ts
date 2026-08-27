@@ -71,10 +71,13 @@ export class InvestigationNotFoundError extends Error {
 }
 
 export function projectInvestigation(sessionId: string, pullRequestUrl: string, items: TrueForgeEventItem[]): InvestigationSnapshot {
-  const events = items
-    .slice()
-    .reverse()
-    .map((item, index) => toHarnessEvent(sessionId, item, index + 1));
+  const projected = items.map((item, index) => toHarnessEvent(sessionId, item, items.length - index));
+  const seenSequences = new Set<number>();
+  const events = projected.filter((event) => {
+    if (seenSequences.has(event.sequence)) return false;
+    seenSequences.add(event.sequence);
+    return true;
+  }).sort((left, right) => left.sequence - right.sequence);
   const artifacts = events.flatMap((event) => artifactFromPayload(event.payload));
   const last = events.at(-1);
   const terminal = last?.type === "turn.done";
@@ -82,7 +85,8 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const artifactTypes = new Set(artifacts.map((artifact) => artifact.type));
   const requiredArtifactTypes: InvestigationArtifact["type"][] = ["InvariantCandidate", "ScenarioPlan", "ExperimentResult"];
   const completeEvidence = requiredArtifactTypes.every((type) => artifactTypes.has(type));
-  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : terminal ? completeEvidence ? "READY" : "UNCERTAIN" : "RUNNING";
+  const experimentFailed = artifacts.some((artifact) => artifact.type === "ExperimentResult" && artifact.data.verdict === "fail");
+  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : state?.status === "blocked" || experimentFailed ? "BLOCKED" : terminal ? completeEvidence ? "READY" : "UNCERTAIN" : "RUNNING";
 
   return {
     artifacts,
@@ -228,13 +232,14 @@ function normalizePullRequestUrl(pullRequestUrl: string) {
 
 function toHarnessEvent(sessionId: string, item: TrueForgeEventItem, sequence: number): HarnessEvent {
   const event = item.event;
+  const trueForgeSequence = typeof event.sequence === "number" && Number.isSafeInteger(event.sequence) && event.sequence > 0 ? event.sequence : sequence;
   const type = String(event.type ?? "unknown");
   const source = sourceFor(type);
   return {
-    eventId: String(event.id ?? `${sessionId}-${sequence}`),
+    eventId: String(event.id ?? `${sessionId}-${trueForgeSequence}`),
     occurredAt: String(event.createdAt ?? new Date(0).toISOString()),
     payload: sanitizePayload(event),
-    sequence,
+    sequence: trueForgeSequence,
     sessionId,
     source,
     stage: stageFor(type),

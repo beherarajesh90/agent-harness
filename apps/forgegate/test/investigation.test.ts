@@ -74,6 +74,31 @@ describe("investigation control plane", () => {
     expect(snapshot.artifacts.map((artifact) => artifact.type)).toEqual(["InvariantCandidate", "ScenarioPlan", "ExperimentResult"]);
   });
 
+  it("blocks a completed investigation when the experiment verdict fails", () => {
+    const sha = "a".repeat(40);
+    const bundle = {
+      decision: "BLOCKED",
+      invariants: [{ confidence: 1, evidence: [{ endLine: 2, path: "a.ts", sha, startLine: 1 }, { endLine: 4, path: "b.ts", sha, startLine: 3 }], id: "i1", statement: "one charge", testedSha: sha }],
+      scenarios: [{ expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], seed: 1, testedSha: sha }],
+      experimentResult: { artifactLinks: ["payment-lab:evidence"], expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 2, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "fail" },
+    };
+
+    expect(projectInvestigation("session-1", "url", [{ event: { state: { output: { content: JSON.stringify(bundle) } }, type: "turn.done" }, turnId: "turn-1" }]).status).toBe("BLOCKED");
+  });
+
+  it("uses TrueForge sequence as the canonical event sequence and ignores duplicates", () => {
+    const snapshot = projectInvestigation("session-1", "url", [
+      { event: { id: "event-2", sequence: 2, type: "turn.done" }, turnId: "turn-1" },
+      { event: { id: "event-1", sequence: 1, type: "turn.created" }, turnId: "turn-1" },
+      { event: { id: "duplicate-event-2", sequence: 2, type: "turn.done" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.events.map((event) => ({ eventId: event.eventId, sequence: event.sequence }))).toEqual([
+      { eventId: "event-1", sequence: 1 },
+      { eventId: "event-2", sequence: 2 },
+    ]);
+  });
+
   it("creates, reconstructs, and cancels an investigation", async () => {
     const gateway = {
       cancel: vi.fn(async () => undefined),
@@ -128,6 +153,21 @@ describe("investigation control plane", () => {
     gateway.launch.mockResolvedValueOnce({ sessionId: "session-2", turnId: "turn-2" });
     await expect(service.create(url, "request-2")).resolves.toEqual({ sessionId: "session-2", turnId: "turn-2" });
     expect(gateway.launch).toHaveBeenCalledTimes(3);
+  });
+
+  it("rejects a conflicting PR while the idempotent launch is still in flight", async () => {
+    let resolveLaunch!: (value: { sessionId: string; turnId: string }) => void;
+    const gateway = {
+      cancel: vi.fn(),
+      launch: vi.fn(() => new Promise<{ sessionId: string; turnId: string }>((resolve) => { resolveLaunch = resolve; })),
+      listEvents: vi.fn(async () => []),
+    };
+    const service = createInvestigationService(gateway);
+    const first = service.create("https://github.com/acme/demo/pull/1", "request-1");
+
+    await expect(service.create("https://github.com/acme/demo/pull/2", "request-1")).rejects.toBeInstanceOf(IdempotencyConflictError);
+    resolveLaunch({ sessionId: "session-1", turnId: "turn-1" });
+    await first;
   });
 
   it("recovers a durable idempotency result after service recreation", async () => {
