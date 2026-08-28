@@ -122,6 +122,7 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
         turnId = (await createTurn(sessionId, { input: [{ content: incompleteExperimentPrompt(events), type: "user.message" }] })).data.id;
         continue;
       }
+      if (hasIncompleteExperiments(events)) return;
       if (hasExplicitUncertainDecision(events) && !hasAnyEvidence(events)) return;
       if (hasCompleteEvidence(events)) return;
       turnId = (await createTurn(sessionId, { input: [{ content: continuationPrompts[promptIndex]!, type: "user.message" }] })).data.id;
@@ -163,7 +164,7 @@ function hasIncompleteExperiments(events: InvestigationEvent[]) {
   const artifacts = projectInvestigation("controller", "", events).artifacts;
   const scenarios = artifacts.filter((artifact) => artifact.type === "ScenarioPlan");
   const results = artifacts.filter((artifact) => artifact.type === "ExperimentResult");
-  return scenarios.length > results.length;
+  return scenarios.some((scenario) => !results.some((result) => scenarioMatchesResult(scenario.data, result.data)));
 }
 
 function incompleteExperimentPrompt(events: InvestigationEvent[]) {
@@ -171,10 +172,16 @@ function incompleteExperimentPrompt(events: InvestigationEvent[]) {
   const scenarios = artifacts.filter((artifact) => artifact.type === "ScenarioPlan").map((artifact) => artifact.data);
   const results = artifacts.filter((artifact) => artifact.type === "ExperimentResult").map((artifact) => artifact.data);
   const missingIds = scenarios
+    .filter((scenario) => !results.some((result) => scenarioMatchesResult(scenario, result)))
     .map((scenario) => scenario.scenarioId)
-    .filter((scenarioId): scenarioId is string => typeof scenarioId === "string" && !results.some((result) => result.scenarioId === scenarioId));
+    .filter((scenarioId): scenarioId is string => typeof scenarioId === "string");
   const missing = missingIds.length > 0 ? ` Missing scenario IDs: ${missingIds.join(", ")}.` : ` ${scenarios.length - results.length} scenario result(s) are still missing.`;
   return `${continuationPrompts[2]}${missing} Return one result per missing scenario and copy each exact scenarioId into its ExperimentResult.`;
+}
+
+function scenarioMatchesResult(scenario: Record<string, unknown>, result: Record<string, unknown>) {
+  if (typeof scenario.scenarioId === "string") return result.scenarioId === scenario.scenarioId;
+  return typeof result.scenarioId !== "string" && result.seed === scenario.seed;
 }
 
 function findInvalidMcpToolCall(events: InvestigationEvent[]) {
