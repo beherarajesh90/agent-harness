@@ -153,6 +153,26 @@ describe("investigation control plane", () => {
     expect(snapshot.status).toBe("BLOCKED");
   });
 
+  it("does not silently overwrite conflicting results for the same scenario", () => {
+    const sha = "a".repeat(40);
+    const invariant = { confidence: 1, evidence: [{ endLine: 2, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 4, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 3 }], id: "i1", statement: "one charge", testedSha: sha };
+    const scenario = { expectedOutcome: "duplicate charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge", "retry"], scenarioId: "s1", seed: 1, testedSha: sha };
+    const result = (charges: number) => ({ artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges, intents: 1, ledgerEntries: 1 }, repetitions: 1, scenarioId: "s1", seed: 1, testedSha: sha, verdict: "fail" as const });
+
+    const snapshot = projectInvestigation("session-1", "url", [
+      { event: { content: JSON.stringify({ head: { sha } }), sequence: 1, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "InvariantCandidate", artifact: invariant, sequence: 2, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ScenarioPlan", artifact: scenario, sequence: 3, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: result(2), sequence: 4, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: result(3), sequence: 5, type: "tool.response" }, turnId: "turn-1" },
+      { event: { sequence: 6, state: { status: "done" }, type: "turn.done" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.artifacts.filter((artifact) => artifact.type === "ExperimentResult")).toHaveLength(2);
+    expect(snapshot.decision).toBeUndefined();
+    expect(snapshot.status).toBe("UNCERTAIN");
+  });
+
   it("ignores experiment results that do not belong to an accepted scenario", () => {
     const sha = "a".repeat(40);
     const scenario = { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha: sha };

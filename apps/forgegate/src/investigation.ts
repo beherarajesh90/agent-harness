@@ -1,5 +1,6 @@
 import { experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, scenarioPlanSchema, validateInvestigationArtifacts } from "./agent-spec.js";
 import type { InvestigationDecision } from "./agent-spec.js";
+import { isDeepStrictEqual } from "node:util";
 
 export const stages = [
   "CONTEXT",
@@ -137,6 +138,7 @@ function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: 
 
 function deduplicateArtifacts(artifacts: InvestigationArtifact[]) {
   const unique = new Map<string, InvestigationArtifact>();
+  const conflicts = new Map<string, number>();
   for (const artifact of artifacts) {
     const data = artifact.data;
     const identity = artifact.type === "InvariantCandidate"
@@ -144,7 +146,14 @@ function deduplicateArtifacts(artifacts: InvestigationArtifact[]) {
       : artifact.type === "ScenarioPlan"
         ? `${artifact.type}:${data.scenarioId ?? JSON.stringify(data)}`
         : `${artifact.type}:${data.scenarioId ?? data.seed}:${data.testedSha}`;
-    unique.set(identity, artifact);
+    const existing = unique.get(identity);
+    if (!existing) {
+      unique.set(identity, artifact);
+    } else if (!isDeepStrictEqual(existing.data, data)) {
+      const conflictNumber = (conflicts.get(identity) ?? 0) + 1;
+      conflicts.set(identity, conflictNumber);
+      unique.set(`${identity}:conflict:${conflictNumber}`, artifact);
+    }
   }
   return [...unique.values()];
 }
