@@ -108,7 +108,7 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
         turnId = (await createTurn(sessionId, { input: [{ content: mcpRecoveryPrompt, type: "user.message" }] })).data.id;
         continue;
       }
-      const transientSandboxFailures = findTransientSandboxFailures(events);
+      const transientSandboxFailures = findTransientSandboxFailures(events, turnId);
       if (transientSandboxFailures.length > 1) return;
       const transientSandboxFailure = transientSandboxFailures[0];
       if (transientSandboxFailure && !sandboxRecoveryAttempted) {
@@ -188,11 +188,26 @@ function findInvalidMcpToolCall(events: InvestigationEvent[]) {
   return events.find(({ event }) => event.type === "tool.response" && typeof event.content === "string" && /Tool call failed: Tool |MCP server ['\"].*not found/i.test(event.content));
 }
 
-function findTransientSandboxFailures(events: InvestigationEvent[]) {
-  return events.filter(({ event }) => {
-    if (event.type !== "tool.response" || typeof event.content !== "string") return false;
-    return /fork\/exec \/usr\/bin\/bash|command execution timeout|sandbox.*(?:unavailable|startup)|process.?bridge/i.test(event.content);
+function findTransientSandboxFailures(events: InvestigationEvent[], turnId: string) {
+  return events.filter(({ event, turnId: eventTurnId }) => {
+    if (eventTurnId !== turnId || event.type !== "tool.response" || typeof event.content !== "string") return false;
+    const response = parseJson(event.content);
+    if (!isRecord(response) || response.success !== true || !isRecord(response.response)) return false;
+    if (typeof response.response.exitCode !== "number" || typeof response.response.result !== "string") return false;
+    return /fork\/exec \/usr\/bin\/bash|command execution timeout|sandbox.*(?:unavailable|startup)|process.?bridge/i.test(response.response.result);
   });
+}
+
+function parseJson(value: string) {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isSubagentThread(threadId: unknown) {

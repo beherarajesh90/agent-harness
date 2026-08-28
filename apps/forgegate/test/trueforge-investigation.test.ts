@@ -220,6 +220,19 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Retry the same sandbox command once");
   });
 
+  it("does not treat GitHub response text as a sandbox failure", async () => {
+    const createTurn = vi.fn(async () => ({ data: { id: "unexpected" } }));
+    const listEvents = vi.fn(async () => [
+      { event: { content: "GitHub file contains fork/exec /usr/bin/bash: no such file or directory", type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ]);
+    const controller = createInvestigationPhaseController({ createTurn, listEvents, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).not.toHaveBeenCalled();
+  });
+
   it("surfaces phase controller failures through the launcher callback", async () => {
     const onControllerError = vi.fn();
     const launch = createTrueForgeInvestigationLauncher({
