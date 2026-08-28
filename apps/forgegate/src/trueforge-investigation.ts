@@ -24,6 +24,7 @@ const continuationPrompts = [
   "Continue with Phase DECISION. Reconcile the persisted InvariantCandidate, ScenarioPlan, and ExperimentResult artifacts. Return the final JSON bundle with experimentResults and decision; READY is allowed only when all scenarios have passing results and all artifacts are valid and consistent.",
 ] as const;
 const mcpRecoveryPrompt = "The previous MCP call used an invalid server or tool name. Do not call list_tools, get_tool_info, get_pr, list_changed_files, or changed_files. Use only forgegate-github tools named get_pull_request, get_pull_request_files, get_file, get_checks, get_qodo_reviews, and get_review_comments. Retry the required read now, starting with get_pull_request.";
+const sandboxRecoveryPrompt = "The previous sandbox command failed with a transient startup or process-bridge error. Retry the same sandbox command once now, then continue the investigation. Do not mark the investigation UNCERTAIN unless the retry also fails.";
 
 export function createTrueForgeInvestigationLauncher({
   modelName,
@@ -89,6 +90,7 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
   async function continueInvestigation(sessionId: string, initialTurnId: string) {
     let turnId = initialTurnId;
     let mcpRecoveryAttempted = false;
+    let sandboxRecoveryAttempted = false;
     for (const prompt of continuationPrompts) {
       const completed = await waitForTurn(sessionId, turnId);
       if (!completed) return;
@@ -99,6 +101,15 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
         if (isSubagentThread(invalidMcpToolCall.event.threadId) || mcpRecoveryAttempted) return;
         mcpRecoveryAttempted = true;
         turnId = (await createTurn(sessionId, { input: [{ content: mcpRecoveryPrompt, type: "user.message" }] })).data.id;
+        continue;
+      }
+      const transientSandboxFailures = findTransientSandboxFailures(events);
+      if (transientSandboxFailures.length > 1) return;
+      const transientSandboxFailure = transientSandboxFailures[0];
+      if (transientSandboxFailure && !sandboxRecoveryAttempted) {
+        if (isSubagentThread(transientSandboxFailure.event.threadId)) return;
+        sandboxRecoveryAttempted = true;
+        turnId = (await createTurn(sessionId, { input: [{ content: sandboxRecoveryPrompt, type: "user.message" }] })).data.id;
         continue;
       }
       if (hasExplicitUncertainDecision(events)) return;
@@ -135,6 +146,13 @@ function hasExplicitUncertainDecision(events: InvestigationEvent[]) {
 
 function findInvalidMcpToolCall(events: InvestigationEvent[]) {
   return events.find(({ event }) => event.type === "tool.response" && typeof event.content === "string" && /Tool call failed: Tool |MCP server ['\"].*not found/i.test(event.content));
+}
+
+function findTransientSandboxFailures(events: InvestigationEvent[]) {
+  return events.filter(({ event }) => {
+    if (event.type !== "tool.response" || typeof event.content !== "string") return false;
+    return /fork\/exec \/usr\/bin\/bash|command execution timeout|sandbox.*(?:unavailable|startup)|process.?bridge/i.test(event.content);
+  });
 }
 
 function isSubagentThread(threadId: unknown) {

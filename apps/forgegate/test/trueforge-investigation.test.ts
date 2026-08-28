@@ -137,6 +137,24 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(createTurn).not.toHaveBeenCalled();
   });
 
+  it("retries one transient sandbox startup failure before accepting UNCERTAIN", async () => {
+    let events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { content: JSON.stringify({ success: true, response: { exitCode: -1, result: "fork/exec /usr/bin/bash: no such file or directory" } }), type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void request;
+      events = [{ event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-2" }];
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Retry the same sandbox command once");
+  });
+
   it("surfaces phase controller failures through the launcher callback", async () => {
     const onControllerError = vi.fn();
     const launch = createTrueForgeInvestigationLauncher({
