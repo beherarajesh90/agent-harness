@@ -95,8 +95,8 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
     let turnId = initialTurnId;
     let mcpRecoveryAttempted = false;
     let sandboxRecoveryAttempted = false;
-    let experimentRecoveryAttempted = false;
-    for (const prompt of continuationPrompts) {
+    let experimentRecoveryAttempts = 0;
+    for (let promptIndex = 0; promptIndex < continuationPrompts.length;) {
       const completed = await waitForTurn(sessionId, turnId);
       if (!completed) return;
       if (isTerminalTurn(completed.event)) return;
@@ -117,14 +117,15 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
         turnId = (await createTurn(sessionId, { input: [{ content: sandboxRecoveryPrompt, type: "user.message" }] })).data.id;
         continue;
       }
-      if (hasScenariosWithoutResults(events) && !experimentRecoveryAttempted) {
-        experimentRecoveryAttempted = true;
+      if (hasIncompleteExperiments(events) && experimentRecoveryAttempts < 3) {
+        experimentRecoveryAttempts += 1;
         turnId = (await createTurn(sessionId, { input: [{ content: continuationPrompts[2], type: "user.message" }] })).data.id;
         continue;
       }
       if (hasExplicitUncertainDecision(events) && !hasAnyEvidence(events)) return;
       if (hasCompleteEvidence(events)) return;
-      turnId = (await createTurn(sessionId, { input: [{ content: prompt, type: "user.message" }] })).data.id;
+      turnId = (await createTurn(sessionId, { input: [{ content: continuationPrompts[promptIndex]!, type: "user.message" }] })).data.id;
+      promptIndex += 1;
     }
   }
 
@@ -158,9 +159,11 @@ function hasAnyEvidence(events: InvestigationEvent[]) {
   return projectInvestigation("controller", "", events).artifacts.length > 0;
 }
 
-function hasScenariosWithoutResults(events: InvestigationEvent[]) {
+function hasIncompleteExperiments(events: InvestigationEvent[]) {
   const artifacts = projectInvestigation("controller", "", events).artifacts;
-  return artifacts.some((artifact) => artifact.type === "ScenarioPlan") && !artifacts.some((artifact) => artifact.type === "ExperimentResult");
+  const scenarios = artifacts.filter((artifact) => artifact.type === "ScenarioPlan");
+  const results = artifacts.filter((artifact) => artifact.type === "ExperimentResult");
+  return scenarios.length > results.length;
 }
 
 function findInvalidMcpToolCall(events: InvestigationEvent[]) {

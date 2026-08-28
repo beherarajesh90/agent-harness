@@ -116,6 +116,24 @@ describe("investigation control plane", () => {
     expect(snapshot.decision).toBe("BLOCKED");
   });
 
+  it("preserves individually valid artifacts from an incomplete final bundle", () => {
+    const sha = "a".repeat(40);
+    const bundle = {
+      decision: "BLOCKED",
+      invariants: [{ confidence: 1, evidence: [{ endLine: 2, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 4, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 3 }], id: "i1", statement: "one charge", testedSha: sha }],
+      experimentResults: [{ artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 2, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "fail" }],
+    };
+
+    const snapshot = projectInvestigation("session-1", "url", [
+      { event: { content: JSON.stringify({ head: { sha } }), sequence: 1, type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify(bundle) } }, sequence: 2, type: "turn.done" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.artifacts.map((artifact) => artifact.type)).toEqual(["InvariantCandidate", "ExperimentResult"]);
+    expect(snapshot.decision).toBeUndefined();
+    expect(snapshot.status).toBe("UNCERTAIN");
+  });
+
   it("honors an explicit UNCERTAIN decision from a consistent final bundle", () => {
     const sha = "a".repeat(40);
     const bundle = {

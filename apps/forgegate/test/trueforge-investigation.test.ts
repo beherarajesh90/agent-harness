@@ -147,6 +147,26 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Phase EXPERIMENT");
   });
 
+  it("continues to experiments when some scenarios are still missing results", async () => {
+    let events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { artifactType: "ScenarioPlan", artifact: { expectedOutcome: "duplicate charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge", "retry"], scenarioId: "s1", seed: 1, testedSha: "a".repeat(40) }, sequence: 1, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ScenarioPlan", artifact: { expectedOutcome: "duplicate charge", injectedFaults: ["duplicate webhook"], invariantId: "i1", ordering: ["charge", "webhook"], scenarioId: "s2", seed: 2, testedSha: "a".repeat(40) }, sequence: 2, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 1, intents: 1, ledgerEntries: 1 }, repetitions: 1, scenarioId: "s1", seed: 1, testedSha: "a".repeat(40), verdict: "pass" }, sequence: 3, type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void request;
+      events = [{ event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-2" }];
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Phase EXPERIMENT");
+  });
+
   it("recovers once from an invalid MCP tool name with the canonical tool list", async () => {
     let events: { event: Record<string, unknown>; turnId: string }[] = [
       { event: { content: JSON.stringify({ error: [{ type: "text", text: '{"error":"Tool call failed: Tool \'get_pr\' is not allowed"}' }] }), type: "tool.response" }, turnId: "turn-1" },

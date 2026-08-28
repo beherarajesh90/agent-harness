@@ -121,7 +121,14 @@ function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: 
   const content = output?.content;
   if (typeof content === "string") {
     const parsed = parseJson(content);
-    if (isRecord(parsed) && Array.isArray(parsed.invariants) && Array.isArray(parsed.scenarios) && parsed.experimentResult !== undefined) return [];
+    if (isRecord(parsed) && ("invariants" in parsed || "scenarios" in parsed || "experimentResult" in parsed || "experimentResults" in parsed)) {
+      const results = Array.isArray(parsed.experimentResults) ? parsed.experimentResults : parsed.experimentResult === undefined ? [] : [parsed.experimentResult];
+      return [
+        ...(Array.isArray(parsed.invariants) ? readArtifact("InvariantCandidate", parsed.invariants, trustedHeadSha) : []),
+        ...(Array.isArray(parsed.scenarios) ? readArtifact("ScenarioPlan", parsed.scenarios, trustedHeadSha) : []),
+        ...readArtifact("ExperimentResult", results, trustedHeadSha),
+      ];
+    }
   }
   const type = payload.title === "invariant-analyst" ? "InvariantCandidate" : payload.title === "failure-mode-analyst" ? "ScenarioPlan" : undefined;
   return type && typeof content === "string" ? readArtifact(type, parseJson(content), trustedHeadSha) : [];
