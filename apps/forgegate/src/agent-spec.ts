@@ -92,15 +92,34 @@ export const experimentResultSchema = z
 const finalScenarioPlanSchema = scenarioPlanSchema.required({ scenarioId: true });
 const finalExperimentResultSchema = experimentResultSchema.required({ scenarioId: true });
 
-export const investigationResponseSchema = z
+const uncertainInvestigationResponseSchema = z
   .object({
-    decision: investigationDecisionSchema,
+    decision: z.literal("UNCERTAIN"),
     experimentResult: finalExperimentResultSchema.optional(),
     experimentResults: z.array(finalExperimentResultSchema).min(1).optional(),
     invariants: z.array(invariantCandidateSchema).optional(),
     scenarios: z.array(finalScenarioPlanSchema).optional(),
-  })
-  .strict()
+  }).strict();
+
+const completeInvestigationResponseSchema = z.union([
+  z.object({
+    decision: z.enum(["BLOCKED", "READY"]),
+    experimentResult: finalExperimentResultSchema,
+    experimentResults: z.never().optional(),
+    invariants: z.array(invariantCandidateSchema).min(1),
+    scenarios: z.array(finalScenarioPlanSchema).min(1),
+  }).strict(),
+  z.object({
+    decision: z.enum(["BLOCKED", "READY"]),
+    experimentResult: z.never().optional(),
+    experimentResults: z.array(finalExperimentResultSchema).min(1),
+    invariants: z.array(invariantCandidateSchema).min(1),
+    scenarios: z.array(finalScenarioPlanSchema).min(1),
+  }).strict(),
+]);
+
+export const investigationResponseSchema = z
+  .union([uncertainInvestigationResponseSchema, completeInvestigationResponseSchema])
   .superRefine((bundle, context) => {
     if (bundle.experimentResult !== undefined && bundle.experimentResults !== undefined) {
       context.addIssue({ code: "custom", message: "choose either experimentResult or experimentResults" });

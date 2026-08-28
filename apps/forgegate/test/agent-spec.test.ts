@@ -33,6 +33,17 @@ describe("ForgeGate agent specification", () => {
       type: "json_schema",
       jsonSchema: { name: "forgegate_investigation", strict: true },
     });
+    const responseFormat = createForgeGateAgentSpec("ollama-local/qwen35-4b").responseFormat as { jsonSchema?: { schema?: unknown } };
+    const schema = responseFormat.jsonSchema?.schema ?? {};
+    const hasCompleteBranch = (value: unknown): boolean => {
+      if (Array.isArray(value)) return value.some(hasCompleteBranch);
+      if (!value || typeof value !== "object") return false;
+      const record = value as { required?: unknown; [key: string]: unknown };
+      const required = record.required;
+      if (Array.isArray(required) && required.includes("scenarios") && required.includes("experimentResults")) return true;
+      return Object.values(record).some(hasCompleteBranch);
+    };
+    expect(hasCompleteBranch(schema)).toBe(true);
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("InvariantCandidate"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("ScenarioPlan"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("exactly two visible dynamic subagents"));
