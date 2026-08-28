@@ -95,6 +95,7 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
     let turnId = initialTurnId;
     let mcpRecoveryAttempted = false;
     let sandboxRecoveryAttempted = false;
+    let experimentRecoveryAttempted = false;
     for (const prompt of continuationPrompts) {
       const completed = await waitForTurn(sessionId, turnId);
       if (!completed) return;
@@ -114,6 +115,11 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
         if (isSubagentThread(transientSandboxFailure.event.threadId)) return;
         sandboxRecoveryAttempted = true;
         turnId = (await createTurn(sessionId, { input: [{ content: sandboxRecoveryPrompt, type: "user.message" }] })).data.id;
+        continue;
+      }
+      if (hasScenariosWithoutResults(events) && !experimentRecoveryAttempted) {
+        experimentRecoveryAttempted = true;
+        turnId = (await createTurn(sessionId, { input: [{ content: continuationPrompts[2], type: "user.message" }] })).data.id;
         continue;
       }
       if (hasExplicitUncertainDecision(events) && !hasAnyEvidence(events)) return;
@@ -150,6 +156,11 @@ function hasExplicitUncertainDecision(events: InvestigationEvent[]) {
 
 function hasAnyEvidence(events: InvestigationEvent[]) {
   return projectInvestigation("controller", "", events).artifacts.length > 0;
+}
+
+function hasScenariosWithoutResults(events: InvestigationEvent[]) {
+  const artifacts = projectInvestigation("controller", "", events).artifacts;
+  return artifacts.some((artifact) => artifact.type === "ScenarioPlan") && !artifacts.some((artifact) => artifact.type === "ExperimentResult");
 }
 
 function findInvalidMcpToolCall(events: InvestigationEvent[]) {
