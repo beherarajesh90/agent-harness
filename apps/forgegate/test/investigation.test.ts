@@ -257,6 +257,20 @@ describe("investigation control plane", () => {
     expect(snapshot.status).toBe("UNCERTAIN");
   });
 
+  it("surfaces subagent tool responses without usage metadata", () => {
+    const sha = "a".repeat(40);
+    const items = [
+      { event: { content: JSON.stringify({ head: { sha } }), sequence: 1, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "InvariantCandidate", artifact: { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha }, sequence: 2, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ScenarioPlan", artifact: { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha: sha }, sequence: 3, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 1, intents: 1, ledgerEntries: 1 }, repetitions: 1, scenarioId: "s1", seed: 1, testedSha: sha, verdict: "pass" }, sequence: 4, type: "tool.response" }, turnId: "turn-1" },
+      { event: { content: "forgegate-github: get_file", toolCallId: "subagent-call", sequence: 5, threadId: "subagent-1", type: "tool.response" }, turnId: "turn-1" },
+      { event: { sequence: 6, state: { status: "done" }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+
+    expect(projectInvestigation("session-1", "url", items).status).toBe("UNCERTAIN");
+  });
+
   it("does not reconstruct a terminal decision from a rejected final bundle", () => {
     const sha = "a".repeat(40);
     const invariant = { confidence: 1, evidence: [{ endLine: 2, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 4, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 3 }], id: "i1", statement: "one charge", testedSha: sha };

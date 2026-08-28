@@ -99,7 +99,7 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const artifactTypes = new Set(artifacts.map((artifact) => artifact.type));
   const requiredArtifactTypes: InvestigationArtifact["type"][] = ["InvariantCandidate", "ScenarioPlan", "ExperimentResult"];
   const completeEvidence = !accepted.hasConflicts && !rejectedFinal && githubReadsComplete && sandboxSucceeded && !subagentToolUse && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts);
-  const reconciledFailure = hasRejectedCompleteEvidenceFinal(events, trustedHeadSha) && !accepted.hasConflicts && githubReadsComplete && sandboxSucceeded && !subagentToolUse && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts) && hasFailedExperiment(artifacts);
+  const reconciledFailure = hasRejectedCompleteEvidenceFinal(events, trustedHeadSha) && !accepted.hasConflicts && !subagentToolUse && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts) && hasFailedExperiment(artifacts);
   const decision = reportedDecision ?? (reconciledFailure ? "BLOCKED" : undefined);
   const subagentMcpFailure = hasSubagentMcpFailure(events);
   const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure || subagentToolUse ? "UNCERTAIN" : terminal ? (completeEvidence || reconciledFailure) && decision ? decision : "UNCERTAIN" : "RUNNING";
@@ -337,6 +337,7 @@ function latestSandboxCommandSucceeded(events: HarnessEvent[]) {
 function hasSubagentToolUse(events: HarnessEvent[]) {
   return events.some((event) => {
     if (isPrimaryAgentThread(event)) return false;
+    if (event.type === "tool.response" && typeof event.payload.toolCallId === "string") return true;
     const usage = isRecord(event.payload.usage) ? event.payload.usage : undefined;
     if (Array.isArray(usage?.toolCalls) && usage.toolCalls.length > 0) return true;
     if (event.type !== "tool.response" || typeof event.payload.content !== "string") return false;
