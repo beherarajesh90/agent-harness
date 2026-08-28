@@ -81,7 +81,7 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
     return true;
   }).sort((left, right) => left.sequence - right.sequence));
   const trustedHeadSha = findPullRequestHeadSha(events);
-  const artifacts = events.flatMap((event) => artifactFromPayload(event.payload, trustedHeadSha));
+  const artifacts = deduplicateArtifacts(events.flatMap((event) => artifactFromPayload(event.payload, trustedHeadSha)));
   const decision = findFinalDecision(events, trustedHeadSha);
   const last = events.at(-1);
   const terminal = last?.type === "turn.done";
@@ -132,6 +132,20 @@ function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: 
   }
   const type = payload.title === "invariant-analyst" ? "InvariantCandidate" : payload.title === "failure-mode-analyst" ? "ScenarioPlan" : undefined;
   return type && typeof content === "string" ? readArtifact(type, parseJson(content), trustedHeadSha) : [];
+}
+
+function deduplicateArtifacts(artifacts: InvestigationArtifact[]) {
+  const unique = new Map<string, InvestigationArtifact>();
+  for (const artifact of artifacts) {
+    const data = artifact.data;
+    const identity = artifact.type === "InvariantCandidate"
+      ? `${artifact.type}:${data.id}:${data.testedSha}`
+      : artifact.type === "ScenarioPlan"
+        ? `${artifact.type}:${data.scenarioId ?? JSON.stringify(data)}`
+        : `${artifact.type}:${data.scenarioId ?? data.seed}:${data.testedSha}`;
+    unique.set(identity, artifact);
+  }
+  return [...unique.values()];
 }
 
 function readFinalBundle(payload: Record<string, unknown>, trustedHeadSha?: string) {
