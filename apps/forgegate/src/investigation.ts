@@ -92,15 +92,17 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const githubReadsComplete = hasRequiredGitHubReads(events, trustedHeadSha);
   const sandboxSucceeded = latestSandboxCommandSucceeded(events);
   const subagentToolUse = hasSubagentToolUse(events);
-  const decision = findFinalDecision(events, trustedHeadSha, artifacts, accepted.hasConflicts || rejectedFinal || !githubReadsComplete || !sandboxSucceeded || subagentToolUse);
+  const reportedDecision = findFinalDecision(events, trustedHeadSha, artifacts, accepted.hasConflicts || rejectedFinal || !githubReadsComplete || !sandboxSucceeded || subagentToolUse);
   const last = events.at(-1);
   const terminal = last ? isPrimaryAgentTurn(last) : false;
   const state = last?.payload.state as { status?: string } | undefined;
   const artifactTypes = new Set(artifacts.map((artifact) => artifact.type));
   const requiredArtifactTypes: InvestigationArtifact["type"][] = ["InvariantCandidate", "ScenarioPlan", "ExperimentResult"];
   const completeEvidence = !accepted.hasConflicts && !rejectedFinal && githubReadsComplete && sandboxSucceeded && !subagentToolUse && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts);
+  const reconciledFailure = hasRejectedReadyPrimaryFinal(events, trustedHeadSha) && !accepted.hasConflicts && githubReadsComplete && sandboxSucceeded && !subagentToolUse && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts) && hasFailedExperiment(artifacts);
+  const decision = reportedDecision ?? (reconciledFailure ? "BLOCKED" : undefined);
   const subagentMcpFailure = hasSubagentMcpFailure(events);
-  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure || subagentToolUse ? "UNCERTAIN" : terminal ? completeEvidence && decision ? decision : "UNCERTAIN" : "RUNNING";
+  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure || subagentToolUse ? "UNCERTAIN" : terminal ? (completeEvidence || reconciledFailure) && decision ? decision : "UNCERTAIN" : "RUNNING";
 
   return {
     artifacts,
@@ -247,6 +249,15 @@ function hasRejectedPrimaryFinal(events: HarnessEvent[], trustedHeadSha: string 
   return rejected;
 }
 
+function hasRejectedReadyPrimaryFinal(events: HarnessEvent[], trustedHeadSha: string | undefined) {
+  return events.some((event) => {
+    if (!isPrimaryAgentTurn(event)) return false;
+    const output = isRecord(event.payload.state) && isRecord(event.payload.state.output) ? event.payload.state.output : undefined;
+    const parsed = typeof output?.content === "string" ? parseJson(output.content) : undefined;
+    return isRecord(parsed) && parsed.decision === "READY" && readFinalBundle(event.payload, trustedHeadSha) === undefined;
+  });
+}
+
 function hasConsistentEvidence(artifacts: InvestigationArtifact[]) {
   const invariants = artifacts.filter((artifact) => artifact.type === "InvariantCandidate").map((artifact) => artifact.data);
   const scenarios = artifacts.filter((artifact) => artifact.type === "ScenarioPlan").map((artifact) => artifact.data);
@@ -258,6 +269,10 @@ function hasConsistentEvidence(artifacts: InvestigationArtifact[]) {
   } catch {
     return false;
   }
+}
+
+function hasFailedExperiment(artifacts: InvestigationArtifact[]) {
+  return artifacts.some((artifact) => artifact.type === "ExperimentResult" && artifact.data.verdict === "fail");
 }
 
 function hasRequiredGitHubReads(events: HarnessEvent[], trustedHeadSha: string | undefined) {

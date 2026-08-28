@@ -438,6 +438,21 @@ describe("investigation control plane", () => {
     ]).status).toBe("BLOCKED");
   });
 
+  it("reconciles a contradictory READY decision to BLOCKED when evidence fails", () => {
+    const sha = "a".repeat(40);
+    const bundle = {
+      decision: "READY",
+      invariants: [{ confidence: 1, evidence: [{ endLine: 2, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 4, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 3 }], id: "i1", statement: "one charge", testedSha: sha }],
+      scenarios: [{ expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha: sha }],
+      experimentResult: { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 2, intents: 1, ledgerEntries: 1 }, repetitions: 1, scenarioId: "s1", seed: 1, testedSha: sha, verdict: "fail" },
+    };
+
+    expect(projectInvestigation("session-1", "url", [
+      { event: { content: JSON.stringify({ head: { sha } }), sequence: 1, type: "tool.response" }, turnId: "turn-1" },
+      { event: { sequence: 2, state: { output: { content: JSON.stringify(bundle) } }, type: "turn.done" }, turnId: "turn-1" },
+    ])).toMatchObject({ decision: "BLOCKED", status: "BLOCKED" });
+  });
+
   it("blocks duplicate-payment evidence even when the model reports pass", () => {
     const sha = "a".repeat(40);
     const bundle = {
