@@ -232,7 +232,7 @@ function hasRejectedPrimaryFinal(events: HarnessEvent[], trustedHeadSha: string 
     if (!isPrimaryAgentTurn(event)) continue;
     const output = isRecord(event.payload.state) && isRecord(event.payload.state.output) ? event.payload.state.output : undefined;
     const parsed = typeof output?.content === "string" ? parseJson(output.content) : undefined;
-    if (!isRecord(parsed) || (parsed.decision !== "BLOCKED" && parsed.decision !== "READY")) continue;
+    if (!isRecord(parsed) || !["BLOCKED", "READY", "UNCERTAIN"].includes(parsed.decision as string)) continue;
     rejected = readFinalBundle(event.payload, trustedHeadSha) === undefined;
   }
   return rejected;
