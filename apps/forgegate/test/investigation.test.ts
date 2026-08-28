@@ -186,7 +186,7 @@ describe("investigation control plane", () => {
     ]);
 
     expect(snapshot.decision).toBeUndefined();
-    expect(snapshot.status).toBe("BLOCKED");
+    expect(snapshot.status).toBe("RUNNING");
   });
 
   it("honors an explicit UNCERTAIN decision from a consistent final bundle", () => {

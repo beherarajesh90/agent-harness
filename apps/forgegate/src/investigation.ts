@@ -91,7 +91,7 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const completeEvidence = Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts);
   const experimentFailed = artifacts.some((artifact) => artifact.type === "ExperimentResult" && (artifact.data.verdict === "fail" || paymentInvariantViolated(artifact.data)));
   const subagentMcpFailure = hasSubagentMcpFailure(events);
-  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure ? "UNCERTAIN" : ((state?.status === "blocked" || experimentFailed) && completeEvidence && !decision) ? "BLOCKED" : terminal ? completeEvidence ? decision ?? "READY" : "UNCERTAIN" : "RUNNING";
+  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure ? "UNCERTAIN" : (terminal && (state?.status === "blocked" || experimentFailed) && completeEvidence && !decision) ? "BLOCKED" : terminal ? completeEvidence ? decision ?? "READY" : "UNCERTAIN" : "RUNNING";
 
   return {
     artifacts,
