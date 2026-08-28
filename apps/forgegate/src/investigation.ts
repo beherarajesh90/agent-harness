@@ -81,7 +81,7 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
     return true;
   }).sort((left, right) => left.sequence - right.sequence));
   const trustedHeadSha = findPullRequestHeadSha(events);
-  const artifacts = deduplicateArtifacts(events.flatMap((event) => artifactFromPayload(event.payload, trustedHeadSha)));
+  const artifacts = retainAcceptedScenarioResults(deduplicateArtifacts(events.flatMap((event) => artifactFromPayload(event.payload, trustedHeadSha))));
   const decision = findFinalDecision(events, trustedHeadSha, artifacts);
   const last = events.at(-1);
   const terminal = last ? isPrimaryAgentTurn(last) : false;
@@ -146,6 +146,17 @@ function deduplicateArtifacts(artifacts: InvestigationArtifact[]) {
     unique.set(identity, artifact);
   }
   return [...unique.values()];
+}
+
+function retainAcceptedScenarioResults(artifacts: InvestigationArtifact[]) {
+  const scenarios = artifacts.filter((artifact) => artifact.type === "ScenarioPlan").map((artifact) => artifact.data);
+  if (scenarios.length === 0) return artifacts;
+  return artifacts.filter((artifact) => artifact.type !== "ExperimentResult" || scenarios.some((scenario) => scenarioMatchesResult(scenario, artifact.data)));
+}
+
+function scenarioMatchesResult(scenario: Record<string, unknown>, result: Record<string, unknown>) {
+  if (typeof scenario.scenarioId === "string") return result.scenarioId === scenario.scenarioId;
+  return typeof result.scenarioId !== "string" && result.seed === scenario.seed;
 }
 
 function readFinalBundle(payload: Record<string, unknown>, trustedHeadSha?: string) {
