@@ -192,24 +192,25 @@ describe("payment laboratory", () => {
   });
 
   it("returns structured deterministic experiment evidence", () => {
-    expect(runPaymentExperiment({ baselineSha: "b".repeat(40), mode: "unsafe", repetitions: 2, seed: 42, testedSha: "a".repeat(40) })).toEqual({
+    const baselineEvidence = { charges: 7, intents: 8, ledgerEntries: 9 };
+    expect(runPaymentExperiment({ baselineEvidence, baselineSha: "b".repeat(40), mode: "unsafe", repetitions: 2, seed: 42, testedSha: "a".repeat(40) })).toEqual({
       artifactLinks: ["payment-lab:evidence"],
       baselineSha: "b".repeat(40),
-      expected: { charges: 100, intents: 100, ledgerEntries: 100 },
+      expected: baselineEvidence,
       observed: { charges: 102, intents: 100, ledgerEntries: 100 },
       repetitions: 2,
       seed: 42,
       testedSha: "a".repeat(40),
       verdict: "fail",
     });
-    expect(runPaymentExperiment({ baselineSha: "b".repeat(40), mode: "safe", repetitions: 2, seed: 42, testedSha: "a".repeat(40) }).verdict).toBe("pass");
+    expect(runPaymentExperiment({ baselineEvidence: { charges: 100, intents: 100, ledgerEntries: 100 }, baselineSha: "b".repeat(40), mode: "safe", repetitions: 2, seed: 42, testedSha: "a".repeat(40) }).verdict).toBe("pass");
   });
 
   it("uses the seed to select a deterministic unsafe fault schedule", () => {
-    const first = runPaymentExperiment({ baselineSha: "b".repeat(40), mode: "unsafe", repetitions: 2, seed: 1, testedSha: "a".repeat(40) });
-    const second = runPaymentExperiment({ baselineSha: "b".repeat(40), mode: "unsafe", repetitions: 2, seed: 2, testedSha: "a".repeat(40) });
+    const first = runPaymentExperiment({ baselineEvidence: { charges: 100, intents: 100, ledgerEntries: 100 }, baselineSha: "b".repeat(40), mode: "unsafe", repetitions: 2, seed: 1, testedSha: "a".repeat(40) });
+    const second = runPaymentExperiment({ baselineEvidence: { charges: 100, intents: 100, ledgerEntries: 100 }, baselineSha: "b".repeat(40), mode: "unsafe", repetitions: 2, seed: 2, testedSha: "a".repeat(40) });
 
     expect(first.observed).not.toEqual(second.observed);
-    expect(runPaymentExperiment({ baselineSha: "b".repeat(40), mode: "unsafe", repetitions: 2, seed: 1, testedSha: "a".repeat(40) })).toEqual(first);
+    expect(runPaymentExperiment({ baselineEvidence: { charges: 100, intents: 100, ledgerEntries: 100 }, baselineSha: "b".repeat(40), mode: "unsafe", repetitions: 2, seed: 1, testedSha: "a".repeat(40) })).toEqual(first);
   });
 });

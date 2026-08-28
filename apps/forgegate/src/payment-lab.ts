@@ -26,11 +26,13 @@ type PaymentLaboratoryOptions = {
   unsafeRetryForIntentIds?: ReadonlySet<string>;
 };
 
+export type PaymentEvidence = { charges: number; intents: number; ledgerEntries: number };
+
 export type ExperimentResult = {
   artifactLinks: string[];
   baselineSha: string;
-  expected: { charges: number; intents: number; ledgerEntries: number };
-  observed: { charges: number; intents: number; ledgerEntries: number };
+  expected: PaymentEvidence;
+  observed: PaymentEvidence;
   repetitions: number;
   seed: number;
   testedSha: string;
@@ -270,12 +272,14 @@ export function runSafeFixture() {
 }
 
 export function runPaymentExperiment({
+  baselineEvidence,
   baselineSha,
   mode,
   repetitions,
   seed,
   testedSha,
 }: {
+  baselineEvidence: PaymentEvidence;
   baselineSha: string;
   mode: "safe" | "unsafe";
   repetitions: number;
@@ -286,6 +290,9 @@ export function runPaymentExperiment({
   if (!Number.isInteger(repetitions) || repetitions < 1) throw new Error("repetitions must be a positive integer");
   if (!Number.isInteger(seed) || seed < 0) throw new Error("seed must be a non-negative integer");
   if (!/^[a-f0-9]{40}$/.test(testedSha)) throw new Error("testedSha must be a commit SHA");
+  if (Object.values(baselineEvidence).some((value) => !Number.isInteger(value) || value < 0)) {
+    throw new Error("baselineEvidence must contain non-negative integer counts");
+  }
 
   const run = mode === "unsafe" ? () => runUnsafeRetryFixture(seed) : runSafeFixture;
   const observed = run();
@@ -297,7 +304,7 @@ export function runPaymentExperiment({
   return {
     artifactLinks: ["payment-lab:evidence"],
     baselineSha,
-    expected: { charges: 100, intents: 100, ledgerEntries: 100 },
+    expected: baselineEvidence,
     observed: { charges: observed.charges, intents: observed.intents, ledgerEntries: observed.ledgerEntries },
     repetitions,
     seed,
