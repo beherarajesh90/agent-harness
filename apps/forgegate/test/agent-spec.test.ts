@@ -132,6 +132,7 @@ describe("ForgeGate agent specification", () => {
     const experimentResult = { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 1, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "pass" as const };
 
     expect(validateInvestigationArtifacts({ invariants: [invariant], scenarios: [scenario], experimentResult })).toMatchObject({ experimentResult });
+    expect(investigationResponseSchema.safeParse({ decision: "BLOCKED", invariants: [invariant], scenarios: [scenario], experimentResults: [experimentResult] }).success).toBe(false);
     expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios: [{ ...scenario, seed: 2 }], experimentResult })).toThrow("experiment seed");
     expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios: [scenario], experimentResult: { ...experimentResult, baselineSha: sha } })).toThrow("baseline SHA");
   });

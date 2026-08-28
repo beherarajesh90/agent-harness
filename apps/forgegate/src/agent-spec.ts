@@ -89,13 +89,16 @@ export const experimentResultSchema = z
     "experiment artifact links must be concrete paths or identifiers",
   );
 
+const finalScenarioPlanSchema = scenarioPlanSchema.required({ scenarioId: true });
+const finalExperimentResultSchema = experimentResultSchema.required({ scenarioId: true });
+
 export const investigationResponseSchema = z
   .object({
     decision: investigationDecisionSchema,
-    experimentResult: experimentResultSchema.optional(),
-    experimentResults: z.array(experimentResultSchema).min(1).optional(),
+    experimentResult: finalExperimentResultSchema.optional(),
+    experimentResults: z.array(finalExperimentResultSchema).min(1).optional(),
     invariants: z.array(invariantCandidateSchema).optional(),
-    scenarios: z.array(scenarioPlanSchema).optional(),
+    scenarios: z.array(finalScenarioPlanSchema).optional(),
   })
   .strict()
   .superRefine((bundle, context) => {
