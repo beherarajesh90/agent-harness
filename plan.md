@@ -1485,6 +1485,8 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [x] Reach a real `BLOCKED` decision for the seeded unsafe PR.
 - [x] Preload the bounded GitHub MCP catalog and direct the primary agent to complete MCP/sandbox work before delegating evidence-only analyst tasks.
 - [x] Stop controller recovery after an invalid subagent MCP call so it cannot create duplicate analyst threads; the investigation fails closed as `UNCERTAIN`.
+- [ ] Diagnose and fix premature terminal `UNCERTAIN` outcomes when the run has not completed the required evidence phases; expose the exact blocking cause in the projected session state.
+- [ ] Rehearse a real investigation with the configured model and verify a complete evidence bundle produces a non-null terminal `BLOCKED`/`READY` decision; record any remaining model or orchestration limitation.
 
 ### Event projection and investigation API
 
