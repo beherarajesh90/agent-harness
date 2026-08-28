@@ -85,13 +85,14 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const deduplicated = deduplicateArtifacts(events.flatMap((event) => artifactFromPayload(event.payload, trustedHeadSha)));
   const artifacts = retainAcceptedScenarioResults(deduplicated.artifacts);
   const accepted = deduplicateArtifacts(artifacts);
-  const decision = findFinalDecision(events, trustedHeadSha, artifacts, accepted.hasConflicts);
+  const rejectedFinal = hasRejectedPrimaryFinal(events, trustedHeadSha);
+  const decision = findFinalDecision(events, trustedHeadSha, artifacts, accepted.hasConflicts || rejectedFinal);
   const last = events.at(-1);
   const terminal = last ? isPrimaryAgentTurn(last) : false;
   const state = last?.payload.state as { status?: string } | undefined;
   const artifactTypes = new Set(artifacts.map((artifact) => artifact.type));
   const requiredArtifactTypes: InvestigationArtifact["type"][] = ["InvariantCandidate", "ScenarioPlan", "ExperimentResult"];
-  const completeEvidence = !accepted.hasConflicts && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts);
+  const completeEvidence = !accepted.hasConflicts && !rejectedFinal && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts);
   const experimentFailed = artifacts.some((artifact) => artifact.type === "ExperimentResult" && (artifact.data.verdict === "fail" || paymentInvariantViolated(artifact.data)));
   const subagentMcpFailure = hasSubagentMcpFailure(events);
   const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure ? "UNCERTAIN" : (terminal && (state?.status === "blocked" || experimentFailed) && completeEvidence && !decision) ? "BLOCKED" : terminal ? completeEvidence ? decision ?? "READY" : "UNCERTAIN" : "RUNNING";
@@ -223,6 +224,15 @@ function findFinalDecision(events: HarnessEvent[], trustedHeadSha: string | unde
 
 function isPrimaryAgentTurn(event: HarnessEvent) {
   return event.type === "turn.done" && (!event.threadId || event.threadId === "main");
+}
+
+function hasRejectedPrimaryFinal(events: HarnessEvent[], trustedHeadSha: string | undefined) {
+  const final = [...events].reverse().find(isPrimaryAgentTurn);
+  if (!final) return false;
+  const output = isRecord(final.payload.state) && isRecord(final.payload.state.output) ? final.payload.state.output : undefined;
+  const parsed = typeof output?.content === "string" ? parseJson(output.content) : undefined;
+  if (!isRecord(parsed) || (parsed.decision !== "BLOCKED" && parsed.decision !== "READY")) return false;
+  return readFinalBundle(final.payload, trustedHeadSha) === undefined;
 }
 
 function hasConsistentEvidence(artifacts: InvestigationArtifact[]) {
