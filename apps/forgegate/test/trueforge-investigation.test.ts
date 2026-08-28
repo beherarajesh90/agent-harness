@@ -6,7 +6,10 @@ describe("createTrueForgeInvestigationLauncher", () => {
   it("creates an agent-backed session and instructs two visible analysts", async () => {
     const sessions = {
       create: vi.fn(async () => ({ data: { id: "session-1" } })),
-      createTurn: vi.fn(async () => ({ data: { id: "turn-1" } })),
+      createTurn: vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+        void request;
+        return { data: { id: "turn-1" } };
+      }),
     };
     const launch = createTrueForgeInvestigationLauncher({
       modelName: "ollama-local/qwen35-4b",
@@ -33,6 +36,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
         ],
       }),
     );
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("ScenarioPlan ordering is also a non-empty string[]");
   });
 
   it("rejects a pull request URL outside the configured repository", async () => {
