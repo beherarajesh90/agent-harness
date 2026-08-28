@@ -170,6 +170,10 @@ export function validateInvestigationArtifacts(input: { decision?: unknown; inva
   if (!baselineSha || experimentResults.some((result) => result.baselineSha !== baselineSha)) {
     throw new Error("all experiment results must use the same baseline SHA");
   }
+  const baselineMeasurements = JSON.stringify(experimentResults[0]?.expected);
+  if (experimentResults.some((result) => JSON.stringify(result.expected) !== baselineMeasurements)) {
+    throw new Error("all experiment results must use the same baseline measurements");
+  }
   if (baselineSha === testedSha) {
     throw new Error("baseline SHA must differ from tested SHA");
   }
