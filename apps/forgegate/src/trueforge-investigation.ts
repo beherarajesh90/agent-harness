@@ -59,6 +59,7 @@ export function createTrueForgeInvestigationLauncher({
             "Do not fetch plan.md, list the repository root recursively, or request oversized responses. Read only apps/forgegate/src/payment-lab.ts and apps/forgegate/test/payment-lab.test.ts at the exact PR head SHA.",
             "Checklist: read PR metadata; read changed files; read payment-lab source and tests at the exact PR head SHA; inspect checks/reviews/comments; run the baseline payment test on master before checking out the exact PR head SHA; then delegate both analysts and reconcile their outputs.",
             "The primary agent performs every GitHub MCP read and every sandbox action before delegation. Pass that collected evidence to the analysts; subagents must return JSON artifacts only and must not call MCP or sandbox tools.",
+            "Use cwd / for sandbox commands; /workspace does not exist in the Daytona image. Clone into /agent-harness or another path under /.",
             "Spawn exactly two visible dynamic subagents:",
             "- invariant-analyst: return InvariantCandidate JSON objects with at least two exact-SHA repository evidence references.",
             "- failure-mode-analyst: wait for the accepted invariant JSON from invariant-analyst, then return every materially distinct deterministic ScenarioPlan JSON object tied to it.",

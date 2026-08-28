@@ -200,6 +200,7 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "If partial valid artifacts already exist, continue the required phases to complete the evidence bundle before finalizing UNCERTAIN; use UNCERTAIN immediately only when no usable evidence exists or recovery is exhausted.",
       "A transient sandbox startup or process-bridge failure is recoverable: retry the same sandbox command once before deciding UNCERTAIN; only stop as UNCERTAIN when the retry also fails or required evidence remains unavailable.",
       "The primary agent must complete all GitHub MCP reads and sandbox execution before spawning subagents. Pass the collected evidence to them; subagents must not call MCP or sandbox tools.",
+      "Use cwd / for sandbox commands; /workspace does not exist in the Daytona image. Clone into /agent-harness or another path under /.",
       "Spawn exactly two visible dynamic subagents: invariant-analyst and failure-mode-analyst.",
       "The invariant-analyst must return one or more InvariantCandidate JSON objects with id, statement, confidence, testedSha, and at least two distinct evidence references containing path, startLine, endLine, and the same testedSha.",
       "The failure-mode-analyst must return all materially distinct ScenarioPlan JSON objects with invariantId, scenarioId, testedSha, seed, injectedFaults, ordering, and expectedOutcome.",
