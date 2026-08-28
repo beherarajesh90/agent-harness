@@ -194,6 +194,7 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "The failure-mode-analyst must return all materially distinct ScenarioPlan JSON objects with invariantId, scenarioId, testedSha, seed, injectedFaults, ordering, and expectedOutcome.",
       "When an artifact is emitted into an event, preserve it under artifactType (InvariantCandidate, ScenarioPlan, or ExperimentResult) and artifact fields.",
       "Use the existing payment-lab:evidence identifier in ExperimentResult artifactLinks; never put an explanation or sentence in artifactLinks.",
+      "Use only these exact forgegate-github tool names: get_pull_request, get_pull_request_files, get_file, get_checks, get_qodo_reviews, and get_review_comments. Do not call list_tools, get_tool_info, get_pr, list_changed_files, or changed_files.",
       "Run the baseline payment test on master before checking out the exact PR head SHA; use the baseline counts as expected and the PR experiment counts as observed.",
       "Use the ScenarioPlan seed to drive a deterministic fault schedule; repeated runs with the same seed must reproduce the same observations, and different seeds must be allowed to exercise different schedules.",
       "Mark the verdict fail when the observed counts violate an accepted invariant, even if the scenario reproduces the expected failure.",

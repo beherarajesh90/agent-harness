@@ -23,6 +23,7 @@ const continuationPrompts = [
   "Continue with Phase EXPERIMENT and EVIDENCE. Run every validated unique ScenarioPlan in the disposable sandbox against the exact PR SHA, and return one schema-valid ExperimentResult per scenario with scenarioId, repetitions, observed counts, verdict, and the existing payment-lab:evidence identifier as the artifact link only.",
   "Continue with Phase DECISION. Reconcile the persisted InvariantCandidate, ScenarioPlan, and ExperimentResult artifacts. Return the final JSON bundle with experimentResults and decision; READY is allowed only when all scenarios have passing results and all artifacts are valid and consistent.",
 ] as const;
+const mcpRecoveryPrompt = "The previous MCP call used an invalid server or tool name. Do not call list_tools, get_tool_info, get_pr, list_changed_files, or changed_files. Use only forgegate-github tools named get_pull_request, get_pull_request_files, get_file, get_checks, get_qodo_reviews, and get_review_comments. Retry the required read now, starting with get_pull_request.";
 
 export function createTrueForgeInvestigationLauncher({
   modelName,
@@ -52,6 +53,7 @@ export function createTrueForgeInvestigationLauncher({
             "Read the PR and exact head SHA before making claims.",
             "Do not finish after setup, cloning, or one tool call. Continue until the complete investigation checklist is finished.",
             "Use the forgegate-github MCP tools for PR metadata, changed files, exact-SHA payment-lab source/tests, checks, reviews, and comments; do not use raw GitHub curl responses for these reads.",
+            "Use only these exact forgegate-github tool names: get_pull_request, get_pull_request_files, get_file, get_checks, get_qodo_reviews, and get_review_comments. Do not call list_tools, get_tool_info, get_pr, list_changed_files, or changed_files.",
             "If a required MCP tool is unavailable, record UNCERTAIN and stop safely; never substitute raw exec/curl or claim the read completed.",
             "Do not fetch plan.md, list the repository root recursively, or request oversized responses. Read only apps/forgegate/src/payment-lab.ts and apps/forgegate/test/payment-lab.test.ts at the exact PR head SHA.",
             "Checklist: read PR metadata; read changed files; read payment-lab source and tests at the exact PR head SHA; inspect checks/reviews/comments; run the baseline payment test on master before checking out the exact PR head SHA; then delegate both analysts and reconcile their outputs.",
@@ -85,11 +87,17 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
 
   async function continueInvestigation(sessionId: string, initialTurnId: string) {
     let turnId = initialTurnId;
+    let mcpRecoveryAttempted = false;
     for (const prompt of continuationPrompts) {
       const completed = await waitForTurn(sessionId, turnId);
       if (!completed) return;
       if (isTerminalTurn(completed.event)) return;
       const events = await listEvents(sessionId);
+      if (!mcpRecoveryAttempted && hasInvalidMcpToolError(events)) {
+        mcpRecoveryAttempted = true;
+        turnId = (await createTurn(sessionId, { input: [{ content: mcpRecoveryPrompt, type: "user.message" }] })).data.id;
+        continue;
+      }
       if (hasExplicitUncertainDecision(events)) return;
       if (hasCompleteEvidence(events)) return;
       turnId = (await createTurn(sessionId, { input: [{ content: prompt, type: "user.message" }] })).data.id;
@@ -120,6 +128,10 @@ function hasCompleteEvidence(events: InvestigationEvent[]) {
 
 function hasExplicitUncertainDecision(events: InvestigationEvent[]) {
   return projectInvestigation("controller", "", events).decision === "UNCERTAIN";
+}
+
+function hasInvalidMcpToolError(events: InvestigationEvent[]) {
+  return events.some(({ event }) => event.type === "tool.response" && typeof event.content === "string" && /Tool call failed: Tool |MCP server ['\"].*not found/i.test(event.content));
 }
 
 function assertConfiguredRepository(repository: string) {

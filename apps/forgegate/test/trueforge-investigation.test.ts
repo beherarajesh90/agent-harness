@@ -104,6 +104,26 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(createTurn).not.toHaveBeenCalled();
   });
 
+  it("recovers once from an invalid MCP tool name with the canonical tool list", async () => {
+    let events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { content: JSON.stringify({ error: [{ type: "text", text: '{"error":"Tool call failed: Tool \'get_pr\' is not allowed"}' }] }), type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const prompts: string[] = [];
+    const createTurn = vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      prompts.push(request.input[0]!.content);
+      events = [{ event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-2" }];
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+    expect(prompts[0]).toContain("get_pull_request");
+    expect(prompts[0]).toContain("Do not call list_tools");
+  });
+
   it("surfaces phase controller failures through the launcher callback", async () => {
     const onControllerError = vi.fn();
     const launch = createTrueForgeInvestigationLauncher({
