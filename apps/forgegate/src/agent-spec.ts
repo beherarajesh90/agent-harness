@@ -190,6 +190,9 @@ export function validateInvestigationArtifacts(input: { decision?: unknown; inva
   if (scenarios.some((scenario) => !experimentResults.some((result) => result.scenarioId ? result.scenarioId === scenario.scenarioId : result.seed === scenario.seed))) {
     throw new Error("every scenario must have a matching experiment result");
   }
+  if (scenarios.some((scenario) => !experimentResults.some((result) => result.scenarioId ? result.scenarioId === scenario.scenarioId && result.seed === scenario.seed : result.seed === scenario.seed))) {
+    throw new Error("experiment seed must match every scenario");
+  }
   if (decision === "READY" && experimentResults.some((result) => result.verdict !== "pass")) {
     throw new Error("READY requires a passing experiment");
   }
