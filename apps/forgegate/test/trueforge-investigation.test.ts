@@ -124,6 +124,19 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(prompts[0]).toContain("Do not call list_tools");
   });
 
+  it("does not recover an invalid MCP call made by a subagent", async () => {
+    const createTurn = vi.fn(async () => ({ data: { id: "unexpected" } }));
+    const listEvents = vi.fn(async () => [
+      { event: { content: JSON.stringify({ error: [{ type: "text", text: "Tool call failed: Tool 'list_tools' is not allowed" }] }), threadId: "subagent-1", type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { status: "done" }, type: "turn.done" }, turnId: "turn-1" },
+    ]);
+    const controller = createInvestigationPhaseController({ createTurn, listEvents, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).not.toHaveBeenCalled();
+  });
+
   it("surfaces phase controller failures through the launcher callback", async () => {
     const onControllerError = vi.fn();
     const launch = createTrueForgeInvestigationLauncher({

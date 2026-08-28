@@ -21,6 +21,7 @@ describe("ForgeGate agent specification", () => {
             "commit_files",
           ],
           name: "forgegate-github",
+          preload: true,
           requireApprovalForTools: ["commit_files"],
         },
       ],
@@ -41,6 +42,7 @@ describe("ForgeGate agent specification", () => {
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("payment-lab:evidence"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Run the baseline payment test on master before checking out the exact PR head SHA"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Mark the verdict fail when the observed counts violate an accepted invariant"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("primary agent must complete all GitHub MCP reads and sandbox execution before spawning subagents"));
   });
 
   it("requires an invariant to cite two files at the tested SHA", () => {

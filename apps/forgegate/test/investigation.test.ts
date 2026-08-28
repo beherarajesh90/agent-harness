@@ -19,6 +19,33 @@ describe("investigation control plane", () => {
     expect(snapshot.stage).toBe("DECISION");
   });
 
+  it("projects analyst roles and sandbox execution into truthful stages", () => {
+    const snapshot = projectInvestigation("session-1", "url", [
+      { event: { sequence: 1, threadId: "invariant-thread", title: "invariant-analyst", type: "thread.created" }, turnId: "turn-1" },
+      { event: { sequence: 2, threadId: "invariant-thread", type: "tool.response" }, turnId: "turn-1" },
+      { event: { sequence: 3, threadId: "failure-thread", title: "failure-mode-analyst", type: "thread.created" }, turnId: "turn-1" },
+      { event: { sequence: 4, threadId: "failure-thread", type: "thread.done" }, turnId: "turn-1" },
+      { event: { sequence: 5, type: "sandbox.created" }, turnId: "turn-1" },
+      { event: { sequence: 6, type: "sandbox.command.done" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.events.map((event) => event.stage)).toEqual(["INVARIANTS", "INVARIANTS", "HYPOTHESES", "HYPOTHESES", "EXPERIMENT", "TESTING"]);
+  });
+
+  it("does not project READY after a subagent attempts an invalid MCP call", () => {
+    const sha = "a".repeat(40);
+    const items = [
+      { event: { content: JSON.stringify({ head: { sha } }), sequence: 1, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "InvariantCandidate", artifact: { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha }, sequence: 2, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ScenarioPlan", artifact: { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], seed: 1, testedSha: sha }, sequence: 3, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 1, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "pass" }, sequence: 4, type: "tool.response" }, turnId: "turn-1" },
+      { event: { content: "Tool call failed: Tool 'list_tools' is not allowed", sequence: 5, threadId: "subagent-1", type: "tool.response" }, turnId: "turn-1" },
+      { event: { sequence: 6, state: { status: "done" }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+
+    expect(projectInvestigation("session-1", "url", items).status).toBe("UNCERTAIN");
+  });
+
   it("projects known structured artifacts from event payloads", () => {
     const snapshot = projectInvestigation("session-1", "url", [
       { event: { artifact: { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "payment-one-charge", ordering: ["charge", "timeout"], seed: 42, testedSha: "a".repeat(40) }, artifactType: "ScenarioPlan", type: "tool.response" }, turnId: "turn-1" },

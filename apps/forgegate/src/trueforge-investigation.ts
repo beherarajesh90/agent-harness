@@ -57,6 +57,7 @@ export function createTrueForgeInvestigationLauncher({
             "If a required MCP tool is unavailable, record UNCERTAIN and stop safely; never substitute raw exec/curl or claim the read completed.",
             "Do not fetch plan.md, list the repository root recursively, or request oversized responses. Read only apps/forgegate/src/payment-lab.ts and apps/forgegate/test/payment-lab.test.ts at the exact PR head SHA.",
             "Checklist: read PR metadata; read changed files; read payment-lab source and tests at the exact PR head SHA; inspect checks/reviews/comments; run the baseline payment test on master before checking out the exact PR head SHA; then delegate both analysts and reconcile their outputs.",
+            "The primary agent performs every GitHub MCP read and every sandbox action before delegation. Pass that collected evidence to the analysts; subagents must return JSON artifacts only and must not call MCP or sandbox tools.",
             "Spawn exactly two visible dynamic subagents:",
             "- invariant-analyst: return InvariantCandidate JSON objects with at least two exact-SHA repository evidence references.",
             "- failure-mode-analyst: wait for the accepted invariant JSON from invariant-analyst, then return every materially distinct deterministic ScenarioPlan JSON object tied to it.",
@@ -93,7 +94,9 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
       if (!completed) return;
       if (isTerminalTurn(completed.event)) return;
       const events = await listEvents(sessionId);
-      if (!mcpRecoveryAttempted && hasInvalidMcpToolError(events)) {
+      const invalidMcpToolCall = findInvalidMcpToolCall(events);
+      if (invalidMcpToolCall) {
+        if (isSubagentThread(invalidMcpToolCall.event.threadId) || mcpRecoveryAttempted) return;
         mcpRecoveryAttempted = true;
         turnId = (await createTurn(sessionId, { input: [{ content: mcpRecoveryPrompt, type: "user.message" }] })).data.id;
         continue;
@@ -130,8 +133,12 @@ function hasExplicitUncertainDecision(events: InvestigationEvent[]) {
   return projectInvestigation("controller", "", events).decision === "UNCERTAIN";
 }
 
-function hasInvalidMcpToolError(events: InvestigationEvent[]) {
-  return events.some(({ event }) => event.type === "tool.response" && typeof event.content === "string" && /Tool call failed: Tool |MCP server ['\"].*not found/i.test(event.content));
+function findInvalidMcpToolCall(events: InvestigationEvent[]) {
+  return events.find(({ event }) => event.type === "tool.response" && typeof event.content === "string" && /Tool call failed: Tool |MCP server ['\"].*not found/i.test(event.content));
+}
+
+function isSubagentThread(threadId: unknown) {
+  return typeof threadId === "string" && threadId !== "main";
 }
 
 function assertConfiguredRepository(repository: string) {

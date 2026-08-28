@@ -1352,7 +1352,7 @@ Status: `[x]` verified complete, `[ ]` not started, `[~]` in progress, `[?]` blo
 
 ## Current Implementation State
 
-Last repository verification: 2026-08-26.
+Last repository verification: 2026-08-28.
 
 - [x] Product, architecture, API, safety, workflow, and demo requirements are documented in this plan.
 - [x] Repository-level branch, PR, Qodo, and merge rules are recorded in `AGENTS.md`.
@@ -1482,6 +1482,8 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [x] Run the generated adversarial scenario and independent oracle.
 - [x] Produce `ExperimentResult` with SHA, seed, repetitions, observed values, verdict, and artifact links.
 - [x] Reach a real `BLOCKED` decision for the seeded unsafe PR.
+- [x] Preload the bounded GitHub MCP catalog and direct the primary agent to complete MCP/sandbox work before delegating evidence-only analyst tasks.
+- [x] Stop controller recovery after an invalid subagent MCP call so it cannot create duplicate analyst threads; the investigation fails closed as `UNCERTAIN`.
 
 ### Event projection and investigation API
 
@@ -1492,6 +1494,7 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [x] Merge model deltas into base events.
 - [x] Deduplicate by TrueForge `sequence`; use `eventId` only for tracing and mismatch detection.
 - [x] Implement `Last-Event-ID` resume behavior.
+- [x] Project invariant/failure-mode analyst and sandbox events to their truthful public stages; attribute subagent tool activity to `SUBAGENT`.
 - [x] Implement get-investigation API.
 - [x] Implement cancel API.
 - [x] Implement live and readiness health APIs.

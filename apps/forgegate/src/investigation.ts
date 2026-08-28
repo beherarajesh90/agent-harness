@@ -75,11 +75,11 @@ export class InvestigationNotFoundError extends Error {
 export function projectInvestigation(sessionId: string, pullRequestUrl: string, items: TrueForgeEventItem[]): InvestigationSnapshot {
   const projected = mergeModelDeltas(items.map((item, index) => toHarnessEvent(sessionId, item, items.length - index)));
   const seenSequences = new Set<number>();
-  const events = projected.filter((event) => {
+  const events = applyThreadStages(projected.filter((event) => {
     if (seenSequences.has(event.sequence)) return false;
     seenSequences.add(event.sequence);
     return true;
-  }).sort((left, right) => left.sequence - right.sequence);
+  }).sort((left, right) => left.sequence - right.sequence));
   const trustedHeadSha = findPullRequestHeadSha(events);
   const artifacts = events.flatMap((event) => artifactFromPayload(event.payload, trustedHeadSha));
   const decision = findFinalDecision(events, trustedHeadSha);
@@ -90,7 +90,8 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const requiredArtifactTypes: InvestigationArtifact["type"][] = ["InvariantCandidate", "ScenarioPlan", "ExperimentResult"];
   const completeEvidence = Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts);
   const experimentFailed = artifacts.some((artifact) => artifact.type === "ExperimentResult" && (artifact.data.verdict === "fail" || paymentInvariantViolated(artifact.data)));
-  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : ((state?.status === "blocked" || experimentFailed) && completeEvidence && !decision) ? "BLOCKED" : terminal ? completeEvidence ? decision ?? "READY" : "UNCERTAIN" : "RUNNING";
+  const subagentMcpFailure = hasSubagentMcpFailure(events);
+  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure ? "UNCERTAIN" : ((state?.status === "blocked" || experimentFailed) && completeEvidence && !decision) ? "BLOCKED" : terminal ? completeEvidence ? decision ?? "READY" : "UNCERTAIN" : "RUNNING";
 
   return {
     artifacts,
@@ -208,6 +209,29 @@ function mergeModelDeltas(events: HarnessEvent[]) {
   });
 }
 
+function applyThreadStages(events: HarnessEvent[]) {
+  const stagesByThread = new Map<string, Stage>();
+  return events.map((event) => {
+    if (event.type === "thread.created") {
+      const stage = analystStage(event.payload.title) ?? event.stage;
+      if (event.threadId) stagesByThread.set(event.threadId, stage);
+      return { ...event, stage };
+    }
+    const stage = event.threadId ? stagesByThread.get(event.threadId) : undefined;
+    return stage ? { ...event, stage } : event;
+  });
+}
+
+function analystStage(title: unknown): Stage | undefined {
+  if (title === "invariant-analyst") return "INVARIANTS";
+  if (title === "failure-mode-analyst") return "HYPOTHESES";
+  return undefined;
+}
+
+function hasSubagentMcpFailure(events: HarnessEvent[]) {
+  return events.some((event) => event.type === "tool.response" && event.threadId !== undefined && event.threadId !== "main" && typeof event.payload.content === "string" && /Tool call failed: Tool |MCP server ['\"].*not found/i.test(event.payload.content));
+}
+
 function paymentInvariantViolated(data: Record<string, unknown>) {
   const observed = data.observed;
   if (!isRecord(observed)) return false;
@@ -318,8 +342,8 @@ function toHarnessEvent(sessionId: string, item: TrueForgeEventItem, sequence: n
     payload: sanitizePayload(event),
     sequence: trueForgeSequence,
     sessionId,
-    source,
-    stage: stageFor(type),
+    source: typeof event.threadId === "string" && event.threadId !== "main" && type.startsWith("tool.") ? "SUBAGENT" : source,
+    stage: stageFor(event),
     ...(typeof event.threadId === "string" ? { threadId: event.threadId } : {}),
     turnId: item.turnId,
     type,
@@ -338,9 +362,11 @@ function sourceFor(type: string): Source {
   return type.startsWith("turn.") ? "SYSTEM" : "AGENT";
 }
 
-function stageFor(type: string): Stage {
-  if (type === "thread.created") return "INVARIANTS";
+function stageFor(event: Record<string, unknown>): Stage {
+  const type = String(event.type ?? "unknown");
+  if (type === "thread.created") return analystStage(event.title) ?? "CONTEXT";
   if (type === "sandbox.created") return "EXPERIMENT";
+  if (type.startsWith("sandbox.")) return "TESTING";
   if (type === "tool.approval_required" || type === "tool.response_required") return "APPROVAL";
   if (type === "turn.done") return "DECISION";
   if (type === "tool.response") return "EVIDENCE";
