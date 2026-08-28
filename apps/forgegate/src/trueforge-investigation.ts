@@ -125,7 +125,7 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
       if (hasIncompleteExperiments(events)) return;
       if (hasExplicitUncertainDecision(events) && !hasAnyEvidence(events)) return;
       if (hasCompleteEvidence(events)) return;
-      turnId = (await createTurn(sessionId, { input: [{ content: continuationPrompts[promptIndex]!, type: "user.message" }] })).data.id;
+      turnId = (await createTurn(sessionId, { input: [{ content: nextRequiredPrompt(events), type: "user.message" }] })).data.id;
       promptIndex += 1;
     }
   }
@@ -158,6 +158,15 @@ function hasExplicitUncertainDecision(events: InvestigationEvent[]) {
 
 function hasAnyEvidence(events: InvestigationEvent[]) {
   return projectInvestigation("controller", "", events).artifacts.length > 0;
+}
+
+function nextRequiredPrompt(events: InvestigationEvent[]) {
+  const artifacts = projectInvestigation("controller", "", events).artifacts;
+  const types = new Set(artifacts.map((artifact) => artifact.type));
+  if (!types.has("InvariantCandidate")) return continuationPrompts[0];
+  if (!types.has("ScenarioPlan")) return continuationPrompts[1];
+  if (!types.has("ExperimentResult")) return continuationPrompts[2];
+  return continuationPrompts[3];
 }
 
 function hasIncompleteExperiments(events: InvestigationEvent[]) {

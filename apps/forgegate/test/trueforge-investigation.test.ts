@@ -147,6 +147,24 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Phase EXPERIMENT");
   });
 
+  it("continues to hypotheses when incomplete final output already contains invariants", async () => {
+    let events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { artifactType: "InvariantCandidate", artifact: { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha: "a".repeat(40), startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha: "a".repeat(40), startLine: 1 }], id: "i1", statement: "one charge", testedSha: "a".repeat(40) }, type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "BLOCKED", invariants: [] }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void _sessionId;
+      events = [{ event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-2" }];
+      expect(request.input[0]?.content).toContain("Phase HYPOTHESES");
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+  });
+
   it("continues to experiments when some scenarios are still missing results", async () => {
     let events: { event: Record<string, unknown>; turnId: string }[] = [
       { event: { artifactType: "ScenarioPlan", artifact: { expectedOutcome: "duplicate charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge", "retry"], scenarioId: "s1", seed: 1, testedSha: "a".repeat(40) }, sequence: 1, type: "tool.response" }, turnId: "turn-1" },
