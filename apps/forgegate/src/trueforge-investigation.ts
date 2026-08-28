@@ -21,7 +21,7 @@ const continuationPrompts = [
   "Continue with Phase INVARIANTS. Spawn the invariant-analyst now, wait for its completed output, validate every InvariantCandidate against the ForgeGate schema, and preserve each accepted artifact.",
   "Continue with Phase HYPOTHESES. Pass the validated invariant artifacts to the failure-mode-analyst, wait for its completed output, validate every ScenarioPlan, and preserve each accepted artifact. ScenarioPlan ordering must be a non-empty string[]; do not return a single string. ScenarioPlan seed must be a non-negative integer; do not return a string seed.",
   "Continue with Phase EXPERIMENT and EVIDENCE. Resolve master to its immutable SHA and measure its baseline counts before checking out the exact PR SHA. Run every validated unique ScenarioPlan in the disposable sandbox and return one schema-valid ExperimentResult per scenario with baselineSha, scenarioId, repetitions, expected baseline counts, observed PR counts, verdict, and the existing payment-lab:evidence identifier as the artifact link only.",
-  "Continue with Phase DECISION. Reconcile the persisted InvariantCandidate, ScenarioPlan, and ExperimentResult artifacts. Return the final JSON bundle with experimentResults and decision; READY is allowed only when all scenarios have passing results and all artifacts are valid and consistent.",
+  "Continue with Phase DECISION. Reconcile the persisted InvariantCandidate, ScenarioPlan, and ExperimentResult artifacts. Return one complete final JSON object containing the full invariants array, full scenarios array, full experimentResults array, and decision; persisted artifacts cannot substitute for omitted fields. READY is allowed only when all scenarios have passing results and all artifacts are valid and consistent.",
 ] as const;
 const mcpRecoveryPrompt = "The previous MCP call used an invalid server or tool name. Do not call list_tools, get_tool_info, get_pr, list_changed_files, or changed_files. Use only forgegate-github tools named get_pull_request, get_pull_request_files, get_file, get_checks, get_qodo_reviews, and get_review_comments. Retry the required read now, starting with get_pull_request.";
 const sandboxRecoveryPrompt = "The previous sandbox command failed with a transient startup or process-bridge error. Retry the same sandbox command once now, then continue the investigation. Do not mark the investigation UNCERTAIN unless the retry also fails.";
@@ -67,7 +67,7 @@ export function createTrueForgeInvestigationLauncher({
             "After both analysts finish, deduplicate and bound the ScenarioPlans, then run every accepted unique ScenarioPlan in the sandbox with the independent payment oracle and record one ExperimentResult per scenario.",
             "Use payment-lab:evidence as the ExperimentResult artifact link; never put an explanation or sentence in artifactLinks.",
             "Resolve master to its immutable SHA and run its baseline before PR checkout. Every ExperimentResult must include baselineSha for that master commit, use its measured counts as expected, and use PR-head adversarial counts as observed; mark verdict fail when the observed counts violate an accepted invariant.",
-            "The final response must be a JSON object with a decision field. For READY or BLOCKED include complete consistent invariants, scenarios, and experimentResults evidence; for UNCERTAIN include only evidence actually obtained and omit unavailable fields. Never invent missing artifacts.",
+            "The final response must be a JSON object with a decision field. The final decision response must include invariants, scenarios, experimentResults, and decision; persisted artifacts cannot substitute for omitted fields. For READY or BLOCKED include complete consistent evidence; for UNCERTAIN include only evidence actually obtained and omit unavailable fields. Never invent missing artifacts.",
             "Completion predicate: do not emit a final response until all required reads, two analyst outputs, baseline, adversarial experiment, schema validation, and decision are present; after every tool response issue the next required tool call.",
             "Validate both artifact types against the ForgeGate schemas; reject prose-only or stale-SHA artifacts.",
             "Artifact contract: evidence objects use sha (not testedSha); ScenarioPlan injectedFaults is string[] and expectedOutcome is a string; return raw JSON without markdown fences.",
@@ -101,6 +101,7 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
       if (!completed) return;
       if (isTerminalTurn(completed.event)) return;
       const events = await listEvents(sessionId);
+      if (hasRepeatedRejectedDecision(events)) return;
       const invalidMcpToolCall = findInvalidMcpToolCall(events);
       if (invalidMcpToolCall) {
         if (isSubagentThread(invalidMcpToolCall.event.threadId) || mcpRecoveryAttempted) return;
@@ -158,6 +159,16 @@ function hasExplicitUncertainDecision(events: InvestigationEvent[]) {
 
 function hasAnyEvidence(events: InvestigationEvent[]) {
   return projectInvestigation("controller", "", events).artifacts.length > 0;
+}
+
+function hasRepeatedRejectedDecision(events: InvestigationEvent[]) {
+  const outputs = events
+    .filter(({ event }) => event.type === "turn.done" && (!event.threadId || event.threadId === "main"))
+    .map(({ event }) => (isRecord(event.state) && isRecord(event.state.output) && typeof event.state.output.content === "string" ? parseJson(event.state.output.content) : undefined))
+    .filter((output): output is Record<string, unknown> => isRecord(output) && (output.decision === "READY" || output.decision === "BLOCKED"));
+  const last = outputs.at(-1);
+  const previous = outputs.at(-2);
+  return Boolean(last && previous && JSON.stringify(last) === JSON.stringify(previous) && (!Array.isArray(last.invariants) || !Array.isArray(last.scenarios) || !Array.isArray(last.experimentResults) || last.invariants.length === 0 || last.scenarios.length === 0 || last.experimentResults.length === 0));
 }
 
 function nextRequiredPrompt(events: InvestigationEvent[]) {

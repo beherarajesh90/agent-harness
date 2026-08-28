@@ -40,6 +40,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("ScenarioPlan seed is a non-negative integer");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Use cwd / for sandbox commands; /workspace does not exist");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Evidence reference sha must equal the exact PR head commit SHA");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("The final decision response must include invariants, scenarios, experimentResults, and decision");
   });
 
   it("rejects a pull request URL outside the configured repository", async () => {
@@ -163,6 +164,20 @@ describe("createTrueForgeInvestigationLauncher", () => {
     await controller.continue("session-1", "turn-1");
 
     expect(createTurn).toHaveBeenCalledOnce();
+  });
+
+  it("stops after the same incomplete decision response repeats", async () => {
+    const incomplete = JSON.stringify({ decision: "BLOCKED", invariants: [], scenarios: [], experimentResults: [] });
+    const events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { state: { output: { content: incomplete } }, type: "turn.done" }, turnId: "turn-1" },
+      { event: { state: { output: { content: incomplete } }, type: "turn.done" }, turnId: "turn-2" },
+    ];
+    const createTurn = vi.fn(async () => ({ data: { id: "unexpected" } }));
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-2");
+
+    expect(createTurn).not.toHaveBeenCalled();
   });
 
   it("continues to experiments when some scenarios are still missing results", async () => {
