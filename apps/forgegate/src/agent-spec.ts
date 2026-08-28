@@ -5,6 +5,7 @@ type AgentSpec = TrueForgeApi.AgentSpec;
 
 const shaSchema = z.string().regex(/^[a-f0-9]{40}$/, "expected a commit SHA");
 const allowedEvidencePaths = new Set(["apps/forgegate/src/payment-lab.ts", "apps/forgegate/test/payment-lab.test.ts"]);
+export const maxScenarioCount = 8;
 
 const evidenceReferenceSchema = z
   .object({
@@ -63,6 +64,7 @@ export const scenarioPlanSchema = z
     injectedFaults: z.array(z.string().min(1)).min(1),
     invariantId: z.string().min(1),
     ordering: z.array(z.string().min(1)).min(1),
+    scenarioId: z.string().min(1).optional(),
     seed: z.number().int().nonnegative(),
     testedSha: shaSchema,
   })
@@ -75,6 +77,7 @@ export const experimentResultSchema = z
     expected: z.object({ charges: z.number().int().nonnegative(), intents: z.number().int().nonnegative(), ledgerEntries: z.number().int().nonnegative() }).strict(),
     observed: z.object({ charges: z.number().int().nonnegative(), intents: z.number().int().nonnegative(), ledgerEntries: z.number().int().nonnegative() }).strict(),
     repetitions: z.number().int().positive(),
+    scenarioId: z.string().min(1).optional(),
     seed: z.number().int().nonnegative(),
     testedSha: shaSchema,
     verdict: z.enum(["pass", "fail"]),
@@ -89,18 +92,20 @@ export const investigationResponseSchema = z
   .object({
     decision: investigationDecisionSchema,
     experimentResult: experimentResultSchema.optional(),
+    experimentResults: z.array(experimentResultSchema).min(1).optional(),
     invariants: z.array(invariantCandidateSchema).optional(),
     scenarios: z.array(scenarioPlanSchema).optional(),
   })
   .strict()
   .superRefine((bundle, context) => {
-    if (bundle.decision === "UNCERTAIN" && (!bundle.invariants?.length || !bundle.scenarios?.length || !bundle.experimentResult)) return;
-    if (!bundle.invariants?.length || !bundle.scenarios?.length || !bundle.experimentResult) {
+    const results = bundle.experimentResults ?? (bundle.experimentResult ? [bundle.experimentResult] : undefined);
+    if (bundle.decision === "UNCERTAIN" && (!bundle.invariants?.length || !bundle.scenarios?.length || !results?.length)) return;
+    if (!bundle.invariants?.length || !bundle.scenarios?.length || !results?.length) {
       context.addIssue({ code: "custom", message: `${bundle.decision} requires complete investigation evidence` });
       return;
     }
     try {
-      validateInvestigationArtifacts(bundle);
+      validateInvestigationArtifacts({ ...bundle, experimentResults: results });
     } catch (error) {
       context.addIssue({ code: "custom", message: error instanceof Error ? error.message : "inconsistent investigation artifacts" });
     }
@@ -108,7 +113,7 @@ export const investigationResponseSchema = z
 
 export function validateAnalystArtifacts(input: { invariants: unknown; scenarios: unknown }) {
   const invariants = z.array(invariantCandidateSchema).parse(input.invariants);
-  const scenarios = z.array(scenarioPlanSchema).parse(input.scenarios);
+  const scenarios = deduplicateScenarioPlans(z.array(scenarioPlanSchema).parse(input.scenarios), maxScenarioCount);
   const testedSha = invariants[0]?.testedSha;
   if (testedSha && invariants.some((invariant) => invariant.testedSha !== testedSha)) {
     throw new Error("all invariants must use the same tested SHA");
@@ -125,21 +130,48 @@ export function validateAnalystArtifacts(input: { invariants: unknown; scenarios
   return { invariants, scenarios };
 }
 
-export function validateInvestigationArtifacts(input: { decision?: unknown; invariants?: unknown; scenarios?: unknown; experimentResult?: unknown }) {
+export function deduplicateScenarioPlans(scenarios: ScenarioPlan[], maxScenarios: number) {
+  if (!Number.isInteger(maxScenarios) || maxScenarios < 1) throw new Error("maxScenarios must be a positive integer");
+  const seen = new Set<string>();
+  return scenarios.filter((scenario) => {
+    const fingerprint = JSON.stringify({
+      faults: scenario.injectedFaults.map((fault) => fault.trim().toLowerCase()).sort(),
+      invariantId: scenario.invariantId,
+      ordering: scenario.ordering.map((step) => step.trim().toLowerCase()),
+      seed: scenario.seed,
+    });
+    if (seen.has(fingerprint) || seen.size >= maxScenarios) return false;
+    seen.add(fingerprint);
+    return true;
+  });
+}
+
+export function validateInvestigationArtifacts(input: { decision?: unknown; invariants?: unknown; scenarios?: unknown; experimentResult?: unknown; experimentResults?: unknown }) {
   const { invariants, scenarios } = validateAnalystArtifacts({ invariants: input.invariants, scenarios: input.scenarios });
-  const experimentResult = experimentResultSchema.parse(input.experimentResult);
+  const experimentResults = z.array(experimentResultSchema).parse(input.experimentResults ?? (input.experimentResult === undefined ? [] : [input.experimentResult]));
+  if (experimentResults.length === 0) throw new Error("experiment results are required");
   const decision = input.decision === undefined ? undefined : investigationDecisionSchema.parse(input.decision);
   const testedSha = invariants[0]?.testedSha ?? scenarios[0]?.testedSha;
-  if (!testedSha || experimentResult.testedSha !== testedSha) {
+  if (!testedSha || experimentResults.some((result) => result.testedSha !== testedSha)) {
     throw new Error("all investigation artifacts must use the same tested SHA");
   }
-  if (scenarios.some((scenario) => scenario.seed !== experimentResult.seed)) {
+  if (scenarios.length !== experimentResults.length) {
+    throw new Error("every scenario must have an experiment result");
+  }
+  const scenarioIds = scenarios.map((scenario) => scenario.scenarioId);
+  if (scenarioIds.every((scenarioId) => !scenarioId) && scenarios.some((scenario, index) => experimentResults[index]?.seed !== scenario.seed)) {
     throw new Error("experiment seed must match every scenario seed");
   }
-  if (decision === "READY" && experimentResult.verdict !== "pass") {
+  if (scenarioIds.some(Boolean) && experimentResults.some((result) => !result.scenarioId || !scenarioIds.includes(result.scenarioId))) {
+    throw new Error("every experiment result must reference a scenario");
+  }
+  if (scenarios.some((scenario) => !experimentResults.some((result) => result.scenarioId ? result.scenarioId === scenario.scenarioId : result.seed === scenario.seed))) {
+    throw new Error("every scenario must have a matching experiment result");
+  }
+  if (decision === "READY" && experimentResults.some((result) => result.verdict !== "pass")) {
     throw new Error("READY requires a passing experiment");
   }
-  return { decision, invariants, scenarios, experimentResult };
+  return { decision, invariants, scenarios, experimentResult: experimentResults[0], experimentResults };
 }
 
 export function createForgeGateAgentSpec(modelName: string): AgentSpec {
@@ -159,14 +191,14 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "Stop as UNCERTAIN when evidence is missing, stale, or inconsistent.",
       "Spawn exactly two visible dynamic subagents: invariant-analyst and failure-mode-analyst.",
       "The invariant-analyst must return one or more InvariantCandidate JSON objects with id, statement, confidence, testedSha, and at least two distinct evidence references containing path, startLine, endLine, and the same testedSha.",
-      "The failure-mode-analyst must return one or more ScenarioPlan JSON objects with invariantId, testedSha, seed, injectedFaults, ordering, and expectedOutcome.",
+      "The failure-mode-analyst must return all materially distinct ScenarioPlan JSON objects with invariantId, scenarioId, testedSha, seed, injectedFaults, ordering, and expectedOutcome.",
       "When an artifact is emitted into an event, preserve it under artifactType (InvariantCandidate, ScenarioPlan, or ExperimentResult) and artifact fields.",
       "Use the existing payment-lab:evidence identifier in ExperimentResult artifactLinks; never put an explanation or sentence in artifactLinks.",
       "Run the baseline payment test on master before checking out the exact PR head SHA; use the baseline counts as expected and the PR experiment counts as observed.",
       "Use the ScenarioPlan seed to drive a deterministic fault schedule; repeated runs with the same seed must reproduce the same observations, and different seeds must be allowed to exercise different schedules.",
       "Mark the verdict fail when the observed counts violate an accepted invariant, even if the scenario reproduces the expected failure.",
       "Do not accept prose as an artifact; validate every candidate and scenario against the ForgeGate schemas before using it.",
-      "Before claiming READY, require every accepted artifact to use one testedSha, every ScenarioPlan invariantId to reference an accepted invariant, and every ScenarioPlan seed to match the ExperimentResult seed.",
+      "Before claiming READY, require every accepted artifact to use one testedSha, every ScenarioPlan invariantId to reference an accepted invariant, every scenario to have one ExperimentResult, and every experiment to pass.",
       "InvariantCandidate evidence objects use sha (not testedSha) and must reference apps/forgegate/src/payment-lab.ts or apps/forgegate/test/payment-lab.test.ts at the exact testedSha.",
       "ScenarioPlan injectedFaults is string[] and expectedOutcome is a string; return raw JSON without markdown fences.",
       "Use the sandbox only for disposable work.",

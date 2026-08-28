@@ -134,6 +134,25 @@ describe("investigation control plane", () => {
     ]).status).toBe("BLOCKED");
   });
 
+  it("aggregates multiple experiment results and blocks when any scenario fails", () => {
+    const sha = "a".repeat(40);
+    const invariant = { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha };
+    const scenarios = [
+      { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha: sha },
+      { expectedOutcome: "one charge", injectedFaults: ["duplicate webhook"], invariantId: "i1", ordering: ["charge", "webhook"], scenarioId: "s2", seed: 2, testedSha: sha },
+    ];
+    const result = (scenarioId: string, seed: number, observedCharges: number, verdict: "pass" | "fail") => ({ artifactLinks: ["payment-lab:evidence"], expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: observedCharges, intents: 1, ledgerEntries: 1 }, repetitions: 1, scenarioId, seed, testedSha: sha, verdict });
+    const bundle = { decision: "BLOCKED", invariants: [invariant], scenarios, experimentResults: [result("s1", 1, 1, "pass"), result("s2", 2, 2, "fail")] };
+
+    const snapshot = projectInvestigation("session-1", "url", [
+      { event: { content: JSON.stringify({ head: { sha } }), sequence: 1, type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify(bundle) } }, sequence: 2, type: "turn.done" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.artifacts.filter((artifact) => artifact.type === "ExperimentResult")).toHaveLength(2);
+    expect(snapshot.status).toBe("BLOCKED");
+  });
+
   it("rejects experiment evidence that does not match the PR head SHA", () => {
     const sha = "a".repeat(40);
     const items = [

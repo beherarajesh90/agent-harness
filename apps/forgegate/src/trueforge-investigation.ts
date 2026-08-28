@@ -20,8 +20,8 @@ type PhaseControllerOptions = {
 const continuationPrompts = [
   "Continue with Phase INVARIANTS. Spawn the invariant-analyst now, wait for its completed output, validate every InvariantCandidate against the ForgeGate schema, and preserve each accepted artifact.",
   "Continue with Phase HYPOTHESES. Pass the validated invariant artifacts to the failure-mode-analyst, wait for its completed output, validate every ScenarioPlan, and preserve each accepted artifact.",
-  "Continue with Phase EXPERIMENT and EVIDENCE. Run the validated ScenarioPlan in the disposable sandbox against the exact PR SHA, and return a schema-valid ExperimentResult with repetitions, observed counts, verdict, and the existing payment-lab:evidence identifier as the artifact link only.",
-  "Continue with Phase DECISION. Reconcile the persisted InvariantCandidate, ScenarioPlan, and ExperimentResult artifacts. Return the final JSON bundle and decision; READY is allowed only when all three artifact types are valid and consistent.",
+  "Continue with Phase EXPERIMENT and EVIDENCE. Run every validated unique ScenarioPlan in the disposable sandbox against the exact PR SHA, and return one schema-valid ExperimentResult per scenario with scenarioId, repetitions, observed counts, verdict, and the existing payment-lab:evidence identifier as the artifact link only.",
+  "Continue with Phase DECISION. Reconcile the persisted InvariantCandidate, ScenarioPlan, and ExperimentResult artifacts. Return the final JSON bundle with experimentResults and decision; READY is allowed only when all scenarios have passing results and all artifacts are valid and consistent.",
 ] as const;
 
 export function createTrueForgeInvestigationLauncher({
@@ -57,11 +57,11 @@ export function createTrueForgeInvestigationLauncher({
             "Checklist: read PR metadata; read changed files; read payment-lab source and tests at the exact PR head SHA; inspect checks/reviews/comments; run the baseline payment test on master before checking out the exact PR head SHA; then delegate both analysts and reconcile their outputs.",
             "Spawn exactly two visible dynamic subagents:",
             "- invariant-analyst: return InvariantCandidate JSON objects with at least two exact-SHA repository evidence references.",
-            "- failure-mode-analyst: wait for the accepted invariant JSON from invariant-analyst, then return deterministic ScenarioPlan JSON objects tied to it.",
-            "After both analysts finish, run the selected ScenarioPlan in the sandbox with the independent payment oracle and record ExperimentResult evidence.",
+            "- failure-mode-analyst: wait for the accepted invariant JSON from invariant-analyst, then return every materially distinct deterministic ScenarioPlan JSON object tied to it.",
+            "After both analysts finish, deduplicate and bound the ScenarioPlans, then run every accepted unique ScenarioPlan in the sandbox with the independent payment oracle and record one ExperimentResult per scenario.",
             "Use payment-lab:evidence as the ExperimentResult artifact link; never put an explanation or sentence in artifactLinks.",
             "Use baseline counts as ExperimentResult.expected and PR-head adversarial counts as observed; mark verdict fail when the observed counts violate an accepted invariant.",
-            "The final response must be a JSON object with a decision field. For READY or BLOCKED include complete consistent invariants, scenarios, and experimentResult evidence; for UNCERTAIN include only evidence actually obtained and omit unavailable fields. Never invent missing artifacts.",
+            "The final response must be a JSON object with a decision field. For READY or BLOCKED include complete consistent invariants, scenarios, and experimentResults evidence; for UNCERTAIN include only evidence actually obtained and omit unavailable fields. Never invent missing artifacts.",
             "Completion predicate: do not emit a final response until all required reads, two analyst outputs, baseline, adversarial experiment, schema validation, and decision are present; after every tool response issue the next required tool call.",
             "Validate both artifact types against the ForgeGate schemas; reject prose-only or stale-SHA artifacts.",
             "Artifact contract: evidence objects use sha (not testedSha); ScenarioPlan injectedFaults is string[] and expectedOutcome is a string; return raw JSON without markdown fences.",

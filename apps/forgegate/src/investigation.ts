@@ -1,4 +1,4 @@
-import { experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, scenarioPlanSchema, validateAnalystArtifacts, validateInvestigationArtifacts } from "./agent-spec.js";
+import { experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, scenarioPlanSchema, validateInvestigationArtifacts } from "./agent-spec.js";
 import type { InvestigationDecision } from "./agent-spec.js";
 
 export const stages = [
@@ -110,7 +110,7 @@ function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: 
     return [
       ...bundle.invariants.map((data) => ({ data, type: "InvariantCandidate" as const })),
       ...bundle.scenarios.map((data) => ({ data, type: "ScenarioPlan" as const })),
-      ...(bundle.experimentResult ? [{ data: bundle.experimentResult, type: "ExperimentResult" as const }] : []),
+      ...bundle.experimentResults.map((data) => ({ data, type: "ExperimentResult" as const })),
     ];
   }
   const wrapped = readArtifact(payload.artifactType, payload.artifact, trustedHeadSha);
@@ -136,13 +136,14 @@ function readFinalBundle(payload: Record<string, unknown>, trustedHeadSha?: stri
     return {
       decision: parsedResponse.data.decision,
       experimentResult: parsedResponse.data.experimentResult,
+      experimentResults: parsedResponse.data.experimentResults ?? (parsedResponse.data.experimentResult ? [parsedResponse.data.experimentResult] : []),
       invariants: parsedResponse.data.invariants ?? [],
       scenarios: parsedResponse.data.scenarios ?? [],
     };
   }
   try {
     const bundle = validateInvestigationArtifacts(parsedResponse.data);
-    if (trustedHeadSha && [...bundle.invariants, ...bundle.scenarios, bundle.experimentResult].some((artifact) => artifact.testedSha !== trustedHeadSha)) return undefined;
+    if (trustedHeadSha && [...bundle.invariants, ...bundle.scenarios, ...bundle.experimentResults].some((artifact) => artifact.testedSha !== trustedHeadSha)) return undefined;
     return bundle;
   } catch {
     return undefined;
@@ -161,9 +162,9 @@ function hasConsistentEvidence(artifacts: InvestigationArtifact[]) {
   const invariants = artifacts.filter((artifact) => artifact.type === "InvariantCandidate").map((artifact) => artifact.data);
   const scenarios = artifacts.filter((artifact) => artifact.type === "ScenarioPlan").map((artifact) => artifact.data);
   const experiments = artifacts.filter((artifact) => artifact.type === "ExperimentResult").map((artifact) => artifact.data);
-  if (experiments.length !== 1) return false;
+  if (experiments.length < 1) return false;
   try {
-    validateInvestigationArtifacts({ invariants, scenarios, experimentResult: experiments[0] });
+    validateInvestigationArtifacts({ invariants, scenarios, experimentResults: experiments });
     return true;
   } catch {
     return false;

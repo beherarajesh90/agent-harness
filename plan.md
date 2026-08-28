@@ -1542,6 +1542,12 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [ ] Show subagent thread lifecycle.
 - [ ] Show sandbox creation, command, exit code, working directory, and bounded output.
 - [ ] Show invariant, scenario, expected/observed values, and evidence links.
+- [ ] Show the total number of unique scenarios discovered.
+- [ ] Show duplicate scenarios rejected and the deduplication reason.
+- [ ] Show per-scenario states: `PENDING`, `RUNNING`, `PASSED`, `FAILED`, and `UNCERTAIN`.
+- [ ] Show each scenario's invariant, fault sequence, seed, expected values, observed values, and verdict.
+- [ ] Show aggregate scenario progress, such as completed scenarios out of the total.
+- [ ] Show the aggregate final decision and identify the scenario that caused `BLOCKED`.
 - [ ] Show patch, regression result, changed files, and exact diff summary.
 - [ ] Show Qodo review link, finding status, and agent response.
 - [ ] Show retry/failure/recovery steps.
@@ -1594,3 +1600,37 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [ ] Verify repository README, architecture, security model, and AI-assistance disclosure.
 - [ ] Verify public repository, video, and write-up are ready for submission.
 - [ ] Submit before the hackathon deadline.
+
+## Addendum - Unique Scenario Coverage and Three-Agent Boundary
+
+This addendum clarifies scenario coverage without changing the existing three-agent architecture or implementation phases.
+
+### Agent responsibilities
+
+- The primary ForgeGate agent remains the coordinator and experiment executor. It validates evidence, deduplicates scenarios, runs the selected scenarios in the disposable sandbox, aggregates results, and makes the final decision.
+- The visible `invariant-analyst` remains responsible only for discovering `InvariantCandidate` artifacts with exact-SHA evidence.
+- The visible `failure-mode-analyst` remains responsible for generating all valid, unique `ScenarioPlan` artifacts from the accepted invariants. It does not execute experiments.
+- No separate `experiment-runner` agent is introduced. The system therefore continues to have exactly three agents: one primary agent and two dynamic subagents. The phase controller is orchestration code, not an agent.
+
+### Unique scenario handling
+
+- The failure-mode analyst should return every materially distinct scenario it can justify for the accepted payment invariants, rather than returning only one scenario.
+- Before execution, the primary agent validates every plan against the existing `ScenarioPlan` schema and rejects scenarios that reference unknown invariants, stale SHAs, invalid seeds, or placeholder content.
+- Deduplicate scenarios using a canonical fingerprint composed of `invariantId`, normalized `injectedFaults`, normalized `ordering`, and `seed`.
+- Execute each accepted unique scenario up to the existing bounded execution limits. Do not allow model output to create an unbounded experiment loop.
+- A scenario is materially distinct when its invariant, fault set, ordering, or deterministic seed changes the execution schedule or expected observable outcome. Merely reworded plans are duplicates.
+
+### Experiment result contract
+
+- Each executed scenario produces one `ExperimentResult` artifact linked to its scenario through the existing artifact/event context; the result records the tested SHA, seed, repetitions, expected counts, observed counts, verdict, and artifact links.
+- The primary agent aggregates all scenario results for the final decision. `BLOCKED` is allowed when any valid executed scenario violates an accepted invariant. `READY` is allowed only when every accepted scenario executes successfully and passes. `UNCERTAIN` is required when a scenario cannot be validated, executed, or reconciled.
+- If the current singular `experimentResult` response field cannot represent multiple results, the implementation must preserve each result as a separate persisted `ExperimentResult` artifact and return an aggregate decision summary without discarding per-scenario evidence. Do not silently overwrite one result with another.
+
+### Additional implementation checklist
+
+- [x] Instruct the failure-mode analyst to return all materially distinct valid scenarios for accepted invariants.
+- [x] Add deterministic scenario fingerprinting and duplicate rejection before sandbox execution.
+- [x] Enforce a bounded maximum number of accepted/executed scenarios.
+- [x] Persist one `ExperimentResult` for each executed unique scenario.
+- [x] Aggregate all scenario verdicts into the final decision without dropping evidence.
+- [ ] Show scenario count, deduplication, execution progress, and per-scenario results in the harness UI.

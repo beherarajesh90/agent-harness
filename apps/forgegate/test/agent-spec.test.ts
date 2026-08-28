@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createForgeGateAgentSpec, experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, scenarioPlanSchema, validateAnalystArtifacts, validateInvestigationArtifacts } from "../src/agent-spec.js";
+import { createForgeGateAgentSpec, deduplicateScenarioPlans, experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, scenarioPlanSchema, validateAnalystArtifacts, validateInvestigationArtifacts } from "../src/agent-spec.js";
 
 describe("ForgeGate agent specification", () => {
   it("enables only the configured GitHub tools and gates commits", () => {
@@ -77,6 +77,18 @@ describe("ForgeGate agent specification", () => {
     expect(scenarioPlanSchema.safeParse({ ...scenario, injectedFaults: [] }).success).toBe(false);
   });
 
+  it("deduplicates scenarios by normalized execution identity and applies a bound", () => {
+    const sha = "a".repeat(40);
+    const scenarios = [
+      { expectedOutcome: "one charge", injectedFaults: ["timeout", "retry"], invariantId: "i1", ordering: ["charge", "retry"], seed: 1, testedSha: sha },
+      { expectedOutcome: "same scenario", injectedFaults: [" retry ", "timeout"], invariantId: "i1", ordering: ["charge", "retry"], seed: 1, testedSha: sha },
+      { expectedOutcome: "different seed", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], seed: 2, testedSha: sha },
+    ];
+
+    expect(deduplicateScenarioPlans(scenarios, 2)).toHaveLength(2);
+    expect(deduplicateScenarioPlans(scenarios, 2)[0]).toEqual(scenarios[0]);
+  });
+
   it("accepts only scenarios linked to validated invariant artifacts", () => {
     const sha = "a".repeat(40);
     const invariant = {
@@ -119,6 +131,30 @@ describe("ForgeGate agent specification", () => {
 
     expect(validateInvestigationArtifacts({ invariants: [invariant], scenarios: [scenario], experimentResult })).toMatchObject({ experimentResult });
     expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios: [{ ...scenario, seed: 2 }], experimentResult })).toThrow("experiment seed");
+  });
+
+  it("validates one result for every uniquely identified scenario", () => {
+    const sha = "a".repeat(40);
+    const invariant = {
+      confidence: 1,
+      evidence: [
+        { endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 },
+        { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 },
+      ],
+      id: "i1",
+      statement: "one charge",
+      testedSha: sha,
+    };
+    const scenarios = [
+      { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha: sha },
+      { expectedOutcome: "one charge", injectedFaults: ["duplicate webhook"], invariantId: "i1", ordering: ["charge", "webhook"], scenarioId: "s2", seed: 2, testedSha: sha },
+    ];
+    const result = (scenarioId: string, seed: number, verdict: "pass" | "fail") => ({
+      artifactLinks: ["payment-lab:evidence"], expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 1, intents: 1, ledgerEntries: 1 }, repetitions: 1, scenarioId, seed, testedSha: sha, verdict,
+    });
+
+    expect(validateInvestigationArtifacts({ invariants: [invariant], scenarios, experimentResults: [result("s1", 1, "pass"), result("s2", 2, "pass")] }).experimentResults).toHaveLength(2);
+    expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios, experimentResults: [result("s1", 1, "pass")] })).toThrow("every scenario");
   });
 
   it("allows UNCERTAIN without inventing unavailable evidence", () => {
