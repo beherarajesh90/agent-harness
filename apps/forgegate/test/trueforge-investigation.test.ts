@@ -37,6 +37,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
       }),
     );
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("ScenarioPlan ordering is also a non-empty string[]");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("ScenarioPlan seed is a non-negative integer");
   });
 
   it("rejects a pull request URL outside the configured repository", async () => {

@@ -203,6 +203,7 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "Spawn exactly two visible dynamic subagents: invariant-analyst and failure-mode-analyst.",
       "The invariant-analyst must return one or more InvariantCandidate JSON objects with id, statement, confidence, testedSha, and at least two distinct evidence references containing path, startLine, endLine, and the same testedSha.",
       "The failure-mode-analyst must return all materially distinct ScenarioPlan JSON objects with invariantId, scenarioId, testedSha, seed, injectedFaults, ordering, and expectedOutcome.",
+      "ScenarioPlan seed must be a non-negative integer and ordering must be a non-empty string array; validate the complete object before returning it.",
       "When an artifact is emitted into an event, preserve it under artifactType (InvariantCandidate, ScenarioPlan, or ExperimentResult) and artifact fields.",
       "Use the existing payment-lab:evidence identifier in ExperimentResult artifactLinks; never put an explanation or sentence in artifactLinks.",
       "Use only these exact forgegate-github tool names: get_pull_request, get_pull_request_files, get_file, get_checks, get_qodo_reviews, and get_review_comments. Do not call list_tools, get_tool_info, get_pr, list_changed_files, or changed_files.",

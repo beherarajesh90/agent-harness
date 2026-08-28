@@ -19,7 +19,7 @@ type PhaseControllerOptions = {
 
 const continuationPrompts = [
   "Continue with Phase INVARIANTS. Spawn the invariant-analyst now, wait for its completed output, validate every InvariantCandidate against the ForgeGate schema, and preserve each accepted artifact.",
-  "Continue with Phase HYPOTHESES. Pass the validated invariant artifacts to the failure-mode-analyst, wait for its completed output, validate every ScenarioPlan, and preserve each accepted artifact. ScenarioPlan ordering must be a non-empty string[]; do not return a single string.",
+  "Continue with Phase HYPOTHESES. Pass the validated invariant artifacts to the failure-mode-analyst, wait for its completed output, validate every ScenarioPlan, and preserve each accepted artifact. ScenarioPlan ordering must be a non-empty string[]; do not return a single string. ScenarioPlan seed must be a non-negative integer; do not return a string seed.",
   "Continue with Phase EXPERIMENT and EVIDENCE. Resolve master to its immutable SHA and measure its baseline counts before checking out the exact PR SHA. Run every validated unique ScenarioPlan in the disposable sandbox and return one schema-valid ExperimentResult per scenario with baselineSha, scenarioId, repetitions, expected baseline counts, observed PR counts, verdict, and the existing payment-lab:evidence identifier as the artifact link only.",
   "Continue with Phase DECISION. Reconcile the persisted InvariantCandidate, ScenarioPlan, and ExperimentResult artifacts. Return the final JSON bundle with experimentResults and decision; READY is allowed only when all scenarios have passing results and all artifacts are valid and consistent.",
 ] as const;
@@ -70,6 +70,7 @@ export function createTrueForgeInvestigationLauncher({
             "Validate both artifact types against the ForgeGate schemas; reject prose-only or stale-SHA artifacts.",
             "Artifact contract: evidence objects use sha (not testedSha); ScenarioPlan injectedFaults is string[] and expectedOutcome is a string; return raw JSON without markdown fences.",
             "ScenarioPlan ordering is also a non-empty string[]; validate the complete ScenarioPlan against the ForgeGate schema before preserving it.",
+            "ScenarioPlan seed is a non-negative integer; never use a string such as seed-001.",
             "Reconcile only evidence at the exact PR SHA. Do not write or request approval in this turn.",
           ].join("\n"),
           type: "user.message",
