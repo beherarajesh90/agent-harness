@@ -82,14 +82,15 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
     return true;
   }).sort((left, right) => left.sequence - right.sequence));
   const trustedHeadSha = findPullRequestHeadSha(events);
-  const artifacts = retainAcceptedScenarioResults(deduplicateArtifacts(events.flatMap((event) => artifactFromPayload(event.payload, trustedHeadSha))));
-  const decision = findFinalDecision(events, trustedHeadSha, artifacts);
+  const deduplicated = deduplicateArtifacts(events.flatMap((event) => artifactFromPayload(event.payload, trustedHeadSha)));
+  const artifacts = retainAcceptedScenarioResults(deduplicated.artifacts);
+  const decision = findFinalDecision(events, trustedHeadSha, artifacts, deduplicated.hasConflicts);
   const last = events.at(-1);
   const terminal = last ? isPrimaryAgentTurn(last) : false;
   const state = last?.payload.state as { status?: string } | undefined;
   const artifactTypes = new Set(artifacts.map((artifact) => artifact.type));
   const requiredArtifactTypes: InvestigationArtifact["type"][] = ["InvariantCandidate", "ScenarioPlan", "ExperimentResult"];
-  const completeEvidence = Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts);
+  const completeEvidence = !deduplicated.hasConflicts && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts);
   const experimentFailed = artifacts.some((artifact) => artifact.type === "ExperimentResult" && (artifact.data.verdict === "fail" || paymentInvariantViolated(artifact.data)));
   const subagentMcpFailure = hasSubagentMcpFailure(events);
   const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure ? "UNCERTAIN" : (terminal && (state?.status === "blocked" || experimentFailed) && completeEvidence && !decision) ? "BLOCKED" : terminal ? completeEvidence ? decision ?? "READY" : "UNCERTAIN" : "RUNNING";
@@ -139,6 +140,7 @@ function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: 
 function deduplicateArtifacts(artifacts: InvestigationArtifact[]) {
   const unique = new Map<string, InvestigationArtifact>();
   const conflicts = new Map<string, number>();
+  let hasConflicts = false;
   for (const artifact of artifacts) {
     const data = artifact.data;
     const identity = artifact.type === "InvariantCandidate"
@@ -150,12 +152,13 @@ function deduplicateArtifacts(artifacts: InvestigationArtifact[]) {
     if (!existing) {
       unique.set(identity, artifact);
     } else if (!isDeepStrictEqual(existing.data, data)) {
+      hasConflicts = true;
       const conflictNumber = (conflicts.get(identity) ?? 0) + 1;
       conflicts.set(identity, conflictNumber);
       unique.set(`${identity}:conflict:${conflictNumber}`, artifact);
     }
   }
-  return [...unique.values()];
+  return { artifacts: [...unique.values()], hasConflicts };
 }
 
 function retainAcceptedScenarioResults(artifacts: InvestigationArtifact[]) {
@@ -193,7 +196,8 @@ function readFinalBundle(payload: Record<string, unknown>, trustedHeadSha?: stri
   }
 }
 
-function findFinalDecision(events: HarnessEvent[], trustedHeadSha: string | undefined, artifacts: InvestigationArtifact[]): InvestigationDecision | undefined {
+function findFinalDecision(events: HarnessEvent[], trustedHeadSha: string | undefined, artifacts: InvestigationArtifact[], hasArtifactConflicts: boolean): InvestigationDecision | undefined {
+  if (hasArtifactConflicts) return undefined;
   for (const event of [...events].reverse()) {
     if (!isPrimaryAgentTurn(event)) continue;
     const bundle = readFinalBundle(event.payload, trustedHeadSha);
