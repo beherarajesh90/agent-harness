@@ -203,7 +203,8 @@ describe("investigation control plane", () => {
       { event: { artifactType: "InvariantCandidate", artifact: { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha }, sequence: 2, type: "tool.response" }, turnId: "turn-1" },
       { event: { artifactType: "ScenarioPlan", artifact: scenario, sequence: 3, type: "tool.response" }, turnId: "turn-1" },
       { event: { artifactType: "ExperimentResult", artifact: result("s3", 3), sequence: 4, type: "tool.response" }, turnId: "turn-1" },
-      { event: { artifactType: "ExperimentResult", artifact: result("s1", 1), sequence: 5, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: { ...result("s3", 3), observed: { charges: 2, intents: 1, ledgerEntries: 1 }, verdict: "fail" as const }, sequence: 5, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: result("s1", 1), sequence: 6, type: "tool.response" }, turnId: "turn-1" },
     ]);
 
     expect(snapshot.artifacts.filter((artifact) => artifact.type === "ExperimentResult")).toHaveLength(1);
