@@ -82,7 +82,7 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   }).sort((left, right) => left.sequence - right.sequence));
   const trustedHeadSha = findPullRequestHeadSha(events);
   const artifacts = deduplicateArtifacts(events.flatMap((event) => artifactFromPayload(event.payload, trustedHeadSha)));
-  const decision = findFinalDecision(events, trustedHeadSha);
+  const decision = findFinalDecision(events, trustedHeadSha, artifacts);
   const last = events.at(-1);
   const terminal = last?.type === "turn.done";
   const state = last?.payload.state as { status?: string } | undefined;
@@ -172,10 +172,24 @@ function readFinalBundle(payload: Record<string, unknown>, trustedHeadSha?: stri
   }
 }
 
-function findFinalDecision(events: HarnessEvent[], trustedHeadSha?: string): InvestigationDecision | undefined {
+function findFinalDecision(events: HarnessEvent[], trustedHeadSha: string | undefined, artifacts: InvestigationArtifact[]): InvestigationDecision | undefined {
   for (const event of [...events].reverse()) {
     const bundle = readFinalBundle(event.payload, trustedHeadSha);
     if (bundle?.decision) return bundle.decision;
+    const output = isRecord(event.payload.state) && isRecord(event.payload.state.output) ? event.payload.state.output : undefined;
+    const parsed = typeof output?.content === "string" ? parseJson(output.content) : undefined;
+    if (!isRecord(parsed) || (parsed.decision !== "BLOCKED" && parsed.decision !== "READY")) continue;
+    try {
+      validateInvestigationArtifacts({
+        decision: parsed.decision,
+        invariants: artifacts.filter((artifact) => artifact.type === "InvariantCandidate").map((artifact) => artifact.data),
+        scenarios: artifacts.filter((artifact) => artifact.type === "ScenarioPlan").map((artifact) => artifact.data),
+        experimentResults: artifacts.filter((artifact) => artifact.type === "ExperimentResult").map((artifact) => artifact.data),
+      });
+      return parsed.decision;
+    } catch {
+      continue;
+    }
   }
   return undefined;
 }
