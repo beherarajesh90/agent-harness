@@ -102,6 +102,10 @@ export const investigationResponseSchema = z
   })
   .strict()
   .superRefine((bundle, context) => {
+    if (bundle.experimentResult !== undefined && bundle.experimentResults !== undefined) {
+      context.addIssue({ code: "custom", message: "choose either experimentResult or experimentResults" });
+      return;
+    }
     const results = bundle.experimentResults ?? (bundle.experimentResult ? [bundle.experimentResult] : undefined);
     if (bundle.decision === "UNCERTAIN" && (!bundle.invariants?.length || !bundle.scenarios?.length || !results?.length)) return;
     if (!bundle.invariants?.length || !bundle.scenarios?.length || !results?.length) {
@@ -109,7 +113,7 @@ export const investigationResponseSchema = z
       return;
     }
     try {
-      validateInvestigationArtifacts({ ...bundle, experimentResults: results });
+      validateInvestigationArtifacts({ decision: bundle.decision, invariants: bundle.invariants, scenarios: bundle.scenarios, experimentResults: results });
     } catch (error) {
       context.addIssue({ code: "custom", message: error instanceof Error ? error.message : "inconsistent investigation artifacts" });
     }
@@ -152,6 +156,9 @@ export function deduplicateScenarioPlans(scenarios: ScenarioPlan[], maxScenarios
 
 export function validateInvestigationArtifacts(input: { decision?: unknown; invariants?: unknown; scenarios?: unknown; experimentResult?: unknown; experimentResults?: unknown }) {
   const { invariants, scenarios } = validateAnalystArtifacts({ invariants: input.invariants, scenarios: input.scenarios });
+  if (input.experimentResult !== undefined && input.experimentResults !== undefined) {
+    throw new Error("choose either experimentResult or experimentResults");
+  }
   const experimentResults = z.array(experimentResultSchema).parse(input.experimentResults ?? (input.experimentResult === undefined ? [] : [input.experimentResult]));
   if (experimentResults.length === 0) throw new Error("experiment results are required");
   const decision = input.decision === undefined ? undefined : investigationDecisionSchema.parse(input.decision);

@@ -122,6 +122,7 @@ function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: 
   if (typeof content === "string") {
     const parsed = parseJson(content);
     if (isRecord(parsed) && ("invariants" in parsed || "scenarios" in parsed || "experimentResult" in parsed || "experimentResults" in parsed)) {
+      if (parsed.experimentResult !== undefined && parsed.experimentResults !== undefined) return [];
       const results = Array.isArray(parsed.experimentResults) ? parsed.experimentResults : parsed.experimentResult === undefined ? [] : [parsed.experimentResult];
       return [
         ...(Array.isArray(parsed.invariants) ? readArtifact("InvariantCandidate", parsed.invariants, trustedHeadSha) : []),
