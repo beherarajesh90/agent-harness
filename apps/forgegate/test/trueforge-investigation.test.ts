@@ -165,6 +165,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
 
     expect(createTurn).toHaveBeenCalledOnce();
     expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Phase EXPERIMENT");
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("s2");
   });
 
   it("recovers once from an invalid MCP tool name with the canonical tool list", async () => {

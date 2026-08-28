@@ -119,7 +119,7 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
       }
       if (hasIncompleteExperiments(events) && experimentRecoveryAttempts < 3) {
         experimentRecoveryAttempts += 1;
-        turnId = (await createTurn(sessionId, { input: [{ content: continuationPrompts[2], type: "user.message" }] })).data.id;
+        turnId = (await createTurn(sessionId, { input: [{ content: incompleteExperimentPrompt(events), type: "user.message" }] })).data.id;
         continue;
       }
       if (hasExplicitUncertainDecision(events) && !hasAnyEvidence(events)) return;
@@ -164,6 +164,17 @@ function hasIncompleteExperiments(events: InvestigationEvent[]) {
   const scenarios = artifacts.filter((artifact) => artifact.type === "ScenarioPlan");
   const results = artifacts.filter((artifact) => artifact.type === "ExperimentResult");
   return scenarios.length > results.length;
+}
+
+function incompleteExperimentPrompt(events: InvestigationEvent[]) {
+  const artifacts = projectInvestigation("controller", "", events).artifacts;
+  const scenarios = artifacts.filter((artifact) => artifact.type === "ScenarioPlan").map((artifact) => artifact.data);
+  const results = artifacts.filter((artifact) => artifact.type === "ExperimentResult").map((artifact) => artifact.data);
+  const missingIds = scenarios
+    .map((scenario) => scenario.scenarioId)
+    .filter((scenarioId): scenarioId is string => typeof scenarioId === "string" && !results.some((result) => result.scenarioId === scenarioId));
+  const missing = missingIds.length > 0 ? ` Missing scenario IDs: ${missingIds.join(", ")}.` : ` ${scenarios.length - results.length} scenario result(s) are still missing.`;
+  return `${continuationPrompts[2]}${missing} Return one result per missing scenario and copy each exact scenarioId into its ExperimentResult.`;
 }
 
 function findInvalidMcpToolCall(events: InvestigationEvent[]) {

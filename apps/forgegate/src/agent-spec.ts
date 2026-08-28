@@ -215,6 +215,7 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "Do not accept prose as an artifact; validate every candidate and scenario against the ForgeGate schemas before using it.",
       "Before claiming READY, require every accepted artifact to use one testedSha, every ScenarioPlan invariantId to reference an accepted invariant, every scenario to have one ExperimentResult, and every experiment to pass.",
       "Before finalizing BLOCKED, READY, or post-experiment UNCERTAIN, include the complete persisted invariants, scenarios, and experimentResults bundle; do not omit scenarios or results.",
+      "Every ExperimentResult for a ScenarioPlan with scenarioId must copy that exact scenarioId; do not rely on seed alone when scenario IDs exist.",
       "InvariantCandidate evidence objects use sha (not testedSha) and must reference apps/forgegate/src/payment-lab.ts or apps/forgegate/test/payment-lab.test.ts at the exact testedSha.",
       "ScenarioPlan injectedFaults is string[] and expectedOutcome is a string; return raw JSON without markdown fences.",
       "Use the sandbox only for disposable work.",
