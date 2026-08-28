@@ -112,7 +112,7 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
         turnId = (await createTurn(sessionId, { input: [{ content: sandboxRecoveryPrompt, type: "user.message" }] })).data.id;
         continue;
       }
-      if (hasExplicitUncertainDecision(events)) return;
+      if (hasExplicitUncertainDecision(events) && !hasAnyEvidence(events)) return;
       if (hasCompleteEvidence(events)) return;
       turnId = (await createTurn(sessionId, { input: [{ content: prompt, type: "user.message" }] })).data.id;
     }
@@ -142,6 +142,10 @@ function hasCompleteEvidence(events: InvestigationEvent[]) {
 
 function hasExplicitUncertainDecision(events: InvestigationEvent[]) {
   return projectInvestigation("controller", "", events).decision === "UNCERTAIN";
+}
+
+function hasAnyEvidence(events: InvestigationEvent[]) {
+  return projectInvestigation("controller", "", events).artifacts.length > 0;
 }
 
 function findInvalidMcpToolCall(events: InvestigationEvent[]) {

@@ -104,6 +104,24 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(createTurn).not.toHaveBeenCalled();
   });
 
+  it("continues an UNCERTAIN turn when partial evidence can still be completed", async () => {
+    let events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 100, intents: 100, ledgerEntries: 100 }, observed: { charges: 102, intents: 100, ledgerEntries: 100 }, repetitions: 1, seed: 1, testedSha: "a".repeat(40), verdict: "fail" }, type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void request;
+      events = [{ event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-2" }];
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Phase INVARIANTS");
+  });
+
   it("recovers once from an invalid MCP tool name with the canonical tool list", async () => {
     let events: { event: Record<string, unknown>; turnId: string }[] = [
       { event: { content: JSON.stringify({ error: [{ type: "text", text: '{"error":"Tool call failed: Tool \'get_pr\' is not allowed"}' }] }), type: "tool.response" }, turnId: "turn-1" },
