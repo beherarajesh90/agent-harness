@@ -184,6 +184,9 @@ export function validateInvestigationArtifacts(input: { decision?: unknown; inva
   if (scenarioIds.some(Boolean) && new Set(scenarioIds.filter((scenarioId): scenarioId is string => Boolean(scenarioId))).size !== scenarioIds.filter(Boolean).length) {
     throw new Error("duplicate scenario ID");
   }
+  if (scenarioIds.every((scenarioId) => !scenarioId) && new Set(scenarios.map((scenario) => scenario.seed)).size !== scenarios.length) {
+    throw new Error("unique scenario seeds are required when scenario IDs are absent");
+  }
   if (scenarioIds.every((scenarioId) => !scenarioId) && scenarios.some((scenario, index) => experimentResults[index]?.seed !== scenario.seed)) {
     throw new Error("experiment seed must match every scenario seed");
   }
