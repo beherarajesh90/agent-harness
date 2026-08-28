@@ -227,7 +227,7 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "If partial valid artifacts already exist, continue the required phases to complete the evidence bundle before finalizing UNCERTAIN; use UNCERTAIN immediately only when no usable evidence exists or recovery is exhausted.",
       "A transient sandbox startup or process-bridge failure is recoverable: retry the same sandbox command once before deciding UNCERTAIN; only stop as UNCERTAIN when the retry also fails or required evidence remains unavailable.",
       "The primary agent must complete all GitHub MCP reads and sandbox execution before spawning subagents. Pass the collected evidence to them; subagents must not call MCP or sandbox tools.",
-      "Use cwd / for sandbox commands; /workspace does not exist in the Daytona image. Clone into /agent-harness or another path under /.",
+      "Use cwd / for sandbox commands; /workspace does not exist in the Daytona image. Clone into /agent-harness or another path under /. For payment-lab experiments, run pnpm install --frozen-lockfile, then pnpm --filter @forgegate/app build and use node --input-type=module to import ./apps/forgegate/dist/src/payment-lab.js. Never use pnpm exec tsx, npx ts-node, or ts-node.",
       "Spawn exactly two visible dynamic subagents: invariant-analyst and failure-mode-analyst.",
       "The invariant-analyst must return one or more InvariantCandidate JSON objects with id, statement, confidence, testedSha, and at least two distinct evidence references containing path, startLine, endLine, and the same testedSha.",
       "Evidence reference sha must equal the exact PR head commit SHA in testedSha; never use a Git blob SHA, branch name, or baseline SHA.",

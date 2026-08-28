@@ -48,6 +48,9 @@ export type InvestigationArtifact = {
   type: "ExperimentResult" | "InvariantCandidate" | "ScenarioPlan";
 };
 
+const requiredGitHubReadTools = ["get_pull_request", "get_pull_request_files", "get_checks", "get_qodo_reviews", "get_review_comments"] as const;
+const requiredEvidencePaths = ["apps/forgegate/src/payment-lab.ts", "apps/forgegate/test/payment-lab.test.ts"] as const;
+
 type TrueForgeEventItem = { event: Record<string, unknown>; turnId: string };
 type InvestigationRecord = { pullRequestUrl: string; turnId: string };
 type LaunchResult = { sessionId: string; turnId: string };
@@ -86,16 +89,18 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const artifacts = retainAcceptedScenarioResults(deduplicated.artifacts);
   const accepted = deduplicateArtifacts(artifacts);
   const rejectedFinal = hasRejectedPrimaryFinal(events, trustedHeadSha);
-  const decision = findFinalDecision(events, trustedHeadSha, artifacts, accepted.hasConflicts || rejectedFinal);
+  const githubReadsComplete = hasRequiredGitHubReads(events, trustedHeadSha);
+  const sandboxSucceeded = latestSandboxCommandSucceeded(events);
+  const subagentToolUse = hasSubagentToolUse(events);
+  const decision = findFinalDecision(events, trustedHeadSha, artifacts, accepted.hasConflicts || rejectedFinal || !githubReadsComplete || !sandboxSucceeded || subagentToolUse);
   const last = events.at(-1);
   const terminal = last ? isPrimaryAgentTurn(last) : false;
   const state = last?.payload.state as { status?: string } | undefined;
   const artifactTypes = new Set(artifacts.map((artifact) => artifact.type));
   const requiredArtifactTypes: InvestigationArtifact["type"][] = ["InvariantCandidate", "ScenarioPlan", "ExperimentResult"];
-  const completeEvidence = !accepted.hasConflicts && !rejectedFinal && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts);
-  const experimentFailed = artifacts.some((artifact) => artifact.type === "ExperimentResult" && (artifact.data.verdict === "fail" || paymentInvariantViolated(artifact.data)));
+  const completeEvidence = !accepted.hasConflicts && !rejectedFinal && githubReadsComplete && sandboxSucceeded && !subagentToolUse && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts);
   const subagentMcpFailure = hasSubagentMcpFailure(events);
-  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure ? "UNCERTAIN" : (terminal && (state?.status === "blocked" || experimentFailed) && completeEvidence && !decision) ? "BLOCKED" : terminal ? completeEvidence ? decision ?? "READY" : "UNCERTAIN" : "RUNNING";
+  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure || subagentToolUse ? "UNCERTAIN" : terminal ? completeEvidence && decision ? decision : "UNCERTAIN" : "RUNNING";
 
   return {
     artifacts,
@@ -223,7 +228,11 @@ function findFinalDecision(events: HarnessEvent[], trustedHeadSha: string | unde
 }
 
 function isPrimaryAgentTurn(event: HarnessEvent) {
-  return event.type === "turn.done" && (!event.threadId || event.threadId === "main");
+  return event.type === "turn.done" && isPrimaryAgentThread(event);
+}
+
+function isPrimaryAgentThread(event: HarnessEvent) {
+  return !event.threadId || event.threadId === "main";
 }
 
 function hasRejectedPrimaryFinal(events: HarnessEvent[], trustedHeadSha: string | undefined) {
@@ -251,6 +260,75 @@ function hasConsistentEvidence(artifacts: InvestigationArtifact[]) {
   }
 }
 
+function hasRequiredGitHubReads(events: HarnessEvent[], trustedHeadSha: string | undefined) {
+  const { calls, sawForgeGateCall, sawToolCallMetadata } = primaryGithubToolCalls(events);
+  if (!sawToolCallMetadata) return true;
+  if (!sawForgeGateCall) return false;
+
+  const completedTools = new Set<string>();
+  const completedFiles = new Set<string>();
+  for (const event of events) {
+    if (!isPrimaryAgentThread(event) || event.type !== "tool.response" || typeof event.payload.toolCallId !== "string") continue;
+    const call = calls.get(event.payload.toolCallId);
+    if (!call || !isSuccessfulToolResponse(event.payload)) continue;
+    if (call.toolName === "get_file") {
+      if (trustedHeadSha && call.input.ref === trustedHeadSha && typeof call.input.path === "string") completedFiles.add(call.input.path);
+      continue;
+    }
+    completedTools.add(call.toolName);
+  }
+  return requiredGitHubReadTools.every((toolName) => completedTools.has(toolName))
+    && requiredEvidencePaths.every((path) => completedFiles.has(path));
+}
+
+function primaryGithubToolCalls(events: HarnessEvent[]) {
+  const calls = new Map<string, { input: Record<string, unknown>; toolName: string }>();
+  let sawToolCallMetadata = false;
+  let sawForgeGateCall = false;
+  for (const event of events) {
+    const usage = isRecord(event.payload.usage) ? event.payload.usage : undefined;
+    const toolCalls = usage?.toolCalls;
+    if (!Array.isArray(toolCalls)) continue;
+    sawToolCallMetadata = true;
+    if (!isPrimaryAgentThread(event)) continue;
+    for (const call of toolCalls) {
+      if (!isRecord(call) || typeof call.id !== "string" || !isRecord(call.function) || call.function.name !== "call_tool") continue;
+      const args = typeof call.function.arguments === "string" ? parseJson(call.function.arguments) : call.function.arguments;
+      if (!isRecord(args) || args.mcp_server !== "forgegate-github" || typeof args.tool_name !== "string" || !isRecord(args.input)) continue;
+      sawForgeGateCall = true;
+      calls.set(call.id, { input: args.input, toolName: args.tool_name });
+    }
+  }
+  return { calls, sawForgeGateCall, sawToolCallMetadata };
+}
+
+function isSuccessfulToolResponse(payload: Record<string, unknown>) {
+  if (typeof payload.content !== "string") return false;
+  const parsed = parseJson(payload.content);
+  return !isRecord(parsed) || !("error" in parsed);
+}
+
+function latestSandboxCommandSucceeded(events: HarnessEvent[]) {
+  for (const event of [...events].reverse()) {
+    if (!isPrimaryAgentThread(event) || event.type !== "tool.response" || typeof event.payload.content !== "string") continue;
+    const parsed = parseJson(event.payload.content);
+    const response = isRecord(parsed) && isRecord(parsed.response) ? parsed.response : undefined;
+    if (typeof response?.exitCode === "number") return response.exitCode === 0;
+  }
+  return true;
+}
+
+function hasSubagentToolUse(events: HarnessEvent[]) {
+  return events.some((event) => {
+    if (isPrimaryAgentThread(event)) return false;
+    const usage = isRecord(event.payload.usage) ? event.payload.usage : undefined;
+    if (Array.isArray(usage?.toolCalls) && usage.toolCalls.length > 0) return true;
+    if (event.type !== "tool.response" || typeof event.payload.content !== "string") return false;
+    const response = parseJson(event.payload.content);
+    return isRecord(response) && isRecord(response.response) && typeof response.response.exitCode === "number";
+  });
+}
+
 function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string): InvestigationArtifact[] {
   if (type !== "ExperimentResult" && type !== "InvariantCandidate" && type !== "ScenarioPlan") return [];
   const values = Array.isArray(value) ? value : [value];
@@ -265,8 +343,11 @@ function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string): I
 }
 
 function findPullRequestHeadSha(events: HarnessEvent[]) {
+  const { calls, sawForgeGateCall, sawToolCallMetadata } = primaryGithubToolCalls(events);
+  if (sawToolCallMetadata && !sawForgeGateCall) return undefined;
   for (const event of events) {
-    if (event.type !== "tool.response" || typeof event.payload.content !== "string") continue;
+    if (!isPrimaryAgentThread(event) || event.type !== "tool.response" || typeof event.payload.content !== "string") continue;
+    if (sawToolCallMetadata && (typeof event.payload.toolCallId !== "string" || calls.get(event.payload.toolCallId)?.toolName !== "get_pull_request" || !isSuccessfulToolResponse(event.payload))) continue;
     const response = parseJson(event.payload.content);
     if (isRecord(response) && isRecord(response.head) && typeof response.head.sha === "string" && /^[a-f0-9]{40}$/.test(response.head.sha)) {
       return response.head.sha;
@@ -309,12 +390,6 @@ function analystStage(title: unknown): Stage | undefined {
 
 function hasSubagentMcpFailure(events: HarnessEvent[]) {
   return events.some((event) => event.type === "tool.response" && event.threadId !== undefined && event.threadId !== "main" && typeof event.payload.content === "string" && /Tool call failed: Tool |MCP server ['\"].*not found/i.test(event.payload.content));
-}
-
-function paymentInvariantViolated(data: Record<string, unknown>) {
-  const observed = data.observed;
-  if (!isRecord(observed)) return false;
-  return observed.charges !== observed.intents || observed.ledgerEntries !== observed.intents;
 }
 
 function parseJson(content: string): unknown {

@@ -25,6 +25,7 @@ const continuationPrompts = [
 ] as const;
 const mcpRecoveryPrompt = "The previous MCP call used an invalid server or tool name. Do not call list_tools, get_tool_info, get_pr, list_changed_files, or changed_files. Use only forgegate-github tools named get_pull_request, get_pull_request_files, get_file, get_checks, get_qodo_reviews, and get_review_comments. Retry the required read now, starting with get_pull_request.";
 const sandboxRecoveryPrompt = "The previous sandbox command failed with a transient startup or process-bridge error. Retry the same sandbox command once now, then continue the investigation. Do not mark the investigation UNCERTAIN unless the retry also fails.";
+const decisionRepairInstruction = "Final response rejected: the evidence exists, but the decision bundle is incomplete. Return one complete JSON object containing the full invariants, scenarios, and experimentResults arrays plus decision. Copy the exact persisted evidence below; do not summarize, omit, or alter any array. Do not emit another partial BLOCKED or READY response.";
 
 export function createTrueForgeInvestigationLauncher({
   modelName,
@@ -57,13 +58,16 @@ export function createTrueForgeInvestigationLauncher({
             "Use only these exact forgegate-github tool names: get_pull_request, get_pull_request_files, get_file, get_checks, get_qodo_reviews, and get_review_comments. Do not call list_tools, get_tool_info, get_pr, list_changed_files, or changed_files.",
             "If a required MCP tool is unavailable, record UNCERTAIN and stop safely; never substitute raw exec/curl or claim the read completed.",
             "Do not fetch plan.md, list the repository root recursively, or request oversized responses. Read only apps/forgegate/src/payment-lab.ts and apps/forgegate/test/payment-lab.test.ts at the exact PR head SHA.",
+            "Never run grep -R, find, or any recursive repository scan. Use direct file reads or a bounded search over only the two allowed payment-lab paths.",
             "Checklist: read PR metadata; read changed files; read payment-lab source and tests at the exact PR head SHA; inspect checks/reviews/comments; run the baseline payment test on master before checking out the exact PR head SHA; then delegate both analysts and reconcile their outputs.",
             "The primary agent performs every GitHub MCP read and every sandbox action before delegation. Pass that collected evidence to the analysts; subagents must return JSON artifacts only and must not call MCP or sandbox tools.",
             "Use cwd / for sandbox commands; /workspace does not exist in the Daytona image. Clone into /agent-harness or another path under /.",
+            "For payment-lab experiments, run pnpm install --frozen-lockfile, then pnpm --filter @forgegate/app build from /agent-harness and use node --input-type=module to import ./apps/forgegate/dist/src/payment-lab.js. Never use pnpm exec tsx, npx ts-node, or ts-node.",
             "Evidence reference sha must equal the exact PR head commit SHA, which is testedSha; never use a Git blob SHA, branch name, or baseline SHA for evidence.",
             "Spawn exactly two visible dynamic subagents:",
             "- invariant-analyst: return InvariantCandidate JSON objects with at least two exact-SHA repository evidence references.",
             "- failure-mode-analyst: wait for the accepted invariant JSON from invariant-analyst, then return every materially distinct deterministic ScenarioPlan JSON object tied to it.",
+            "For the payment-lab MVP, every executable failure scenario must include timeout-after-charge and unsafe-retry; do not invent delay, omitted-ledger, amount-mutation, webhook, or concurrency faults that the fixture cannot execute.",
             "After both analysts finish, deduplicate and bound the ScenarioPlans, then run every accepted unique ScenarioPlan in the sandbox with the independent payment oracle and record one ExperimentResult per scenario.",
             "Use payment-lab:evidence as the ExperimentResult artifact link; never put an explanation or sentence in artifactLinks.",
             "Resolve master to its immutable SHA and run its baseline before PR checkout. Every ExperimentResult must include baselineSha for that master commit, use its measured counts as expected, and use PR-head adversarial counts as observed; mark verdict fail when the observed counts violate an accepted invariant.",
@@ -96,6 +100,7 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
     let mcpRecoveryAttempted = false;
     let sandboxRecoveryAttempted = false;
     let experimentRecoveryAttempts = 0;
+    let decisionRepairAttempted = false;
     for (let promptIndex = 0; promptIndex < continuationPrompts.length;) {
       const completed = await waitForTurn(sessionId, turnId);
       if (!completed) return;
@@ -125,6 +130,12 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
       }
       if (hasIncompleteExperiments(events)) return;
       if (hasExplicitUncertainDecision(events) && !hasAnyEvidence(events)) return;
+      if (hasIncompleteDecision(events)) {
+        if (decisionRepairAttempted) return;
+        decisionRepairAttempted = true;
+        turnId = (await createTurn(sessionId, { input: [{ content: decisionRepairPrompt(events), type: "user.message" }] })).data.id;
+        continue;
+      }
       if (hasCompleteEvidence(events)) return;
       turnId = (await createTurn(sessionId, { input: [{ content: nextRequiredPrompt(events), type: "user.message" }] })).data.id;
       promptIndex += 1;
@@ -161,14 +172,44 @@ function hasAnyEvidence(events: InvestigationEvent[]) {
   return projectInvestigation("controller", "", events).artifacts.length > 0;
 }
 
+function hasIncompleteDecision(events: InvestigationEvent[]) {
+  const artifacts = projectInvestigation("controller", "", events).artifacts;
+  const types = new Set(artifacts.map((artifact) => artifact.type));
+  const requiredTypes = ["InvariantCandidate", "ScenarioPlan", "ExperimentResult"] as const;
+  if (!requiredTypes.every((type) => types.has(type))) return false;
+  return isIncompleteTerminalDecision(primaryDecisionOutputs(events).at(-1));
+}
+
 function hasRepeatedRejectedDecision(events: InvestigationEvent[]) {
-  const outputs = events
-    .filter(({ event }) => event.type === "turn.done" && (!event.threadId || event.threadId === "main"))
-    .map(({ event }) => (isRecord(event.state) && isRecord(event.state.output) && typeof event.state.output.content === "string" ? parseJson(event.state.output.content) : undefined))
-    .filter((output): output is Record<string, unknown> => isRecord(output) && (output.decision === "READY" || output.decision === "BLOCKED"));
+  const outputs = primaryDecisionOutputs(events)
+    .filter((output) => output.decision === "READY" || output.decision === "BLOCKED");
   const last = outputs.at(-1);
   const previous = outputs.at(-2);
-  return Boolean(last && previous && JSON.stringify(last) === JSON.stringify(previous) && (!Array.isArray(last.invariants) || !Array.isArray(last.scenarios) || !Array.isArray(last.experimentResults) || last.invariants.length === 0 || last.scenarios.length === 0 || last.experimentResults.length === 0));
+  return Boolean(last && previous && JSON.stringify(last) === JSON.stringify(previous) && isIncompleteTerminalDecision(last));
+}
+
+function primaryDecisionOutputs(events: InvestigationEvent[]) {
+  return projectInvestigation("controller", "", events).events
+    .filter((event) => event.type === "turn.done" && (!event.threadId || event.threadId === "main"))
+    .map((event) => {
+      const output = isRecord(event.payload.state) && isRecord(event.payload.state.output) ? event.payload.state.output.content : undefined;
+      return typeof output === "string" ? parseJson(output) : undefined;
+    })
+    .filter((output): output is Record<string, unknown> => isRecord(output));
+}
+
+function isIncompleteTerminalDecision(output: Record<string, unknown> | undefined) {
+  return Boolean(output && (output.decision === "READY" || output.decision === "BLOCKED") && (!Array.isArray(output.invariants) || !Array.isArray(output.scenarios) || !Array.isArray(output.experimentResults) || output.invariants.length === 0 || output.scenarios.length === 0 || output.experimentResults.length === 0));
+}
+
+function decisionRepairPrompt(events: InvestigationEvent[]) {
+  const artifacts = projectInvestigation("controller", "", events).artifacts;
+  const evidence = {
+    experimentResults: artifacts.filter((artifact) => artifact.type === "ExperimentResult").map((artifact) => artifact.data),
+    invariants: artifacts.filter((artifact) => artifact.type === "InvariantCandidate").map((artifact) => artifact.data),
+    scenarios: artifacts.filter((artifact) => artifact.type === "ScenarioPlan").map((artifact) => artifact.data),
+  };
+  return `${decisionRepairInstruction}\n${JSON.stringify(evidence)}`;
 }
 
 function nextRequiredPrompt(events: InvestigationEvent[]) {

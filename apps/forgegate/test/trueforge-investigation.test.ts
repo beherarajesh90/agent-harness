@@ -41,6 +41,9 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Use cwd / for sandbox commands; /workspace does not exist");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Evidence reference sha must equal the exact PR head commit SHA");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("The final decision response must include invariants, scenarios, experimentResults, and decision");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Never run grep -R, find, or any recursive repository scan");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("timeout-after-charge and unsafe-retry");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("pnpm exec tsx");
   });
 
   it("rejects a pull request URL outside the configured repository", async () => {
@@ -78,9 +81,9 @@ describe("createTrueForgeInvestigationLauncher", () => {
       events = [
         { event: { content: JSON.stringify({ head: { sha: "a".repeat(40) } }), sequence: 1, type: "tool.response" }, turnId: "turn-2" },
         { event: { artifactType: "InvariantCandidate", artifact: { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha: "a".repeat(40), startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha: "a".repeat(40), startLine: 1 }], id: "i1", statement: "one charge", testedSha: "a".repeat(40) }, sequence: 2, type: "tool.response" }, turnId: "turn-2" },
-        { event: { artifactType: "ScenarioPlan", artifact: { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge", "timeout"], seed: 1, testedSha: "a".repeat(40) }, sequence: 3, type: "tool.response" }, turnId: "turn-2" },
-        { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 100, intents: 100, ledgerEntries: 100 }, observed: { charges: 100, intents: 100, ledgerEntries: 100 }, repetitions: 1, seed: 1, testedSha: "a".repeat(40), verdict: "pass" }, sequence: 4, type: "tool.response" }, turnId: "turn-2" },
-        { event: { sequence: 5, state: { status: "done" }, type: "turn.done" }, turnId: "turn-2" },
+        { event: { artifactType: "ScenarioPlan", artifact: { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge", "timeout"], scenarioId: "s1", seed: 1, testedSha: "a".repeat(40) }, sequence: 3, type: "tool.response" }, turnId: "turn-2" },
+        { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 100, intents: 100, ledgerEntries: 100 }, observed: { charges: 100, intents: 100, ledgerEntries: 100 }, repetitions: 1, scenarioId: "s1", seed: 1, testedSha: "a".repeat(40), verdict: "pass" }, sequence: 4, type: "tool.response" }, turnId: "turn-2" },
+        { event: { sequence: 5, state: { output: { content: JSON.stringify({ decision: "READY", invariants: [{ confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha: "a".repeat(40), startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha: "a".repeat(40), startLine: 1 }], id: "i1", statement: "one charge", testedSha: "a".repeat(40) }], scenarios: [{ expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge", "timeout"], scenarioId: "s1", seed: 1, testedSha: "a".repeat(40) }], experimentResults: [{ artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 100, intents: 100, ledgerEntries: 100 }, observed: { charges: 100, intents: 100, ledgerEntries: 100 }, repetitions: 1, scenarioId: "s1", seed: 1, testedSha: "a".repeat(40), verdict: "pass" }] }) }, status: "done" }, type: "turn.done" }, turnId: "turn-2" },
       ];
       return { data: { id: "turn-2" } };
     });
@@ -179,6 +182,69 @@ describe("createTrueForgeInvestigationLauncher", () => {
     await controller.continue("session-1", "turn-2");
 
     expect(createTurn).not.toHaveBeenCalled();
+  });
+
+  it("repairs an incomplete decision after evidence is complete", async () => {
+    const sha = "a".repeat(40);
+    const events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { content: JSON.stringify({ head: { sha } }), sequence: 1, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "InvariantCandidate", artifact: { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha }, sequence: 2, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ScenarioPlan", artifact: { expectedOutcome: "duplicate charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha: sha }, sequence: 3, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 2, intents: 1, ledgerEntries: 1 }, repetitions: 1, scenarioId: "s1", seed: 1, testedSha: sha, verdict: "fail" }, sequence: 4, type: "tool.response" }, turnId: "turn-1" },
+      { event: { sequence: 5, state: { output: { content: JSON.stringify({ decision: "BLOCKED", invariants: [{}], experimentResults: [{}] }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      expect(request.input[0]?.content).toContain("Final response rejected");
+      expect(request.input[0]?.content).toContain('"scenarioId":"s1"');
+      events.push({ event: { sequence: 6, state: { output: { content: JSON.stringify({ decision: "BLOCKED", invariants: [events[1]!.event.artifact], scenarios: [events[2]!.event.artifact], experimentResults: [events[3]!.event.artifact] }) } }, type: "turn.done" }, turnId: "turn-2" });
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+  });
+
+  it("uses the newest primary decision when TrueForge returns newest-first events", async () => {
+    const sha = "a".repeat(40);
+    const invariant = { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha };
+    const scenario = { expectedOutcome: "duplicate charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha: sha };
+    const result = { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 2, intents: 1, ledgerEntries: 1 }, repetitions: 1, scenarioId: "s1", seed: 1, testedSha: sha, verdict: "fail" as const };
+    const events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { sequence: 6, state: { output: { content: JSON.stringify({ decision: "BLOCKED", invariants: [invariant], scenarios: [scenario], experimentResults: [result] }) } }, type: "turn.done" }, turnId: "turn-2" },
+      { event: { sequence: 5, state: { output: { content: JSON.stringify({ decision: "BLOCKED", invariants: [{}], experimentResults: [{}] }) } }, type: "turn.done" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: result, sequence: 4, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ScenarioPlan", artifact: scenario, sequence: 3, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "InvariantCandidate", artifact: invariant, sequence: 2, type: "tool.response" }, turnId: "turn-1" },
+      { event: { content: JSON.stringify({ head: { sha } }), sequence: 1, type: "tool.response" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async () => ({ data: { id: "unexpected" } }));
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-2");
+
+    expect(createTurn).not.toHaveBeenCalled();
+  });
+
+  it("stops after one failed decision repair instead of issuing generic decision turns", async () => {
+    const sha = "a".repeat(40);
+    const events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { content: JSON.stringify({ head: { sha } }), sequence: 1, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "InvariantCandidate", artifact: { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha }, sequence: 2, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ScenarioPlan", artifact: { expectedOutcome: "duplicate charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha: sha }, sequence: 3, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 2, intents: 1, ledgerEntries: 1 }, repetitions: 1, scenarioId: "s1", seed: 1, testedSha: sha, verdict: "fail" }, sequence: 4, type: "tool.response" }, turnId: "turn-1" },
+      { event: { sequence: 5, state: { output: { content: JSON.stringify({ decision: "BLOCKED", invariants: [{}], experimentResults: [{}] }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async () => {
+      events.push({ event: { sequence: 6, state: { output: { content: JSON.stringify({ decision: "READY", invariants: [{}], experimentResults: [{}] }) } }, type: "turn.done" }, turnId: "turn-2" });
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
   });
 
   it("continues to experiments when some scenarios are still missing results", async () => {
