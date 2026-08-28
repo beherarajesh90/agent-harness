@@ -175,7 +175,13 @@ function nextRequiredPrompt(events: InvestigationEvent[]) {
   const artifacts = projectInvestigation("controller", "", events).artifacts;
   const types = new Set(artifacts.map((artifact) => artifact.type));
   if (!types.has("InvariantCandidate")) return continuationPrompts[0];
-  if (!types.has("ScenarioPlan")) return continuationPrompts[1];
+  if (!types.has("ScenarioPlan")) {
+    const invariantIds = artifacts
+      .filter((artifact) => artifact.type === "InvariantCandidate")
+      .map((artifact) => artifact.data.id)
+      .join(", ");
+    return `${continuationPrompts[1]} Accepted invariant IDs: ${invariantIds}. Every ScenarioPlan.invariantId must equal one of these exact IDs. Do not return ExperimentResult or decision yet.`;
+  }
   if (!types.has("ExperimentResult")) return continuationPrompts[2];
   return continuationPrompts[3];
 }

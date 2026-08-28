@@ -157,6 +157,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
       void _sessionId;
       events = [{ event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-2" }];
       expect(request.input[0]?.content).toContain("Phase HYPOTHESES");
+      expect(request.input[0]?.content).toContain("Accepted invariant IDs: i1");
       return { data: { id: "turn-2" } };
     });
     const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
