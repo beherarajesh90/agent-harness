@@ -84,7 +84,7 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const artifacts = deduplicateArtifacts(events.flatMap((event) => artifactFromPayload(event.payload, trustedHeadSha)));
   const decision = findFinalDecision(events, trustedHeadSha, artifacts);
   const last = events.at(-1);
-  const terminal = last?.type === "turn.done";
+  const terminal = last ? isPrimaryAgentTurn(last) : false;
   const state = last?.payload.state as { status?: string } | undefined;
   const artifactTypes = new Set(artifacts.map((artifact) => artifact.type));
   const requiredArtifactTypes: InvestigationArtifact["type"][] = ["InvariantCandidate", "ScenarioPlan", "ExperimentResult"];
@@ -174,6 +174,7 @@ function readFinalBundle(payload: Record<string, unknown>, trustedHeadSha?: stri
 
 function findFinalDecision(events: HarnessEvent[], trustedHeadSha: string | undefined, artifacts: InvestigationArtifact[]): InvestigationDecision | undefined {
   for (const event of [...events].reverse()) {
+    if (!isPrimaryAgentTurn(event)) continue;
     const bundle = readFinalBundle(event.payload, trustedHeadSha);
     if (bundle?.decision) return bundle.decision;
     const output = isRecord(event.payload.state) && isRecord(event.payload.state.output) ? event.payload.state.output : undefined;
@@ -192,6 +193,10 @@ function findFinalDecision(events: HarnessEvent[], trustedHeadSha: string | unde
     }
   }
   return undefined;
+}
+
+function isPrimaryAgentTurn(event: HarnessEvent) {
+  return event.type === "turn.done" && (!event.threadId || event.threadId === "main");
 }
 
 function hasConsistentEvidence(artifacts: InvestigationArtifact[]) {
