@@ -227,12 +227,15 @@ function isPrimaryAgentTurn(event: HarnessEvent) {
 }
 
 function hasRejectedPrimaryFinal(events: HarnessEvent[], trustedHeadSha: string | undefined) {
-  const final = [...events].reverse().find(isPrimaryAgentTurn);
-  if (!final) return false;
-  const output = isRecord(final.payload.state) && isRecord(final.payload.state.output) ? final.payload.state.output : undefined;
-  const parsed = typeof output?.content === "string" ? parseJson(output.content) : undefined;
-  if (!isRecord(parsed) || (parsed.decision !== "BLOCKED" && parsed.decision !== "READY")) return false;
-  return readFinalBundle(final.payload, trustedHeadSha) === undefined;
+  let rejected = false;
+  for (const event of events) {
+    if (!isPrimaryAgentTurn(event)) continue;
+    const output = isRecord(event.payload.state) && isRecord(event.payload.state.output) ? event.payload.state.output : undefined;
+    const parsed = typeof output?.content === "string" ? parseJson(output.content) : undefined;
+    if (!isRecord(parsed) || (parsed.decision !== "BLOCKED" && parsed.decision !== "READY")) continue;
+    rejected = readFinalBundle(event.payload, trustedHeadSha) === undefined;
+  }
+  return rejected;
 }
 
 function hasConsistentEvidence(artifacts: InvestigationArtifact[]) {

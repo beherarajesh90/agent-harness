@@ -147,6 +147,7 @@ describe("investigation control plane", () => {
       { event: { artifactType: "ScenarioPlan", artifact: scenario, sequence: 3, type: "tool.response" }, turnId: "turn-1" },
       { event: { artifactType: "ExperimentResult", artifact: result, sequence: 4, type: "tool.response" }, turnId: "turn-1" },
       { event: { state: { output: { content: JSON.stringify(rejected) } }, sequence: 5, type: "turn.done" }, turnId: "turn-1" },
+      { event: { state: { status: "done" }, sequence: 6, type: "turn.done" }, turnId: "turn-2" },
     ]);
 
     expect(snapshot.decision).toBeUndefined();
