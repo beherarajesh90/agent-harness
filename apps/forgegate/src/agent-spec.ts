@@ -181,11 +181,18 @@ export function validateInvestigationArtifacts(input: { decision?: unknown; inva
     throw new Error("every scenario must have an experiment result");
   }
   const scenarioIds = scenarios.map((scenario) => scenario.scenarioId);
+  if (scenarioIds.some(Boolean) && new Set(scenarioIds.filter((scenarioId): scenarioId is string => Boolean(scenarioId))).size !== scenarioIds.filter(Boolean).length) {
+    throw new Error("duplicate scenario ID");
+  }
   if (scenarioIds.every((scenarioId) => !scenarioId) && scenarios.some((scenario, index) => experimentResults[index]?.seed !== scenario.seed)) {
     throw new Error("experiment seed must match every scenario seed");
   }
   if (scenarioIds.some(Boolean) && experimentResults.some((result) => !result.scenarioId || !scenarioIds.includes(result.scenarioId))) {
     throw new Error("every experiment result must reference a scenario");
+  }
+  const resultIds = experimentResults.map((result) => result.scenarioId).filter((scenarioId): scenarioId is string => Boolean(scenarioId));
+  if (scenarioIds.some(Boolean) && new Set(resultIds).size !== resultIds.length) {
+    throw new Error("duplicate experiment result ID");
   }
   if (scenarios.some((scenario) => !experimentResults.some((result) => result.scenarioId ? result.scenarioId === scenario.scenarioId : result.seed === scenario.seed))) {
     throw new Error("every scenario must have a matching experiment result");

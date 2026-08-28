@@ -160,6 +160,8 @@ describe("ForgeGate agent specification", () => {
     });
 
     expect(validateInvestigationArtifacts({ invariants: [invariant], scenarios, experimentResults: [result("s1", 1, "pass"), result("s2", 2, "pass")] }).experimentResults).toHaveLength(2);
+    expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios: [{ ...scenarios[0] }, { ...scenarios[1], scenarioId: "s1" }], experimentResults: [result("s1", 1, "pass"), result("s1", 1, "pass")] })).toThrow("duplicate scenario ID");
+    expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios, experimentResults: [result("s1", 1, "pass"), result("s1", 1, "pass")] })).toThrow("duplicate experiment result ID");
     expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios, experimentResults: [result("s1", 1, "pass"), result("s2", 3, "pass")] })).toThrow("experiment seed");
     expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios, experimentResults: [result("s1", 1, "pass"), { ...result("s2", 2, "pass"), expected: { charges: 2, intents: 1, ledgerEntries: 1 } }] })).toThrow("same baseline measurements");
     expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios, experimentResults: [result("s1", 1, "pass"), { ...result("s2", 2, "pass"), baselineSha: "c".repeat(40) }] })).toThrow("same baseline SHA");
