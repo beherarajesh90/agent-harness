@@ -1478,6 +1478,7 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [x] Produce `InvariantCandidate` artifacts.
 - [x] Produce deterministic `ScenarioPlan` artifacts.
 - [x] Run baseline comparison against `master`.
+- [x] Require every `ExperimentResult` to record one immutable `master` baseline SHA and its expected baseline counts; reject missing, mixed, or PR-equal baseline SHA evidence.
 - [x] Check out exact PR SHA in selected sandbox.
 - [x] Run the generated adversarial scenario and independent oracle.
 - [x] Produce `ExperimentResult` with SHA, seed, repetitions, observed values, verdict, and artifact links.

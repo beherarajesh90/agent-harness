@@ -28,6 +28,7 @@ type PaymentLaboratoryOptions = {
 
 export type ExperimentResult = {
   artifactLinks: string[];
+  baselineSha: string;
   expected: { charges: number; intents: number; ledgerEntries: number };
   observed: { charges: number; intents: number; ledgerEntries: number };
   repetitions: number;
@@ -269,16 +270,19 @@ export function runSafeFixture() {
 }
 
 export function runPaymentExperiment({
+  baselineSha,
   mode,
   repetitions,
   seed,
   testedSha,
 }: {
+  baselineSha: string;
   mode: "safe" | "unsafe";
   repetitions: number;
   seed: number;
   testedSha: string;
 }): ExperimentResult {
+  if (!/^[a-f0-9]{40}$/.test(baselineSha)) throw new Error("baselineSha must be a commit SHA");
   if (!Number.isInteger(repetitions) || repetitions < 1) throw new Error("repetitions must be a positive integer");
   if (!Number.isInteger(seed) || seed < 0) throw new Error("seed must be a non-negative integer");
   if (!/^[a-f0-9]{40}$/.test(testedSha)) throw new Error("testedSha must be a commit SHA");
@@ -292,6 +296,7 @@ export function runPaymentExperiment({
 
   return {
     artifactLinks: ["payment-lab:evidence"],
+    baselineSha,
     expected: { charges: 100, intents: 100, ledgerEntries: 100 },
     observed: { charges: observed.charges, intents: observed.intents, ledgerEntries: observed.ledgerEntries },
     repetitions,

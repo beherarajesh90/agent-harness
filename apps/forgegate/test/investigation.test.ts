@@ -38,7 +38,7 @@ describe("investigation control plane", () => {
       { event: { content: JSON.stringify({ head: { sha } }), sequence: 1, type: "tool.response" }, turnId: "turn-1" },
       { event: { artifactType: "InvariantCandidate", artifact: { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha }, sequence: 2, type: "tool.response" }, turnId: "turn-1" },
       { event: { artifactType: "ScenarioPlan", artifact: { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], seed: 1, testedSha: sha }, sequence: 3, type: "tool.response" }, turnId: "turn-1" },
-      { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 1, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "pass" }, sequence: 4, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 1, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "pass" }, sequence: 4, type: "tool.response" }, turnId: "turn-1" },
       { event: { content: "Tool call failed: Tool 'list_tools' is not allowed", sequence: 5, threadId: "subagent-1", type: "tool.response" }, turnId: "turn-1" },
       { event: { sequence: 6, state: { status: "done" }, type: "turn.done" }, turnId: "turn-1" },
     ];
@@ -79,7 +79,7 @@ describe("investigation control plane", () => {
       { event: { content: JSON.stringify({ head: { sha } }), sequence: 1, type: "tool.response" }, turnId: "turn-1" },
       { event: { artifactType: "InvariantCandidate", artifact: { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha }, sequence: 2, type: "tool.response" }, turnId: "turn-1" },
       { event: { artifactType: "ScenarioPlan", artifact: { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge", "timeout"], seed: 1, testedSha: sha }, sequence: 3, type: "tool.response" }, turnId: "turn-1" },
-      { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], expected: { charges: 100, intents: 100, ledgerEntries: 100 }, observed: { charges: 100, intents: 100, ledgerEntries: 100 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "pass" }, sequence: 4, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 100, intents: 100, ledgerEntries: 100 }, observed: { charges: 100, intents: 100, ledgerEntries: 100 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "pass" }, sequence: 4, type: "tool.response" }, turnId: "turn-1" },
       { event: { sequence: 5, state: { status: "done" }, type: "turn.done" }, turnId: "turn-1" },
     ];
 
@@ -92,7 +92,7 @@ describe("investigation control plane", () => {
       { event: { content: JSON.stringify({ head: { sha } }), sequence: 1, type: "tool.response" }, turnId: "turn-1" },
       { event: { artifactType: "InvariantCandidate", artifact: { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha }, sequence: 2, type: "tool.response" }, turnId: "turn-1" },
       { event: { artifactType: "ScenarioPlan", artifact: { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "wrong-id", ordering: ["charge"], seed: 1, testedSha: sha }, sequence: 3, type: "tool.response" }, turnId: "turn-1" },
-      { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 1, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 2, testedSha: sha, verdict: "pass" }, sequence: 4, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 1, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 2, testedSha: sha, verdict: "pass" }, sequence: 4, type: "tool.response" }, turnId: "turn-1" },
       { event: { sequence: 5, state: { status: "done" }, type: "turn.done" }, turnId: "turn-1" },
     ];
 
@@ -105,7 +105,7 @@ describe("investigation control plane", () => {
       decision: "BLOCKED",
       invariants: [{ confidence: 1, evidence: [{ endLine: 2, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 4, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 3 }], id: "i1", statement: "one charge", testedSha: sha }],
       scenarios: [{ expectedOutcome: "duplicate charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge", "retry"], seed: 1, testedSha: sha }],
-      experimentResult: { artifactLinks: ["payment-lab:evidence"], expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 2, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "fail" },
+      experimentResult: { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 2, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "fail" },
     };
 
     const snapshot = projectInvestigation("session-1", "url", [
@@ -122,7 +122,7 @@ describe("investigation control plane", () => {
       decision: "UNCERTAIN",
       invariants: [{ confidence: 1, evidence: [{ endLine: 2, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 4, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 3 }], id: "i1", statement: "one charge", testedSha: sha }],
       scenarios: [{ expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge", "retry"], seed: 1, testedSha: sha }],
-      experimentResult: { artifactLinks: ["payment-lab:evidence"], expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 1, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "pass" },
+      experimentResult: { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 1, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "pass" },
     };
 
     expect(projectInvestigation("session-1", "url", [
@@ -137,7 +137,7 @@ describe("investigation control plane", () => {
       decision: "BLOCKED",
       invariants: [{ confidence: 1, evidence: [{ endLine: 2, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 4, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 3 }], id: "i1", statement: "one charge", testedSha: sha }],
       scenarios: [{ expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], seed: 1, testedSha: sha }],
-      experimentResult: { artifactLinks: ["payment-lab:evidence"], expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 2, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "fail" },
+      experimentResult: { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 2, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "fail" },
     };
 
     expect(projectInvestigation("session-1", "url", [
@@ -152,7 +152,7 @@ describe("investigation control plane", () => {
       decision: "BLOCKED",
       invariants: [{ confidence: 1, evidence: [{ endLine: 2, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 4, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 3 }], id: "i1", statement: "one charge per intent", testedSha: sha }],
       scenarios: [{ expectedOutcome: "one charge per intent", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge", "retry"], seed: 1, testedSha: sha }],
-      experimentResult: { artifactLinks: ["payment-lab:evidence"], expected: { charges: 102, intents: 100, ledgerEntries: 100 }, observed: { charges: 102, intents: 100, ledgerEntries: 100 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "pass" },
+      experimentResult: { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 102, intents: 100, ledgerEntries: 100 }, observed: { charges: 102, intents: 100, ledgerEntries: 100 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "pass" },
     };
 
     expect(projectInvestigation("session-1", "url", [
@@ -168,7 +168,7 @@ describe("investigation control plane", () => {
       { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha: sha },
       { expectedOutcome: "one charge", injectedFaults: ["duplicate webhook"], invariantId: "i1", ordering: ["charge", "webhook"], scenarioId: "s2", seed: 2, testedSha: sha },
     ];
-    const result = (scenarioId: string, seed: number, observedCharges: number, verdict: "pass" | "fail") => ({ artifactLinks: ["payment-lab:evidence"], expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: observedCharges, intents: 1, ledgerEntries: 1 }, repetitions: 1, scenarioId, seed, testedSha: sha, verdict });
+    const result = (scenarioId: string, seed: number, observedCharges: number, verdict: "pass" | "fail") => ({ artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: observedCharges, intents: 1, ledgerEntries: 1 }, repetitions: 1, scenarioId, seed, testedSha: sha, verdict });
     const bundle = { decision: "BLOCKED", invariants: [invariant], scenarios, experimentResults: [result("s1", 1, 1, "pass"), result("s2", 2, 2, "fail")] };
 
     const snapshot = projectInvestigation("session-1", "url", [
@@ -186,7 +186,7 @@ describe("investigation control plane", () => {
       { event: { content: JSON.stringify({ head: { sha } }), sequence: 1, type: "tool.response" }, turnId: "turn-1" },
       { event: { artifactType: "InvariantCandidate", artifact: { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha }, sequence: 2, type: "tool.response" }, turnId: "turn-1" },
       { event: { artifactType: "ScenarioPlan", artifact: { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], seed: 1, testedSha: sha }, sequence: 3, type: "tool.response" }, turnId: "turn-1" },
-      { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 2, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 1, testedSha: "0".repeat(40), verdict: "fail" }, sequence: 4, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 2, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 1, testedSha: "0".repeat(40), verdict: "fail" }, sequence: 4, type: "tool.response" }, turnId: "turn-1" },
       { event: { sequence: 5, state: { status: "blocked" }, type: "turn.done" }, turnId: "turn-1" },
     ];
 

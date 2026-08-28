@@ -129,10 +129,11 @@ describe("ForgeGate agent specification", () => {
       testedSha: sha,
     };
     const scenario = { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], seed: 1, testedSha: sha };
-    const experimentResult = { artifactLinks: ["payment-lab:evidence"], expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 1, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "pass" as const };
+    const experimentResult = { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 1, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "pass" as const };
 
     expect(validateInvestigationArtifacts({ invariants: [invariant], scenarios: [scenario], experimentResult })).toMatchObject({ experimentResult });
     expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios: [{ ...scenario, seed: 2 }], experimentResult })).toThrow("experiment seed");
+    expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios: [scenario], experimentResult: { ...experimentResult, baselineSha: sha } })).toThrow("baseline SHA");
   });
 
   it("validates one result for every uniquely identified scenario", () => {
@@ -152,10 +153,11 @@ describe("ForgeGate agent specification", () => {
       { expectedOutcome: "one charge", injectedFaults: ["duplicate webhook"], invariantId: "i1", ordering: ["charge", "webhook"], scenarioId: "s2", seed: 2, testedSha: sha },
     ];
     const result = (scenarioId: string, seed: number, verdict: "pass" | "fail") => ({
-      artifactLinks: ["payment-lab:evidence"], expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 1, intents: 1, ledgerEntries: 1 }, repetitions: 1, scenarioId, seed, testedSha: sha, verdict,
+      artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 1, intents: 1, ledgerEntries: 1 }, repetitions: 1, scenarioId, seed, testedSha: sha, verdict,
     });
 
     expect(validateInvestigationArtifacts({ invariants: [invariant], scenarios, experimentResults: [result("s1", 1, "pass"), result("s2", 2, "pass")] }).experimentResults).toHaveLength(2);
+    expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios, experimentResults: [result("s1", 1, "pass"), { ...result("s2", 2, "pass"), baselineSha: "c".repeat(40) }] })).toThrow("same baseline SHA");
     expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios, experimentResults: [result("s1", 1, "pass")] })).toThrow("every scenario");
   });
 
