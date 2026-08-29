@@ -407,7 +407,8 @@ function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string
           continue;
         }
         const args = typeof call.function.arguments === "string" ? parseJson(call.function.arguments) : call.function.arguments;
-        const allowed = role === "invariant" && (
+        const invariantAnalyst = role === "invariant" || event.stage === "INVARIANTS";
+        const allowed = invariantAnalyst && (
           call.function.name === "get_file"
             ? isRecord(args) && isAllowedSubagentRead("get_file", args, trustedHeadSha)
             : call.function.name === "call_tool"
