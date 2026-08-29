@@ -1640,3 +1640,47 @@ This addendum clarifies scenario coverage without changing the existing three-ag
 - [x] Persist one `ExperimentResult` for each executed unique scenario.
 - [x] Aggregate all scenario verdicts into the final decision without dropping evidence.
 - [ ] Show scenario count, deduplication, execution progress, and per-scenario results in the harness UI.
+
+## Architecture Evolution Backlog - Native TrueForge Subagent Context
+
+**Status:** Proposed; not implemented. This section tracks the recommended architecture change and does not alter the current Phase 3 acceptance criteria until the change is approved and implemented.
+
+### Why this is tracked
+
+TrueForge gives dynamic subagents a clean context but shares the configured MCP tools and sandbox with the primary agent. The current ForgeGate design instead instructs analysts to be tool-free and treats subagent tool use as invalid. That is a deliberate restriction, but it conflicts with the harness capability we want to demonstrate and makes analysts dependent on large prompt handoffs.
+
+### Recommended ownership boundary
+
+- The primary agent remains authoritative for PR identity, exact SHA selection, required GitHub-read completeness, baseline measurement, scenario execution, evidence reconciliation, final decision, and all writes.
+- `invariant-analyst` may use only bounded, read-only ForgeGate GitHub MCP tools to retrieve exact-SHA evidence for the two allowed payment-lab paths.
+- `failure-mode-analyst` may use only bounded, read-only ForgeGate GitHub MCP tools after receiving the accepted invariant JSON; it generates unique `ScenarioPlan` artifacts and never executes experiments.
+- Neither subagent may call `commit_files`, perform repository mutation, use raw GitHub/curl access, or execute sandbox experiments.
+- Primary-agent reads remain the authoritative required-read proof. Subagent reads are supplemental evidence and must still satisfy the same repository, exact-SHA, path, and schema validation.
+- The primary agent must validate and classify subagent tool calls by thread, MCP server, and tool name. Generic "any subagent tool use is invalid" detection is replaced by a forbidden-action check.
+
+### Tracked implementation checklist
+
+- [ ] Decide and document the allowed subagent read-only tool set: `get_pull_request`, `get_pull_request_files`, `get_file`, `get_checks`, `get_qodo_reviews`, and `get_review_comments`.
+- [ ] Remove `commit_files` from the investigation agent's enabled tools; retain it only in the later repair/approval workflow if that workflow requires it.
+- [ ] Update the investigation prompt so analysts may use only the approved read-only MCP tools and must not use raw GitHub calls, `commit_files`, or experiment execution.
+- [ ] Replace the generic subagent-tool-use failure path with classification of allowed reads versus forbidden writes, raw calls, and sandbox execution.
+- [ ] Preserve primary-only required-read completion and final-decision ownership in the projector/controller.
+- [ ] Pass repository, PR head SHA, allowed paths, and role-specific constraints to each analyst; do not pass unrestricted repository contents.
+- [ ] Keep analyst requests bounded and prevent recursive delegation or unbounded file/search operations.
+- [ ] Add tests for allowed subagent read calls, forbidden mutation calls, forbidden sandbox execution, wrong repository/ref/path, and primary-only final decisions.
+- [ ] Run the full test suite and one real investigation before considering this backlog item complete.
+- [ ] Update the harness UI/event copy so approved analyst reads are shown as valid subagent work rather than failures.
+
+### Acceptance criteria
+
+The change is complete only when an analyst can retrieve the exact payment-lab evidence through an approved read-only MCP call, return valid artifacts, and remain visible in the harness event stream, while any subagent write, raw GitHub call, or experiment execution fails closed without changing the investigation decision. The primary agent must still perform and prove the required baseline and adversarial experiments and must be the only thread whose final turn can control `READY`, `BLOCKED`, or `UNCERTAIN`.
+
+### Scope and trade-off
+
+For the payment-lab MVP, allow MCP reads but do not allow subagent sandbox execution. TrueForge's sandbox is shared, and its large-response offload can make sandbox reads useful; supporting that safely would require separate read-only context-inspection metadata and is therefore deferred until the MVP needs it.
+
+### Open questions for implementation
+
+- **Blocking:** Can the current TrueForge event payload reliably identify the MCP server and tool name for every subagent `call_tool` event? If not, add a safe fail-closed classification boundary rather than guessing from free-form text.
+- **Blocking:** Should an analyst's supplemental GitHub read be required to use the PR head SHA, or may the primary provide the immutable SHA while the analyst reads only the two fixed paths at that SHA? Recommended: exact SHA always.
+- **Non-blocking:** Should the UI distinguish "subagent read accepted" from "primary authoritative read" as separate event labels?
