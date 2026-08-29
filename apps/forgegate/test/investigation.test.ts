@@ -192,7 +192,7 @@ describe("investigation control plane", () => {
     expect(snapshot.decision).toBeUndefined();
   });
 
-  it("accepts a final decision after every recorded GitHub review read succeeds", () => {
+  it("accepts a read-only subagent MCP read but rejects subagent sandbox execution", () => {
     const sha = "a".repeat(40);
     const invariant = { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha };
     const scenario = { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha: sha };
@@ -220,14 +220,24 @@ describe("investigation control plane", () => {
       { event: { sequence: 18, threadId: "subagent-1", type: "model.message", toolCalls: [{ function: { arguments: JSON.stringify({ command: "nl -ba apps/forgegate/src/payment-lab.ts | sed -n '150,260p'", cwd: "/" }), name: "exec" }, id: "subagent-inspection" }] }, turnId: "turn-1" },
       { event: { content: JSON.stringify({ success: true, response: { exitCode: 0, result: "150 source line" } }), sequence: 19, threadId: "subagent-1", toolCallId: "subagent-inspection", type: "tool.response" }, turnId: "turn-1" },
     ];
-    const snapshot = projectInvestigation("session-1", "url", [
+    const finalDecision = { event: { sequence: 18, state: { output: { content: JSON.stringify({ decision: "READY", invariants: [invariant], scenarios: [scenario], experimentResults: [result] }) } }, type: "turn.done" }, turnId: "turn-1" };
+    const acceptedSnapshot = projectInvestigation("session-1", "url", [
       ...events,
-      ...subagentEvents,
-      { event: { sequence: 20, state: { output: { content: JSON.stringify({ decision: "READY", invariants: [invariant], scenarios: [scenario], experimentResults: [result] }) } }, type: "turn.done" }, turnId: "turn-1" },
+      ...subagentEvents.slice(0, 2),
+      finalDecision,
     ]);
 
-    expect(snapshot.status).toBe("READY");
-    expect(snapshot.decision).toBe("READY");
+    expect(acceptedSnapshot.status).toBe("READY");
+    expect(acceptedSnapshot.decision).toBe("READY");
+
+    const rejectedSnapshot = projectInvestigation("session-1", "url", [
+      ...events,
+      ...subagentEvents,
+      { ...finalDecision, event: { ...finalDecision.event, sequence: 20 } },
+    ]);
+
+    expect(rejectedSnapshot.status).toBe("UNCERTAIN");
+    expect(rejectedSnapshot.decision).toBeUndefined();
   });
 
   it("does not let subagent GitHub reads establish the trusted PR evidence", () => {

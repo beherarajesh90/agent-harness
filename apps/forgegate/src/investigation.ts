@@ -395,7 +395,7 @@ function hasForbiddenSubagentToolUse(events: HarnessEvent[], trustedHeadSha?: st
             && allowedSubagentMcpTools.has(args.tool_name)
             && isRecord(args.input)
             && isAllowedSubagentRead(args.tool_name, args.input, trustedHeadSha)
-          : call.function.name === "exec" && isReadOnlySandboxInspection(call);
+          : false;
         calls.set(call.id, allowed);
         if (!allowed) return true;
       }
@@ -416,16 +416,6 @@ function isAllowedSubagentRead(toolName: string, input: Record<string, unknown>,
   if (toolName === "get_file") return Boolean(trustedHeadSha && input.ref === trustedHeadSha && requiredEvidencePaths.includes(input.path as (typeof requiredEvidencePaths)[number]));
   if (toolName === "get_checks") return Boolean(trustedHeadSha && input.ref === trustedHeadSha);
   return true;
-}
-
-function isReadOnlySandboxInspection(call: Record<string, unknown>) {
-  const args = typeof (call.function as Record<string, unknown>).arguments === "string" ? parseJson((call.function as Record<string, unknown>).arguments as string) : (call.function as Record<string, unknown>).arguments;
-  if (!isRecord(args) || args.cwd !== "/" || typeof args.command !== "string") return false;
-  const match = /^nl -ba (.+) \| sed -n '(\d+),(\d+)p'$/.exec(args.command);
-  if (!match || !requiredEvidencePaths.includes(match[1] as (typeof requiredEvidencePaths)[number])) return false;
-  const start = Number(match[2]);
-  const end = Number(match[3]);
-  return start > 0 && end >= start && end - start <= 200;
 }
 
 function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string): InvestigationArtifact[] {
