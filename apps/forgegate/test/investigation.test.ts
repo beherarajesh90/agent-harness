@@ -61,15 +61,25 @@ describe("investigation control plane", () => {
     const sha = "a".repeat(40);
     const snapshot = projectInvestigation("session-1", "url", [
       { event: { sequence: 1, toolCalls: [{ id: "pr-1", function: { arguments: JSON.stringify({ mcp_server: "forgegate-github", tool_name: "get_pull_request", input: { pull_number: 1 } }), name: "call_tool" } }], type: "model.message" }, turnId: "turn-1" },
-      { event: { sequence: 2, content: JSON.stringify({ head: { sha } }), type: "tool.response" }, turnId: "turn-1" },
+      { event: { sequence: 2, content: JSON.stringify({ head: { sha } }), toolCallId: "pr-1", type: "tool.response" }, turnId: "turn-1" },
       { event: { sequence: 3, threadId: "analyst-1", title: "invariant-analyst", type: "thread.created" }, turnId: "turn-1" },
       { event: { sequence: 4, threadId: "analyst-1", toolCalls: { id: "file-1", function: { arguments: JSON.stringify({ path: "src/payment-lab.ts", ref: sha }), name: "get_file" }, type: "function" }, type: "model.message" }, turnId: "turn-1" },
-      { event: { sequence: 5, threadId: "analyst-1", content: "{}", type: "tool.response" }, turnId: "turn-1" },
+      { event: { sequence: 5, threadId: "analyst-1", content: "{}", toolCallId: "file-1", type: "tool.response" }, turnId: "turn-1" },
       { event: { sequence: 6, threadId: "analyst-1", toolCalls: { id: "exec-1", function: { arguments: JSON.stringify({ command: "head -c 200 /opt/tf/tool-results/result.txt && echo \"==\" && cat /opt/tf/tool-results/result.txt | grep -n '' | head -n 20" }), name: "exec" }, type: "function" }, type: "model.message" }, turnId: "turn-1" },
-      { event: { sequence: 7, threadId: "analyst-1", content: JSON.stringify({ success: true, response: { exitCode: 0, result: "1 source line" } }), type: "tool.response" }, turnId: "turn-1" },
+      { event: { sequence: 7, threadId: "analyst-1", content: JSON.stringify({ success: true, response: { exitCode: 0, result: "1 source line" } }), toolCallId: "exec-1", type: "tool.response" }, turnId: "turn-1" },
     ]);
 
     expect(snapshot.warnings).toBeUndefined();
+  });
+
+  it("fails closed when a subagent tool response has no correlation id", () => {
+    const snapshot = projectInvestigation("session-1", "url", [
+      { event: { sequence: 1, threadId: "analyst-1", title: "invariant-analyst", type: "thread.created" }, turnId: "turn-1" },
+      { event: { sequence: 2, threadId: "analyst-1", toolCalls: { id: "exec-1", function: { arguments: JSON.stringify({ command: "head -n 20 /opt/tf/result.txt" }), name: "exec" }, type: "function" }, type: "model.message" }, turnId: "turn-1" },
+      { event: { sequence: 3, threadId: "analyst-1", content: JSON.stringify({ success: true, response: { exitCode: 0 } }), type: "tool.response" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.warnings).toEqual(["SUBAGENT_HARD_TOOL_VIOLATION"]);
   });
 
   it("accepts native primary MCP calls when validating complete evidence", () => {

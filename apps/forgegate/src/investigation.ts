@@ -397,7 +397,7 @@ function hasFailedExperiment(artifacts: InvestigationArtifact[]) {
 }
 
 function hasRequiredGitHubReads(events: HarnessEvent[], trustedHeadSha: string | undefined) {
-  const { calls, callsBySequence, sawForgeGateCall, sawToolCallMetadata } = primaryGithubToolCalls(events);
+  const { calls, sawForgeGateCall, sawToolCallMetadata } = primaryGithubToolCalls(events);
   if (!sawToolCallMetadata) return !events.some((event) => isPrimaryAgentThread(event) && event.type === "model.message");
   if (!sawForgeGateCall) return false;
 
@@ -405,7 +405,7 @@ function hasRequiredGitHubReads(events: HarnessEvent[], trustedHeadSha: string |
   const completedFiles = new Set<string>();
   for (const event of events) {
     if (!isPrimaryAgentThread(event) || event.type !== "tool.response") continue;
-    const call = primaryCallForResponse(event, calls, callsBySequence);
+    const call = typeof event.payload.toolCallId === "string" ? calls.get(event.payload.toolCallId) : undefined;
     if (!call || !isSuccessfulToolResponse(event.payload, call.toolName)) continue;
     if (call.toolName === "get_file") {
       if (trustedHeadSha && call.input.ref === trustedHeadSha && typeof call.input.path === "string") completedFiles.add(call.input.path);
@@ -419,7 +419,6 @@ function hasRequiredGitHubReads(events: HarnessEvent[], trustedHeadSha: string |
 
 function primaryGithubToolCalls(events: HarnessEvent[]) {
   const calls = new Map<string, { input: Record<string, unknown>; toolName: string }>();
-  const callsBySequence = new Map<number, { input: Record<string, unknown>; toolName: string }>();
   let sawToolCallMetadata = false;
   let sawForgeGateCall = false;
   for (const event of events) {
@@ -435,21 +434,14 @@ function primaryGithubToolCalls(events: HarnessEvent[]) {
         sawForgeGateCall = true;
         const metadata = { input: args.input, toolName: args.tool_name };
         calls.set(call.id, metadata);
-        callsBySequence.set(event.sequence, metadata);
       } else if (githubToolNames.includes(call.function.name as typeof githubToolNames[number]) && isRecord(args)) {
         sawForgeGateCall = true;
         const metadata = { input: args, toolName: call.function.name };
         calls.set(call.id, metadata);
-        callsBySequence.set(event.sequence, metadata);
       }
     }
   }
-  return { calls, callsBySequence, sawForgeGateCall, sawToolCallMetadata };
-}
-
-function primaryCallForResponse(event: HarnessEvent, calls: Map<string, { input: Record<string, unknown>; toolName: string }>, callsBySequence: Map<number, { input: Record<string, unknown>; toolName: string }>) {
-  if (typeof event.payload.toolCallId === "string") return calls.get(event.payload.toolCallId);
-  return callsBySequence.get(event.sequence - 1);
+  return { calls, sawForgeGateCall, sawToolCallMetadata };
 }
 
 const githubToolNames = [...requiredGitHubReadTools, "get_file"] as const;
@@ -488,7 +480,6 @@ export function hasSubagentToolPolicyViolation(events: TrueForgeEventItem[]) {
 
 function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string) {
   const calls = new Map<string, "allowed" | "warning" | "hard">();
-  const pending = new Map<string, Array<{ id: string; violation: "allowed" | "warning" | "hard" }>>();
   const roles = new Map<string, "invariant" | "failure">();
   let warning = false;
   let hard = false;
@@ -530,9 +521,6 @@ function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string
         );
         const violation = allowed || recoverableRef ? "allowed" : classifySubagentViolation(call.function.name, args);
         calls.set(call.id, violation);
-        const threadCalls = pending.get(event.threadId ?? "") ?? [];
-        threadCalls.push({ id: call.id, violation });
-        pending.set(event.threadId ?? "", threadCalls);
         if (violation === "warning") warning = true;
         if (violation === "hard") hard = true;
       }
@@ -546,16 +534,6 @@ function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string
       }
       if (violation === "warning") warning = true;
       if (violation === "hard") hard = true;
-      const threadCalls = pending.get(event.threadId ?? "");
-      const index = threadCalls?.findIndex((call) => call.id === event.payload.toolCallId) ?? -1;
-      if (threadCalls && index >= 0) threadCalls.splice(index, 1);
-      continue;
-    }
-    const threadCalls = pending.get(event.threadId ?? "");
-    const pendingCall = threadCalls?.shift();
-    if (pendingCall) {
-      if (pendingCall.violation === "warning") warning = true;
-      if (pendingCall.violation === "hard") hard = true;
       continue;
     }
     if (typeof event.payload.content !== "string") {
@@ -623,12 +601,11 @@ function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string): I
 }
 
 function findPullRequestHeadSha(events: HarnessEvent[]) {
-  const { calls, callsBySequence, sawForgeGateCall, sawToolCallMetadata } = primaryGithubToolCalls(events);
+  const { calls, sawForgeGateCall, sawToolCallMetadata } = primaryGithubToolCalls(events);
   if (sawToolCallMetadata && !sawForgeGateCall) return undefined;
   for (const event of events) {
     if (!isPrimaryAgentThread(event) || event.type !== "tool.response" || typeof event.payload.content !== "string") continue;
-    const call = primaryCallForResponse(event, calls, callsBySequence);
-    if (sawToolCallMetadata && (call?.toolName !== "get_pull_request" || !isSuccessfulToolResponse(event.payload, "get_pull_request"))) continue;
+    if (sawToolCallMetadata && (typeof event.payload.toolCallId !== "string" || calls.get(event.payload.toolCallId)?.toolName !== "get_pull_request" || !isSuccessfulToolResponse(event.payload, "get_pull_request"))) continue;
     const response = parseJson(event.payload.content);
     if (isRecord(response) && isRecord(response.head) && typeof response.head.sha === "string" && /^[a-f0-9]{40}$/.test(response.head.sha)) {
       return response.head.sha;
