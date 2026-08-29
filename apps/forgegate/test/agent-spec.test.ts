@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createForgeGateAgentSpec, deduplicateScenarioPlans, experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, scenarioPlanSchema, validateAnalystArtifacts, validateInvestigationArtifacts } from "../src/agent-spec.js";
 
 describe("ForgeGate agent specification", () => {
-  it("enables only the configured GitHub tools and gates commits", () => {
+  it("enables only the configured read-only GitHub tools", () => {
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b")).toMatchObject({
       config: {
         dynamicSubAgents: { enabled: true },
@@ -18,11 +18,10 @@ describe("ForgeGate agent specification", () => {
             "get_checks",
             "get_qodo_reviews",
             "get_review_comments",
-            "commit_files",
           ],
           name: "forgegate-github",
           preload: true,
-          requireApprovalForTools: ["commit_files"],
+          requireApprovalForTools: [],
         },
       ],
       model: { name: "ollama-local/qwen35-4b" },
@@ -56,8 +55,8 @@ describe("ForgeGate agent specification", () => {
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("payment-lab:evidence"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Run the baseline payment test on master before checking out the exact PR head SHA"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Mark the verdict fail when the observed counts violate an accepted invariant"));
-    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("primary agent must complete all GitHub MCP reads and sandbox execution before spawning subagents"));
-    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Subagents have no tool authority"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("The primary agent remains authoritative for GitHub reads, sandbox execution"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Subagents may use only bounded read-only forgegate-github MCP tools"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Create failure-mode-analyst only after invariant-analyst has completed"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("pnpm --filter @forgegate/app build"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("dist/src/payment-lab.js"));

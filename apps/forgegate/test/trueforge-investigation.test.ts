@@ -47,7 +47,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("payment-lab.ts lines 125-170");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("payment-lab.test.ts lines 110-180");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("12,000 characters");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Subagents must not call MCP, exec, sandbox, or any other tool");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Subagents may use only bounded read-only forgegate-github MCP tools");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Create failure-mode-analyst only after invariant-analyst thread.done");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("include the exact validated invariant JSON in its input");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Never run grep -R, find, or any recursive repository scan");
