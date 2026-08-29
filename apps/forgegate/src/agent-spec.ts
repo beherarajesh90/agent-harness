@@ -57,8 +57,17 @@ export const invariantCandidateSchema = z
     });
   });
 
+const scenarioExecutionSchema = z
+  .object({
+    assertions: z.array(z.string().min(1)).min(1),
+    entrypoint: identifierSchema,
+    inputs: z.record(z.string(), z.unknown()),
+  })
+  .strict();
+
 export const scenarioPlanSchema = z
   .object({
+    execution: scenarioExecutionSchema.optional(),
     expectedOutcome: z.string().min(1),
     injectedFaults: z.array(z.string().min(1)).min(1),
     invariantId: identifierSchema,
@@ -290,6 +299,7 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "Evidence reference sha must equal the exact PR head commit SHA in testedSha; never use a Git blob SHA, branch name, or baseline SHA.",
       "Copy the exact PR head SHA unchanged from the primary context; never count, transform, pad, truncate, or retry get_file with an alternate SHA.",
       "The failure-mode-analyst must return all materially distinct ScenarioPlan JSON objects with invariantId, scenarioId, testedSha, seed, injectedFaults, ordering, and expectedOutcome, using only executable operations found in the repository capability map.",
+      "Each ScenarioPlan must include execution.entrypoint, execution.inputs, and one or more execution.assertions mapped to the capability map; these fields describe executable repository behavior, not invented operations.",
       "When creating failure-mode-analyst, state exactly: You have no tools. Reason only from the supplied invariant JSON and repository capability map. It must not call list_tools, MCP, exec, shell, Python, Git, or sandbox.",
       "ScenarioPlan seed must be a non-negative integer and ordering must be a non-empty string array; validate the complete object before returning it.",
       "When an artifact is emitted into an event, preserve it under artifactType (InvariantCandidate, ScenarioPlan, or ExperimentResult) and artifact fields.",

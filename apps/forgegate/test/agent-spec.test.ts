@@ -50,6 +50,7 @@ describe("ForgeGate agent specification", () => {
     expect(hasCompleteBranch(schema)).toBe(true);
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("InvariantCandidate"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("ScenarioPlan"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Each ScenarioPlan must include execution.entrypoint, execution.inputs, and one or more execution.assertions"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("exactly two visible dynamic subagents"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("evidence objects use sha"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("injectedFaults is string[]"));
@@ -97,11 +98,18 @@ describe("ForgeGate agent specification", () => {
       injectedFaults: ["provider timeout", "duplicate webhook", "concurrent retry"],
       invariantId: "payment-one-charge",
       ordering: ["charge", "timeout", "retry", "webhook"],
+      execution: {
+        assertions: ["charges == 1", "ledgerEntries == 1"],
+        entrypoint: "processPayment",
+        inputs: { amount: 500 },
+      },
       seed: 42,
       testedSha: "a".repeat(40),
     };
 
     expect(scenarioPlanSchema.parse(scenario)).toEqual(scenario);
+    expect(scenarioPlanSchema.safeParse({ ...scenario, execution: { ...scenario.execution, assertions: [] } }).success).toBe(false);
+    expect(scenarioPlanSchema.safeParse({ ...scenario, execution: { ...scenario.execution, entrypoint: "" } }).success).toBe(false);
     expect(scenarioPlanSchema.safeParse({ ...scenario, seed: 1.5 }).success).toBe(false);
     expect(scenarioPlanSchema.safeParse({ ...scenario, injectedFaults: [] }).success).toBe(false);
   });
