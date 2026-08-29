@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { hasSubagentToolPolicyViolation } from "../src/investigation.js";
 import { createInvestigationPhaseController, createTrueForgeInvestigationLauncher } from "../src/trueforge-investigation.js";
 
 describe("createTrueForgeInvestigationLauncher", () => {
@@ -347,6 +348,34 @@ describe("createTrueForgeInvestigationLauncher", () => {
     await controller.continue("session-1", "turn-1");
 
     expect(createTurn).not.toHaveBeenCalled();
+  });
+
+  it("recovers once from a subagent get_file placeholder ref", async () => {
+    let events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { threadId: "analyst-1", type: "tool.response", content: JSON.stringify({ error: [{ type: "text", text: "ref must be a full commit SHA at ref" }] }) }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void _sessionId;
+      events = [{ event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-2" }];
+      expect(request.input[0]?.content).toContain("exact full 40-character PR head commit SHA");
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+  });
+
+  it("does not classify a rejected subagent placeholder ref as a hard violation", () => {
+    const sha = "a".repeat(40);
+    expect(hasSubagentToolPolicyViolation([
+      { event: { content: JSON.stringify({ head: { sha } }), type: "tool.response" }, turnId: "turn-1" },
+      { event: { threadId: "analyst-1", title: "invariant-analyst", type: "thread.created" }, turnId: "turn-1" },
+      { event: { threadId: "analyst-1", toolCalls: [{ id: "read-1", function: { arguments: JSON.stringify({ path: "apps/forgegate/src/payment-lab.ts", ref: "PR_HEAD" }), name: "get_file" } }], type: "model.message" }, turnId: "turn-1" },
+      { event: { content: JSON.stringify({ error: [{ type: "text", text: "ref must be a full commit SHA at ref" }] }), threadId: "analyst-1", toolCallId: "read-1", type: "tool.response" }, turnId: "turn-1" },
+    ])).toBe(false);
   });
 
   it("retries one transient sandbox startup failure before accepting UNCERTAIN", async () => {

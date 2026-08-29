@@ -24,6 +24,7 @@ const continuationPrompts = [
   "Continue with Phase DECISION. Reconcile the persisted InvariantCandidate, ScenarioPlan, and ExperimentResult artifacts. Return one complete final JSON object containing the full invariants array, full scenarios array, full experimentResults array, and decision; persisted artifacts cannot substitute for omitted fields. READY is allowed only when all scenarios have passing results and all artifacts are valid and consistent.",
 ] as const;
 const mcpRecoveryPrompt = "The previous MCP call used an invalid server or tool name. Do not call list_tools, get_tool_info, get_pr, list_changed_files, or changed_files. Use only forgegate-github tools named get_pull_request, get_pull_request_files, get_file, get_checks, get_qodo_reviews, and get_review_comments. Retry the required read now, starting with get_pull_request.";
+const subagentRefRecoveryPrompt = "The invariant analyst used an invalid get_file ref. Retry the same allowed get_file reads now using the exact full 40-character PR head commit SHA from the primary agent context, not PR_HEAD, a branch name, or any placeholder. Do not call any other tool.";
 const sandboxRecoveryPrompt = "The previous sandbox command failed with a transient startup or process-bridge error. Retry the same sandbox command once now, then continue the investigation. Do not mark the investigation UNCERTAIN unless the retry also fails.";
 const decisionRepairInstruction = "Final response rejected: the evidence exists, but the decision bundle is incomplete. Return one complete JSON object containing the full invariants, scenarios, and experimentResults arrays plus decision. Set experimentResult to null; use experimentResults as the only result representation. Copy the exact persisted evidence below; do not summarize, omit, or alter any array. Do not emit another partial BLOCKED or READY response.";
 
@@ -104,6 +105,7 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
   async function continueInvestigation(sessionId: string, initialTurnId: string) {
     let turnId = initialTurnId;
     let mcpRecoveryAttempted = false;
+    let subagentRefRecoveryAttempted = false;
     let sandboxRecoveryAttempted = false;
     let experimentRecoveryAttempts = 0;
     let decisionRepairAttempted = false;
@@ -114,6 +116,13 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
       if (isTerminalTurn(completed.event)) return;
       const events = await listEvents(sessionId);
       if (hasRepeatedRejectedDecision(events)) return;
+      const invalidSubagentRef = findInvalidSubagentRef(events);
+      if (invalidSubagentRef) {
+        if (subagentRefRecoveryAttempted) return;
+        subagentRefRecoveryAttempted = true;
+        turnId = (await createTurn(sessionId, { input: [{ content: subagentRefRecoveryPrompt, type: "user.message" }] })).data.id;
+        continue;
+      }
       if (hasSubagentToolPolicyViolation(events)) return;
       const invalidMcpToolCall = findInvalidMcpToolCall(events);
       if (invalidMcpToolCall) {
@@ -283,6 +292,10 @@ function scenarioMatchesResult(scenario: Record<string, unknown>, result: Record
 
 function findInvalidMcpToolCall(events: InvestigationEvent[]) {
   return events.find(({ event }) => event.type === "tool.response" && typeof event.content === "string" && /Tool call failed: Tool |MCP server ['\"].*not found/i.test(event.content));
+}
+
+function findInvalidSubagentRef(events: InvestigationEvent[]) {
+  return events.find(({ event }) => isSubagentThread(event.threadId) && event.type === "tool.response" && typeof event.content === "string" && /ref must be a full commit SHA/i.test(event.content));
 }
 
 function findTransientSandboxFailures(events: InvestigationEvent[], turnId: string) {

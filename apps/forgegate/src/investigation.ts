@@ -480,6 +480,11 @@ function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string
         }
         const args = typeof call.function.arguments === "string" ? parseJson(call.function.arguments) : call.function.arguments;
         const invariantAnalyst = role === "invariant" || event.stage === "INVARIANTS";
+        const recoverableRef = invariantAnalyst && (
+          call.function.name === "get_file"
+            ? isRecoverableSubagentRef("get_file", args, trustedHeadSha)
+            : call.function.name === "call_tool" && isRecord(args) && args.mcp_server === "forgegate-github" && isRecoverableSubagentRef(args.tool_name, args.input, trustedHeadSha)
+        );
         const allowed = invariantAnalyst && (
           call.function.name === "get_file"
             ? isRecord(args) && isAllowedSubagentRead("get_file", args, trustedHeadSha)
@@ -490,7 +495,7 @@ function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string
               && isRecord(args.input)
               && isAllowedSubagentRead(args.tool_name, args.input, trustedHeadSha)
         );
-        const violation = allowed ? "allowed" : classifySubagentViolation(call.function.name, args);
+        const violation = allowed || recoverableRef ? "allowed" : classifySubagentViolation(call.function.name, args);
         calls.set(call.id, violation);
         if (violation === "warning") warning = true;
         if (violation === "hard") hard = true;
@@ -526,6 +531,15 @@ function isAllowedSubagentRead(toolName: string, input: Record<string, unknown>,
   if (toolName === "get_file") return Boolean(trustedHeadSha && input.ref === trustedHeadSha && requiredEvidencePaths.includes(input.path as (typeof requiredEvidencePaths)[number]));
   if (toolName === "get_checks") return Boolean(trustedHeadSha && input.ref === trustedHeadSha);
   return true;
+}
+
+function isRecoverableSubagentRef(toolName: unknown, input: unknown, trustedHeadSha?: string) {
+  return toolName === "get_file"
+    && Boolean(trustedHeadSha)
+    && isRecord(input)
+    && requiredEvidencePaths.includes(input.path as (typeof requiredEvidencePaths)[number])
+    && typeof input.ref === "string"
+    && !/^[a-f0-9]{40}$/.test(input.ref);
 }
 
 function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string): InvestigationArtifact[] {
