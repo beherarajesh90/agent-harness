@@ -108,7 +108,8 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const terminalArtifactTypes = new Set(terminalArtifacts.map((artifact) => artifact.type));
   const completeEvidence = !terminalAccepted.hasConflicts && (Boolean(terminalBundle) || !rejectedFinal) && githubReadsComplete && sandboxSucceeded && !subagentToolViolation && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => terminalArtifactTypes.has(type)) && hasConsistentEvidence(terminalArtifacts);
   const reconciledFailure = (terminalBundle?.decision === "BLOCKED" || hasRejectedCompleteEvidenceFinal(events, trustedHeadSha)) && !terminalAccepted.hasConflicts && githubReadsComplete && sandboxSucceeded && !subagentToolViolation && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => terminalArtifactTypes.has(type)) && hasConsistentEvidence(terminalArtifacts) && hasFailedExperiment(terminalArtifacts);
-  const decision = reportedDecision ?? (reconciledFailure ? "BLOCKED" : undefined);
+  const evidenceDecision = terminal && completeEvidence && reportedDecision === "UNCERTAIN" && hasFailedExperiment(terminalArtifacts) ? "BLOCKED" : undefined;
+  const decision = evidenceDecision ?? reportedDecision ?? (reconciledFailure ? "BLOCKED" : undefined);
   const subagentMcpFailure = hasSubagentMcpFailure(events);
   const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure || subagentToolViolation ? "UNCERTAIN" : terminal ? (completeEvidence || reconciledFailure) && decision ? decision : "UNCERTAIN" : "RUNNING";
   const warnings = subagentToolPolicy.warning ? ["SUBAGENT_TOOL_POLICY_VIOLATION"] : subagentToolPolicy.hard ? ["SUBAGENT_HARD_TOOL_VIOLATION"] : [];
