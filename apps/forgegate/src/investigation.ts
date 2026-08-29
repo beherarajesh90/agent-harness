@@ -481,6 +481,7 @@ export function hasSubagentToolPolicyViolation(events: TrueForgeEventItem[]) {
 function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string) {
   const calls = new Map<string, "allowed" | "warning" | "hard">();
   const roles = new Map<string, "invariant" | "failure">();
+  const discoveryCalls = new Map<string, number>();
   let warning = false;
   let hard = false;
   for (const event of events) {
@@ -512,7 +513,9 @@ function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string
             : call.function.name === "call_tool" && isRecord(args) && args.mcp_server === "forgegate-github" && isRecoverableSubagentRef(args.tool_name, args.input, trustedHeadSha)
         );
         const allowed = invariantAnalyst && (
-          call.function.name === "get_file"
+          call.function.name === "list_tools"
+            ? role === "invariant" && event.threadId !== undefined && isRecord(args) && args.mcp_server === "forgegate-github" && (discoveryCalls.get(event.threadId) ?? 0) === 0
+            : call.function.name === "get_file"
             ? isRecord(args) && isAllowedSubagentRead("get_file", args, trustedHeadSha)
             : call.function.name === "call_tool"
               && isRecord(args)
@@ -521,6 +524,7 @@ function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string
               && isRecord(args.input)
               && isAllowedSubagentRead(args.tool_name, args.input, trustedHeadSha)
         );
+        if (allowed && call.function.name === "list_tools" && event.threadId) discoveryCalls.set(event.threadId, (discoveryCalls.get(event.threadId) ?? 0) + 1);
         const violation = allowed || recoverableRef ? "allowed" : classifySubagentViolation(call.function.name, args);
         calls.set(call.id, violation);
         if (violation === "warning") warning = true;
