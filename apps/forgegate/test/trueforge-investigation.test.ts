@@ -52,12 +52,14 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).not.toContain("Pass bounded literal excerpts");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Subagents may use only bounded read-only forgegate-github MCP tools");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Create failure-mode-analyst only after invariant-analyst thread.done");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("include the exact validated invariant JSON in its input");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("pass the exact validated invariant JSON and repository capability map in its input");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Never run recursive repository scans");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("build a repository capability map from exact-SHA evidence");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("pass the exact validated invariant JSON and repository capability map");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Execute every accepted ScenarioPlan exactly once using a temporary runner generated from that plan");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("without injected faults");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Reuse that exact baseline measurement set as expected in every ExperimentResult");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("You have no tools. Reason only from the supplied invariant JSON.");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("You have no tools. Reason only from the supplied invariant JSON and repository capability map.");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Every accepted invariant must have at least one ScenarioPlan");
   });
 

@@ -66,7 +66,7 @@ describe("ForgeGate agent specification", () => {
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Create failure-mode-analyst only after invariant-analyst has completed"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("generate a temporary scenario runner from the repository code"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Execute every accepted ScenarioPlan exactly once"));
-    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("You have no tools. Reason only from the supplied invariant JSON."));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("You have no tools. Reason only from the supplied invariant JSON and repository capability map."));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Every accepted invariant must have at least one ScenarioPlan"));
   });
 
