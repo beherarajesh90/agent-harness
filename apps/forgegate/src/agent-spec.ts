@@ -145,7 +145,9 @@ export const investigationResponseSchema = z
 const investigationResponseJsonSchema = z
   .object({
     decision: investigationDecisionSchema,
-    experimentResult: finalExperimentResultSchema.nullable(),
+    // Preserve the legacy property in the strict wire shape, but make the
+    // singular representation unusable. Runtime parsing remains compatible.
+    experimentResult: z.null(),
     experimentResults: z.array(finalExperimentResultSchema).min(1).nullable(),
     invariants: z.array(invariantCandidateSchema).min(1).nullable(),
     scenarios: z.array(finalScenarioPlanSchema).min(1).nullable(),

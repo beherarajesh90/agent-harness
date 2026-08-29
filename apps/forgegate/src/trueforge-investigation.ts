@@ -25,7 +25,7 @@ const continuationPrompts = [
 ] as const;
 const mcpRecoveryPrompt = "The previous MCP call used an invalid server or tool name. Do not call list_tools, get_tool_info, get_pr, list_changed_files, or changed_files. Use only forgegate-github tools named get_pull_request, get_pull_request_files, get_file, get_checks, get_qodo_reviews, and get_review_comments. Retry the required read now, starting with get_pull_request.";
 const sandboxRecoveryPrompt = "The previous sandbox command failed with a transient startup or process-bridge error. Retry the same sandbox command once now, then continue the investigation. Do not mark the investigation UNCERTAIN unless the retry also fails.";
-const decisionRepairInstruction = "Final response rejected: the evidence exists, but the decision bundle is incomplete. Return one complete JSON object containing the full invariants, scenarios, and experimentResults arrays plus decision. Use exactly one of experimentResult or experimentResults, never both. Copy the exact persisted evidence below; do not summarize, omit, or alter any array. Do not emit another partial BLOCKED or READY response.";
+const decisionRepairInstruction = "Final response rejected: the evidence exists, but the decision bundle is incomplete. Return one complete JSON object containing the full invariants, scenarios, and experimentResults arrays plus decision. Set experimentResult to null; use experimentResults as the only result representation. Copy the exact persisted evidence below; do not summarize, omit, or alter any array. Do not emit another partial BLOCKED or READY response.";
 
 export function createTrueForgeInvestigationLauncher({
   modelName,
@@ -75,7 +75,7 @@ export function createTrueForgeInvestigationLauncher({
             "Use payment-lab:evidence as the ExperimentResult artifact link; never put an explanation or sentence in artifactLinks.",
             "Resolve master to its immutable SHA and run its baseline before PR checkout. Every ExperimentResult must include baselineSha for that master commit, use its measured counts as expected, and use PR-head adversarial counts as observed; mark verdict fail when the observed counts violate an accepted invariant.",
             "The final response must be a JSON object with a decision field. The final decision response must include invariants, scenarios, experimentResults, and decision; persisted artifacts cannot substitute for omitted fields. For READY or BLOCKED include complete consistent evidence; for UNCERTAIN include only evidence actually obtained and omit unavailable fields. Never invent missing artifacts.",
-            "Use exactly one of experimentResult or experimentResults, never both. Prefer experimentResults for the complete final bundle.",
+            "Set experimentResult to null and use experimentResults as the only result representation; never return a singular experimentResult.",
             "Completion predicate: do not emit a final response until all required reads, two analyst outputs, baseline, adversarial experiment, schema validation, and decision are present; after every tool response issue the next required tool call.",
             "Validate both artifact types against the ForgeGate schemas; reject prose-only or stale-SHA artifacts.",
             "Artifact contract: evidence objects use sha (not testedSha); ScenarioPlan injectedFaults is string[] and expectedOutcome is a string; return raw JSON without markdown fences.",
@@ -270,7 +270,7 @@ function incompleteExperimentPrompt(events: InvestigationEvent[]) {
     .map((scenario) => scenario.scenarioId)
     .filter((scenarioId): scenarioId is string => typeof scenarioId === "string");
   const missing = missingIds.length > 0 ? ` Missing scenario IDs: ${missingIds.join(", ")}.` : ` ${scenarios.length - results.length} scenario result(s) are still missing.`;
-  return `${continuationPrompts[2]}${missing} Return one result per missing scenario and copy each exact scenarioId into its ExperimentResult. Use exactly one of experimentResult or experimentResults, never both; prefer experimentResults.`;
+  return `${continuationPrompts[2]}${missing} Return one result per missing scenario in experimentResults and copy each exact scenarioId. Set experimentResult to null; never return a singular experimentResult.`;
 }
 
 function scenarioMatchesResult(scenario: Record<string, unknown>, result: Record<string, unknown>) {

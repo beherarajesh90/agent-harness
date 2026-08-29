@@ -41,7 +41,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Use cwd / for sandbox commands; /workspace does not exist");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Evidence reference sha must equal the exact PR head commit SHA");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("The final decision response must include invariants, scenarios, experimentResults, and decision");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Use exactly one of experimentResult or experimentResults, never both");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Set experimentResult to null");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Subagents receive the repository, PR URL, exact head SHA");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("must fetch only approved evidence through read-only MCP calls");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).not.toContain("Pass bounded literal excerpts");
@@ -156,7 +156,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
 
     expect(createTurn).toHaveBeenCalledOnce();
     expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Phase EXPERIMENT");
-    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Use exactly one of experimentResult or experimentResults, never both");
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Set experimentResult to null");
   });
 
   it("does not select DECISION for an inconsistent complete artifact set", async () => {
