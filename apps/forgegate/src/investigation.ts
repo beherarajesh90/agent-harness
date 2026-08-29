@@ -85,7 +85,8 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
     return true;
   }).sort((left, right) => left.sequence - right.sequence));
   const trustedHeadSha = findPullRequestHeadSha(events);
-  const deduplicated = deduplicateArtifacts(events.flatMap((event) => artifactFromPayload(event.payload, trustedHeadSha)));
+  const baselineSha = findBaselineSha(events);
+  const deduplicated = deduplicateArtifacts(events.flatMap((event) => artifactFromPayload(event.payload, trustedHeadSha, baselineSha)));
   const artifacts = retainAcceptedScenarioResults(deduplicated.artifacts);
   const accepted = deduplicateArtifacts(artifacts);
   const rejectedFinal = hasRejectedPrimaryFinal(events, trustedHeadSha);
@@ -99,7 +100,7 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const artifactTypes = new Set(artifacts.map((artifact) => artifact.type));
   const requiredArtifactTypes: InvestigationArtifact["type"][] = ["InvariantCandidate", "ScenarioPlan", "ExperimentResult"];
   const completeEvidence = !accepted.hasConflicts && !rejectedFinal && githubReadsComplete && sandboxSucceeded && !subagentToolUse && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts);
-  const reconciledFailure = hasRejectedCompleteEvidenceFinal(events, trustedHeadSha) && !accepted.hasConflicts && !subagentToolUse && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts) && hasFailedExperiment(artifacts);
+  const reconciledFailure = hasRejectedCompleteEvidenceFinal(events, trustedHeadSha) && !accepted.hasConflicts && githubReadsComplete && sandboxSucceeded && !subagentToolUse && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts) && hasFailedExperiment(artifacts);
   const decision = reportedDecision ?? (reconciledFailure ? "BLOCKED" : undefined);
   const subagentMcpFailure = hasSubagentMcpFailure(events);
   const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure || subagentToolUse ? "UNCERTAIN" : terminal ? (completeEvidence || reconciledFailure) && decision ? decision : "UNCERTAIN" : "RUNNING";
@@ -116,7 +117,7 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   };
 }
 
-function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: string): InvestigationArtifact[] {
+function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: string, baselineSha?: string): InvestigationArtifact[] {
   const bundle = readFinalBundle(payload, trustedHeadSha);
   if (bundle) {
     return [
@@ -129,11 +130,11 @@ function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: 
   if (wrapped.length > 0) return wrapped;
 
   const output = isRecord(payload.state) && isRecord(payload.state.output) ? payload.state.output : undefined;
-  const content = output?.content;
+  const content = typeof payload.content === "string" ? payload.content : output?.content;
   if (typeof content === "string") {
     const parsed = parseJson(content);
     if (isRecord(parsed) && ("invariants" in parsed || "scenarios" in parsed || "experimentResult" in parsed || "experimentResults" in parsed)) {
-      if (parsed.experimentResult !== undefined && parsed.experimentResults !== undefined) return [];
+      if (parsed.experimentResult !== undefined && parsed.experimentResult !== null && parsed.experimentResults !== undefined && parsed.experimentResults !== null) return [];
       const results = Array.isArray(parsed.experimentResults) ? parsed.experimentResults : parsed.experimentResult === undefined ? [] : [parsed.experimentResult];
       return [
         ...(Array.isArray(parsed.invariants) ? readArtifact("InvariantCandidate", parsed.invariants, trustedHeadSha) : []),
@@ -141,9 +142,48 @@ function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: 
         ...readArtifact("ExperimentResult", results, trustedHeadSha),
       ];
     }
+    const sandboxResults = readSandboxExperimentResults(parsed, trustedHeadSha, baselineSha);
+    if (sandboxResults.length > 0) return sandboxResults;
   }
   const type = payload.title === "invariant-analyst" ? "InvariantCandidate" : payload.title === "failure-mode-analyst" ? "ScenarioPlan" : undefined;
   return type && typeof content === "string" ? readArtifact(type, parseJson(content), trustedHeadSha) : [];
+}
+
+function findBaselineSha(events: HarnessEvent[]) {
+  for (const event of events) {
+    if (event.type !== "tool.response") continue;
+    const parsed = typeof event.payload.content === "string" ? parseJson(event.payload.content) : undefined;
+    if (!isRecord(parsed)) continue;
+    const base = isRecord(parsed.base) ? parsed.base.sha : parsed.base_sha;
+    if (typeof base === "string" && /^[a-f0-9]{40}$/.test(base)) return base;
+  }
+  return undefined;
+}
+
+function readSandboxExperimentResults(payload: unknown, testedSha?: string, baselineSha?: string): InvestigationArtifact[] {
+  if (!isRecord(payload) || payload.success !== true || !isRecord(payload.response) || payload.response.exitCode !== 0 || typeof payload.response.result !== "string" || !baselineSha || !testedSha) return [];
+  const parsed = parseJson(payload.response.result);
+  if (!Array.isArray(parsed)) return [];
+  return parsed.flatMap((candidate) => {
+    if (!isRecord(candidate)) return [];
+    const result = {
+      artifactLinks: candidate.artifactLinks,
+      baselineSha,
+      expected: candidate.expected,
+      observed: isRecord(candidate.observed) ? {
+        charges: candidate.observed.charges,
+        intents: candidate.observed.intents,
+        ledgerEntries: candidate.observed.ledgerEntries,
+      } : candidate.observed,
+      repetitions: candidate.repetitions ?? 1,
+      scenarioId: candidate.scenarioId,
+      seed: candidate.seed,
+      testedSha: candidate.testedSha,
+      verdict: candidate.verdict,
+    };
+    const validated = experimentResultSchema.safeParse(result);
+    return validated.success && validated.data.testedSha === testedSha ? [{ data: validated.data, type: "ExperimentResult" as const }] : [];
+  });
 }
 
 function deduplicateArtifacts(artifacts: InvestigationArtifact[]) {
@@ -278,7 +318,7 @@ function hasFailedExperiment(artifacts: InvestigationArtifact[]) {
 
 function hasRequiredGitHubReads(events: HarnessEvent[], trustedHeadSha: string | undefined) {
   const { calls, sawForgeGateCall, sawToolCallMetadata } = primaryGithubToolCalls(events);
-  if (!sawToolCallMetadata) return true;
+  if (!sawToolCallMetadata) return !events.some((event) => isPrimaryAgentThread(event) && event.type === "model.message");
   if (!sawForgeGateCall) return false;
 
   const completedTools = new Set<string>();
@@ -319,9 +359,12 @@ function primaryGithubToolCalls(events: HarnessEvent[]) {
 }
 
 function isSuccessfulToolResponse(payload: Record<string, unknown>) {
+  if (payload.isError === true) return false;
   if (typeof payload.content !== "string") return false;
   const parsed = parseJson(payload.content);
-  return !isRecord(parsed) || !("error" in parsed);
+  if (!isRecord(parsed) || "error" in parsed) return false;
+  if ("success" in parsed) return parsed.success === true;
+  return isRecord(payload.structuredContent);
 }
 
 function latestSandboxCommandSucceeded(events: HarnessEvent[]) {

@@ -55,6 +55,40 @@ describe("investigation control plane", () => {
     expect(snapshot.artifacts).toEqual([{ data: { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "payment-one-charge", ordering: ["charge", "timeout"], seed: 42, testedSha: "a".repeat(40) }, type: "ScenarioPlan" }]);
   });
 
+  it("projects validated sandbox result arrays as experiment artifacts", () => {
+    const testedSha = "a".repeat(40);
+    const baselineSha = "b".repeat(40);
+    const result = {
+      artifactLinks: ["payment-lab:evidence"],
+      expected: { charges: 1, intents: 1, ledgerEntries: 1 },
+      observed: { charges: 2, intents: 1, ledgerEntries: 1 },
+      scenarioId: "s1",
+      seed: 1,
+      testedSha,
+      verdict: "fail",
+    };
+    const snapshot = projectInvestigation("session-1", "url", [
+      { event: { content: JSON.stringify({ base: { sha: baselineSha }, head: { sha: testedSha } }), type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ScenarioPlan", artifact: { expectedOutcome: "duplicate charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha }, type: "tool.response" }, turnId: "turn-1" },
+      { event: { content: JSON.stringify({ success: true, response: { exitCode: 0, result: JSON.stringify([result]) } }), type: "tool.response" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.artifacts).toContainEqual({ type: "ExperimentResult", data: { ...result, baselineSha, repetitions: 1 } });
+  });
+
+  it("accepts a null singular result beside the plural result representation", () => {
+    const sha = "a".repeat(40);
+    const result = { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 2, intents: 1, ledgerEntries: 1 }, repetitions: 1, scenarioId: "s1", seed: 1, testedSha: sha, verdict: "fail" };
+    const invariant = { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha };
+    const scenario = { expectedOutcome: "duplicate charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha: sha };
+    const snapshot = projectInvestigation("session-1", "url", [
+      { event: { content: JSON.stringify({ head: { sha } }), type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "BLOCKED", experimentResult: null, experimentResults: [result], invariants: [invariant], scenarios: [scenario] }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.artifacts).toContainEqual({ type: "ExperimentResult", data: result });
+  });
+
   it("extracts and validates analyst JSON from completed thread output", () => {
     const sha = "a".repeat(40);
     const snapshot = projectInvestigation("session-1", "url", [
@@ -166,7 +200,7 @@ describe("investigation control plane", () => {
       const id = `call-${index}`;
       return [
         { event: { sequence: index * 2 + 1, type: "model.message", usage: { toolCalls: [{ function: { arguments: JSON.stringify({ input, mcp_server: "forgegate-github", tool_name: toolName }), name: "call_tool" }, id }] } }, turnId: "turn-1" },
-        { event: { content: index === 0 ? JSON.stringify({ head: { sha } }) : "[]", sequence: index * 2 + 2, toolCallId: id, type: "tool.response" }, turnId: "turn-1" },
+        { event: { content: index === 0 ? JSON.stringify({ head: { sha }, success: true }) : JSON.stringify({ response: {}, success: true }), sequence: index * 2 + 2, toolCallId: id, type: "tool.response" }, turnId: "turn-1" },
       ];
     });
     const snapshot = projectInvestigation("session-1", "url", [
@@ -283,9 +317,84 @@ describe("investigation control plane", () => {
       { event: { artifactType: "InvariantCandidate", artifact: invariant, sequence: 2, type: "tool.response" }, turnId: "turn-1" },
       { event: { artifactType: "ScenarioPlan", artifact: scenario, sequence: 3, type: "tool.response" }, turnId: "turn-1" },
       { event: { artifactType: "ExperimentResult", artifact: result, sequence: 4, type: "tool.response" }, turnId: "turn-1" },
-      { event: { state: { output: { content: JSON.stringify(rejected) } }, sequence: 5, type: "turn.done" }, turnId: "turn-1" },
+      { event: { sequence: 5, type: "model.message" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify(rejected) } }, sequence: 6, type: "turn.done" }, turnId: "turn-1" },
       { event: { state: { status: "done" }, sequence: 6, type: "turn.done" }, turnId: "turn-2" },
     ]);
+
+    expect(snapshot.decision).toBeUndefined();
+    expect(snapshot.status).toBe("UNCERTAIN");
+  });
+
+  it("does not reconcile BLOCKED when required reads or sandbox execution failed", () => {
+    const sha = "a".repeat(40);
+    const invariant = { confidence: 1, evidence: [{ endLine: 2, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 4, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 3 }], id: "i1", statement: "one charge", testedSha: sha };
+    const scenario = { expectedOutcome: "duplicate charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge", "retry"], scenarioId: "s1", seed: 1, testedSha: sha };
+    const result = { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 2, intents: 1, ledgerEntries: 1 }, repetitions: 1, scenarioId: "s1", seed: 1, testedSha: sha, verdict: "fail" as const };
+    const rejected = { decision: "BLOCKED", experimentResult: result, invariants: [invariant], scenarios: [scenario], experimentResults: [result] };
+    const events = [
+      { event: { content: JSON.stringify({ head: { sha } }), sequence: 1, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "InvariantCandidate", artifact: invariant, sequence: 2, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ScenarioPlan", artifact: scenario, sequence: 3, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: result, sequence: 4, type: "tool.response" }, turnId: "turn-1" },
+      { event: { content: JSON.stringify({ response: { exitCode: 1 } }), sequence: 5, type: "tool.response" }, turnId: "turn-1" },
+      { event: { usage: { toolCalls: [{ id: "get-file", function: { arguments: JSON.stringify({ input: { path: "apps/forgegate/src/payment-lab.ts", ref: sha }, mcp_server: "forgegate-github", tool_name: "get_file" }), name: "call_tool" } }] }, sequence: 6, type: "model.message" }, turnId: "turn-1" },
+      { event: { content: JSON.stringify({ error: "read failed" }), toolCallId: "get-file", sequence: 7, type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify(rejected) } }, sequence: 8, type: "turn.done" }, turnId: "turn-1" },
+    ];
+
+    const snapshot = projectInvestigation("session-1", "url", events);
+
+    expect(snapshot.decision).toBeUndefined();
+    expect(snapshot.status).toBe("UNCERTAIN");
+  });
+
+  it("does not reconcile BLOCKED without auditable GitHub reads", () => {
+    const sha = "a".repeat(40);
+    const invariant = { confidence: 1, evidence: [{ endLine: 2, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 4, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 3 }], id: "i1", statement: "one charge", testedSha: sha };
+    const scenario = { expectedOutcome: "duplicate charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge", "retry"], scenarioId: "s1", seed: 1, testedSha: sha };
+    const result = { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 2, intents: 1, ledgerEntries: 1 }, repetitions: 1, scenarioId: "s1", seed: 1, testedSha: sha, verdict: "fail" as const };
+    const rejected = { decision: "BLOCKED", experimentResult: result, invariants: [invariant], scenarios: [scenario], experimentResults: [result] };
+
+    const snapshot = projectInvestigation("session-1", "url", [
+      { event: { content: JSON.stringify({ head: { sha } }), sequence: 1, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "InvariantCandidate", artifact: invariant, sequence: 2, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ScenarioPlan", artifact: scenario, sequence: 3, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: result, sequence: 4, type: "tool.response" }, turnId: "turn-1" },
+      { event: { sequence: 5, type: "model.message" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify(rejected) } }, sequence: 6, type: "turn.done" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.decision).toBeUndefined();
+    expect(snapshot.status).toBe("UNCERTAIN");
+  });
+
+  it("does not count failed GitHub responses as completed reads", () => {
+    const sha = "a".repeat(40);
+    const invariant = { confidence: 1, evidence: [{ endLine: 2, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 4, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 3 }], id: "i1", statement: "one charge", testedSha: sha };
+    const scenario = { expectedOutcome: "duplicate charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge", "retry"], scenarioId: "s1", seed: 1, testedSha: sha };
+    const result = { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 2, intents: 1, ledgerEntries: 1 }, repetitions: 1, scenarioId: "s1", seed: 1, testedSha: sha, verdict: "fail" as const };
+    const rejected = { decision: "BLOCKED", experimentResult: result, invariants: [invariant], scenarios: [scenario], experimentResults: [result] };
+    const calls = [
+      ["get_pull_request", { pull_number: 7 }],
+      ["get_pull_request_files", { pull_number: 7 }],
+      ["get_checks", { ref: sha }],
+      ["get_qodo_reviews", { pull_number: 7 }],
+      ["get_review_comments", { pull_number: 7 }],
+      ["get_file", { path: "apps/forgegate/src/payment-lab.ts", ref: sha }],
+      ["get_file", { path: "apps/forgegate/test/payment-lab.test.ts", ref: sha }],
+    ] as const;
+    const toolCalls = calls.map(([toolName, input], index) => ({ id: `call-${index}`, function: { arguments: JSON.stringify({ input, mcp_server: "forgegate-github", tool_name: toolName }), name: "call_tool" } }));
+    const events = [
+      { event: { usage: { toolCalls }, sequence: 1, type: "model.message" }, turnId: "turn-1" },
+      ...calls.map(([toolName, input], index) => ({ event: { content: toolName === "get_file" && input.path === "apps/forgegate/src/payment-lab.ts" ? JSON.stringify({ success: false, response: {} }) : JSON.stringify(toolName === "get_pull_request" ? { head: { sha } } : { success: true, response: {} }), isError: toolName === "get_file" && input.path === "apps/forgegate/src/payment-lab.ts", sequence: index + 2, toolCallId: `call-${index}`, type: "tool.response" }, turnId: "turn-1" })),
+      { event: { artifactType: "InvariantCandidate", artifact: invariant, sequence: 9, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ScenarioPlan", artifact: scenario, sequence: 10, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: result, sequence: 11, type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify(rejected) } }, sequence: 12, type: "turn.done" }, turnId: "turn-1" },
+    ];
+
+    const snapshot = projectInvestigation("session-1", "url", events);
 
     expect(snapshot.decision).toBeUndefined();
     expect(snapshot.status).toBe("UNCERTAIN");

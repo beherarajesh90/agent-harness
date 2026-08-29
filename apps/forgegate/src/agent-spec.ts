@@ -4,6 +4,7 @@ import { z } from "zod";
 type AgentSpec = TrueForgeApi.AgentSpec;
 
 const shaSchema = z.string().regex(/^[a-f0-9]{40}$/, "expected a commit SHA");
+const identifierSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/, "expected a short identifier");
 const allowedEvidencePaths = new Set(["apps/forgegate/src/payment-lab.ts", "apps/forgegate/test/payment-lab.test.ts"]);
 export const maxScenarioCount = 8;
 
@@ -30,7 +31,7 @@ export const invariantCandidateSchema = z
   .object({
     confidence: z.number().min(0).max(1),
     evidence: z.array(evidenceReferenceSchema).min(2),
-    id: z.string().min(1),
+    id: identifierSchema,
     statement: z.string().min(1),
     testedSha: shaSchema,
   })
@@ -62,7 +63,7 @@ export const scenarioPlanSchema = z
   .object({
     expectedOutcome: z.string().min(1),
     injectedFaults: z.array(z.string().min(1)).min(1),
-    invariantId: z.string().min(1),
+    invariantId: identifierSchema,
     ordering: z.array(z.string().min(1)).min(1),
     scenarioId: z.string().min(1).optional(),
     seed: z.number().int().nonnegative(),
@@ -105,13 +106,13 @@ const completeInvestigationResponseSchema = z.union([
   z.object({
     decision: z.enum(["BLOCKED", "READY"]),
     experimentResult: finalExperimentResultSchema,
-    experimentResults: z.never().optional(),
+    experimentResults: z.null().optional(),
     invariants: z.array(invariantCandidateSchema).min(1),
     scenarios: z.array(finalScenarioPlanSchema).min(1),
   }).strict(),
   z.object({
     decision: z.enum(["BLOCKED", "READY"]),
-    experimentResult: z.never().optional(),
+    experimentResult: z.null().optional(),
     experimentResults: z.array(finalExperimentResultSchema).min(1),
     invariants: z.array(invariantCandidateSchema).min(1),
     scenarios: z.array(finalScenarioPlanSchema).min(1),
@@ -121,7 +122,7 @@ const completeInvestigationResponseSchema = z.union([
 export const investigationResponseSchema = z
   .union([uncertainInvestigationResponseSchema, completeInvestigationResponseSchema])
   .superRefine((bundle, context) => {
-    if (bundle.experimentResult !== undefined && bundle.experimentResults !== undefined) {
+    if (bundle.experimentResult !== undefined && bundle.experimentResult !== null && bundle.experimentResults !== undefined && bundle.experimentResults !== null) {
       context.addIssue({ code: "custom", message: "choose either experimentResult or experimentResults" });
       return;
     }
@@ -259,6 +260,8 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "If partial valid artifacts already exist, continue the required phases to complete the evidence bundle before finalizing UNCERTAIN; use UNCERTAIN immediately only when no usable evidence exists or recovery is exhausted.",
       "A transient sandbox startup or process-bridge failure is recoverable: retry the same sandbox command once before deciding UNCERTAIN; only stop as UNCERTAIN when the retry also fails or required evidence remains unavailable.",
       "The primary agent must complete all GitHub MCP reads and sandbox execution before spawning subagents. Pass the collected evidence to them; subagents must not call MCP or sandbox tools.",
+      "Subagents have no tool authority: they must not call MCP, exec, sandbox, patch, or any other tool, and must return JSON only from evidence in their input.",
+      "Create failure-mode-analyst only after invariant-analyst has completed; include the exact validated invariant JSON in the second analyst input, never a placeholder or an instruction to discover it.",
       "Use cwd / for sandbox commands; /workspace does not exist in the Daytona image. Clone into /agent-harness or another path under /. For payment-lab experiments, run pnpm install --frozen-lockfile, then pnpm --filter @forgegate/app build and use node --input-type=module to import ./apps/forgegate/dist/src/payment-lab.js. Never use pnpm exec tsx, npx ts-node, or ts-node.",
       "Spawn exactly two visible dynamic subagents: invariant-analyst and failure-mode-analyst.",
       "The invariant-analyst must return one or more InvariantCandidate JSON objects with id, statement, confidence, testedSha, and at least two distinct evidence references containing path, startLine, endLine, and the same testedSha.",

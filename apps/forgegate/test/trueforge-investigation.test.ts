@@ -41,6 +41,15 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Use cwd / for sandbox commands; /workspace does not exist");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Evidence reference sha must equal the exact PR head commit SHA");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("The final decision response must include invariants, scenarios, experimentResults, and decision");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Use exactly one of experimentResult or experimentResults, never both");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Never pass [content omitted for brevity] to a subagent");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Pass bounded literal excerpts");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("payment-lab.ts lines 125-170");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("payment-lab.test.ts lines 110-180");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("12,000 characters");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Subagents must not call MCP, exec, sandbox, or any other tool");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Create failure-mode-analyst only after invariant-analyst thread.done");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("include the exact validated invariant JSON in its input");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Never run grep -R, find, or any recursive repository scan");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("timeout-after-charge and unsafe-retry");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("pnpm exec tsx");
@@ -149,6 +158,30 @@ describe("createTrueForgeInvestigationLauncher", () => {
 
     expect(createTurn).toHaveBeenCalledOnce();
     expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Phase EXPERIMENT");
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Use exactly one of experimentResult or experimentResults, never both");
+  });
+
+  it("does not select DECISION for an inconsistent complete artifact set", async () => {
+    const sha = "a".repeat(40);
+    const artifact = (artifactType: string, value: Record<string, unknown>) => ({ event: { artifactType, artifact: value, type: "tool.response" }, turnId: "turn-1" });
+    const createTurn = vi.fn(async (sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void sessionId;
+      void request;
+      return { data: { id: "turn-2" } };
+    });
+    const listEvents = async () => [
+      artifact("InvariantCandidate", { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha }),
+      artifact("ScenarioPlan", { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha: sha }),
+      artifact("ExperimentResult", { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 1, intents: 1, ledgerEntries: 1 }, repetitions: 1, scenarioId: "s1", seed: 2, testedSha: sha, verdict: "pass" }),
+      { event: { state: { status: "done" }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const controller = createInvestigationPhaseController({ createTurn, listEvents, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Evidence consistency failed");
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).not.toContain("Phase DECISION");
   });
 
   it("continues to hypotheses when incomplete final output already contains invariants", async () => {
@@ -160,7 +193,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
       void _sessionId;
       events = [{ event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-2" }];
       expect(request.input[0]?.content).toContain("Phase HYPOTHESES");
-      expect(request.input[0]?.content).toContain("Accepted invariant IDs: i1");
+      expect(request.input[0]?.content).toContain('Accepted invariant IDs (JSON data): <invariant-ids>["i1"]</invariant-ids>');
       return { data: { id: "turn-2" } };
     });
     const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
