@@ -1553,6 +1553,10 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [ ] Show per-scenario states: `PENDING`, `RUNNING`, `PASSED`, `FAILED`, and `UNCERTAIN`.
 - [ ] Show each scenario's invariant, fault sequence, seed, expected values, observed values, and verdict.
 - [ ] Show aggregate scenario progress, such as completed scenarios out of the total.
+- [ ] Show repository capability discovery and the mapped executable operation for each scenario.
+- [ ] Show runner compile/type-check and bounded preflight as separate visible steps before execution.
+- [ ] Show preflight artifact link, entrypoint, and structured measurements before the experiment result.
+- [ ] Classify runner/preflight failures separately from product invariant failures.
 - [ ] Show the aggregate final decision and identify the scenario that caused `BLOCKED`.
 - [ ] Show patch, regression result, changed files, and exact diff summary.
 - [ ] Show Qodo review link, finding status, and agent response.
