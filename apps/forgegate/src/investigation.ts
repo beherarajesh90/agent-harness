@@ -582,7 +582,7 @@ function toHarnessEvent(sessionId: string, item: TrueForgeEventItem, sequence: n
     payload: sanitizePayload(event),
     sequence: trueForgeSequence,
     sessionId,
-    source: typeof event.threadId === "string" && event.threadId !== "main" && type.startsWith("tool.") ? "SUBAGENT" : source,
+    source: typeof event.threadId === "string" && event.threadId !== "main" ? "SUBAGENT" : source,
     stage: stageFor(event),
     ...(typeof event.threadId === "string" ? { threadId: event.threadId } : {}),
     turnId: item.turnId,

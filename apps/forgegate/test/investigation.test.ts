@@ -32,6 +32,16 @@ describe("investigation control plane", () => {
     expect(snapshot.events.map((event) => event.stage)).toEqual(["INVARIANTS", "INVARIANTS", "HYPOTHESES", "HYPOTHESES", "EXPERIMENT", "TESTING"]);
   });
 
+  it("labels every threaded analyst event as a subagent event", () => {
+    const snapshot = projectInvestigation("session-1", "url", [
+      { event: { sequence: 1, threadId: "invariant-thread", type: "thread.created" }, turnId: "turn-1" },
+      { event: { sequence: 2, threadId: "invariant-thread", type: "model.message", content: "analysis" }, turnId: "turn-1" },
+      { event: { sequence: 3, threadId: "invariant-thread", type: "tool.response", content: "read result" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.events.map((event) => event.source)).toEqual(["SUBAGENT", "SUBAGENT", "SUBAGENT"]);
+  });
+
   it("does not project READY after a subagent attempts an invalid MCP call", () => {
     const sha = "a".repeat(40);
     const items = [
