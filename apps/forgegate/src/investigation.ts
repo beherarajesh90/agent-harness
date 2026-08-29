@@ -50,8 +50,6 @@ export type InvestigationArtifact = {
 
 const requiredGitHubReadTools = ["get_pull_request", "get_pull_request_files", "get_checks", "get_qodo_reviews", "get_review_comments"] as const;
 const requiredEvidencePaths = ["apps/forgegate/src/payment-lab.ts", "apps/forgegate/test/payment-lab.test.ts"] as const;
-const allowedSubagentMcpTools = new Set(["get_pull_request", "get_pull_request_files", "get_file", "get_checks", "get_qodo_reviews", "get_review_comments"]);
-
 type TrueForgeEventItem = { event: Record<string, unknown>; turnId: string };
 type InvestigationRecord = { pullRequestUrl: string; turnId: string };
 type LaunchResult = { sessionId: string; turnId: string };
@@ -380,19 +378,24 @@ function latestSandboxCommandSucceeded(events: HarnessEvent[]) {
 
 function hasForbiddenSubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string) {
   const calls = new Map<string, boolean>();
+  const roles = new Map<string, "invariant" | "failure">();
   for (const event of events) {
+    if (event.type === "thread.created" && event.threadId) {
+      if (event.payload.title === "invariant-analyst") roles.set(event.threadId, "invariant");
+      if (event.payload.title === "failure-mode-analyst") roles.set(event.threadId, "failure");
+    }
     if (isPrimaryAgentThread(event)) continue;
+    const role = event.threadId ? roles.get(event.threadId) : undefined;
     const usage = isRecord(event.payload.usage) ? event.payload.usage : undefined;
     const toolCalls = Array.isArray(event.payload.toolCalls) ? event.payload.toolCalls : usage?.toolCalls;
     if (Array.isArray(toolCalls)) {
       for (const call of toolCalls) {
         if (!isRecord(call) || typeof call.id !== "string" || !isRecord(call.function)) return true;
         const args = typeof call.function.arguments === "string" ? parseJson(call.function.arguments) : call.function.arguments;
-        const allowed = call.function.name === "call_tool"
+        const allowed = role === "invariant" && call.function.name === "call_tool"
           ? isRecord(args)
             && args.mcp_server === "forgegate-github"
-            && typeof args.tool_name === "string"
-            && allowedSubagentMcpTools.has(args.tool_name)
+            && args.tool_name === "get_file"
             && isRecord(args.input)
             && isAllowedSubagentRead(args.tool_name, args.input, trustedHeadSha)
           : false;

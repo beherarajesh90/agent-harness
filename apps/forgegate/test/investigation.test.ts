@@ -223,6 +223,7 @@ describe("investigation control plane", () => {
     const finalDecision = { event: { sequence: 18, state: { output: { content: JSON.stringify({ decision: "READY", invariants: [invariant], scenarios: [scenario], experimentResults: [result] }) } }, type: "turn.done" }, turnId: "turn-1" };
     const acceptedSnapshot = projectInvestigation("session-1", "url", [
       ...events,
+      { event: { sequence: 15, threadId: "subagent-1", title: "invariant-analyst", type: "thread.created" }, turnId: "turn-1" },
       ...subagentEvents.slice(0, 2),
       finalDecision,
     ]);
