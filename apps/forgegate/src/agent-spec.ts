@@ -190,6 +190,21 @@ const wireFinalExperimentResultSchema = z
   })
   .strict();
 
+// Keep the strict final envelope free of the analyst-only arbitrary input map.
+// The accepted ScenarioPlan artifact retains execution details for the runner;
+// the final aggregate only needs the validated scenario identity and schedule.
+const wireFinalScenarioPlanSchema = z
+  .object({
+    expectedOutcome: z.string(),
+    injectedFaults: z.array(z.string()),
+    invariantId: z.string(),
+    ordering: z.array(z.string()),
+    scenarioId: z.string(),
+    seed: z.number().int(),
+    testedSha: z.string(),
+  })
+  .strict();
+
 const investigationResponseJsonSchema = z
   .object({
     decision: investigationDecisionSchema,
@@ -200,7 +215,7 @@ const investigationResponseJsonSchema = z
     // `anyOf`; empty arrays represent unavailable evidence on the wire.
     experimentResults: z.array(wireFinalExperimentResultSchema),
     invariants: z.array(invariantCandidateSchema),
-    scenarios: z.array(finalScenarioPlanSchema),
+    scenarios: z.array(wireFinalScenarioPlanSchema),
   })
   .strict();
 
