@@ -50,6 +50,7 @@ export type InvestigationArtifact = {
 
 const requiredGitHubReadTools = ["get_pull_request", "get_pull_request_files", "get_checks", "get_qodo_reviews", "get_review_comments"] as const;
 const requiredEvidencePaths = ["apps/forgegate/src/payment-lab.ts", "apps/forgegate/test/payment-lab.test.ts"] as const;
+const allowedSubagentMcpTools = new Set(["get_pull_request", "get_pull_request_files", "get_file", "get_checks", "get_qodo_reviews", "get_review_comments"]);
 
 type TrueForgeEventItem = { event: Record<string, unknown>; turnId: string };
 type InvestigationRecord = { pullRequestUrl: string; turnId: string };
@@ -92,18 +93,18 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const rejectedFinal = hasRejectedPrimaryFinal(events, trustedHeadSha);
   const githubReadsComplete = hasRequiredGitHubReads(events, trustedHeadSha);
   const sandboxSucceeded = latestSandboxCommandSucceeded(events);
-  const subagentToolUse = hasSubagentToolUse(events);
-  const reportedDecision = findFinalDecision(events, trustedHeadSha, artifacts, accepted.hasConflicts || rejectedFinal || !githubReadsComplete || !sandboxSucceeded || subagentToolUse);
+  const forbiddenSubagentToolUse = hasForbiddenSubagentToolUse(events);
+  const reportedDecision = findFinalDecision(events, trustedHeadSha, artifacts, accepted.hasConflicts || rejectedFinal || !githubReadsComplete || !sandboxSucceeded || forbiddenSubagentToolUse);
   const last = events.at(-1);
   const terminal = last ? isPrimaryAgentTurn(last) : false;
   const state = last?.payload.state as { status?: string } | undefined;
   const artifactTypes = new Set(artifacts.map((artifact) => artifact.type));
   const requiredArtifactTypes: InvestigationArtifact["type"][] = ["InvariantCandidate", "ScenarioPlan", "ExperimentResult"];
-  const completeEvidence = !accepted.hasConflicts && !rejectedFinal && githubReadsComplete && sandboxSucceeded && !subagentToolUse && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts);
-  const reconciledFailure = hasRejectedCompleteEvidenceFinal(events, trustedHeadSha) && !accepted.hasConflicts && githubReadsComplete && sandboxSucceeded && !subagentToolUse && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts) && hasFailedExperiment(artifacts);
+  const completeEvidence = !accepted.hasConflicts && !rejectedFinal && githubReadsComplete && sandboxSucceeded && !forbiddenSubagentToolUse && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts);
+  const reconciledFailure = hasRejectedCompleteEvidenceFinal(events, trustedHeadSha) && !accepted.hasConflicts && githubReadsComplete && sandboxSucceeded && !forbiddenSubagentToolUse && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts) && hasFailedExperiment(artifacts);
   const decision = reportedDecision ?? (reconciledFailure ? "BLOCKED" : undefined);
   const subagentMcpFailure = hasSubagentMcpFailure(events);
-  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure || subagentToolUse ? "UNCERTAIN" : terminal ? (completeEvidence || reconciledFailure) && decision ? decision : "UNCERTAIN" : "RUNNING";
+  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure || forbiddenSubagentToolUse ? "UNCERTAIN" : terminal ? (completeEvidence || reconciledFailure) && decision ? decision : "UNCERTAIN" : "RUNNING";
 
   return {
     artifacts,
@@ -377,16 +378,34 @@ function latestSandboxCommandSucceeded(events: HarnessEvent[]) {
   return true;
 }
 
-function hasSubagentToolUse(events: HarnessEvent[]) {
-  return events.some((event) => {
-    if (isPrimaryAgentThread(event)) return false;
-    if (event.type === "tool.response" && typeof event.payload.toolCallId === "string") return true;
+function hasForbiddenSubagentToolUse(events: HarnessEvent[]) {
+  const calls = new Map<string, boolean>();
+  for (const event of events) {
+    if (isPrimaryAgentThread(event)) continue;
     const usage = isRecord(event.payload.usage) ? event.payload.usage : undefined;
-    if (Array.isArray(usage?.toolCalls) && usage.toolCalls.length > 0) return true;
-    if (event.type !== "tool.response" || typeof event.payload.content !== "string") return false;
+    if (Array.isArray(usage?.toolCalls)) {
+      for (const call of usage.toolCalls) {
+        if (!isRecord(call) || typeof call.id !== "string" || !isRecord(call.function) || call.function.name !== "call_tool") return true;
+        const args = typeof call.function.arguments === "string" ? parseJson(call.function.arguments) : call.function.arguments;
+        const allowed = isRecord(args)
+          && args.mcp_server === "forgegate-github"
+          && typeof args.tool_name === "string"
+          && allowedSubagentMcpTools.has(args.tool_name)
+          && isRecord(args.input);
+        calls.set(call.id, allowed);
+        if (!allowed) return true;
+      }
+    }
+    if (event.type !== "tool.response") continue;
+    if (typeof event.payload.toolCallId === "string") {
+      if (!calls.get(event.payload.toolCallId)) return true;
+      continue;
+    }
+    if (typeof event.payload.content !== "string") continue;
     const response = parseJson(event.payload.content);
-    return isRecord(response) && isRecord(response.response) && typeof response.response.exitCode === "number";
-  });
+    if (isRecord(response) && isRecord(response.response) && typeof response.response.exitCode === "number") return true;
+  }
+  return false;
 }
 
 function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string): InvestigationArtifact[] {

@@ -203,9 +203,15 @@ describe("investigation control plane", () => {
         { event: { content: index === 0 ? JSON.stringify({ head: { sha }, success: true }) : JSON.stringify({ response: {}, success: true }), sequence: index * 2 + 2, toolCallId: id, type: "tool.response" }, turnId: "turn-1" },
       ];
     });
+    const subagentCallId = "subagent-read";
+    const subagentEvents = [
+      { event: { sequence: 16, threadId: "subagent-1", type: "model.message", usage: { toolCalls: [{ function: { arguments: JSON.stringify({ input: { path: "apps/forgegate/src/payment-lab.ts", ref: sha }, mcp_server: "forgegate-github", tool_name: "get_file" }), name: "call_tool" }, id: subagentCallId }] } }, turnId: "turn-1" },
+      { event: { content: JSON.stringify({ success: true, content: "supplemental evidence" }), sequence: 17, threadId: "subagent-1", toolCallId: subagentCallId, type: "tool.response" }, turnId: "turn-1" },
+    ];
     const snapshot = projectInvestigation("session-1", "url", [
       ...events,
-      { event: { sequence: 15, state: { output: { content: JSON.stringify({ decision: "READY", invariants: [invariant], scenarios: [scenario], experimentResults: [result] }) } }, type: "turn.done" }, turnId: "turn-1" },
+      ...subagentEvents,
+      { event: { sequence: 18, state: { output: { content: JSON.stringify({ decision: "READY", invariants: [invariant], scenarios: [scenario], experimentResults: [result] }) } }, type: "turn.done" }, turnId: "turn-1" },
     ]);
 
     expect(snapshot.status).toBe("READY");
