@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createForgeGateAgentSpec, deduplicateScenarioPlans, experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, parsePreflightResult, scenarioPlanSchema, validateAnalystArtifacts, validateExperimentPreflight, validateInvestigationArtifacts } from "../src/agent-spec.js";
+import { createForgeGateAgentSpec, deduplicateScenarioPlans, executableScenarioPlanSchema, experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, parsePreflightResult, scenarioPlanSchema, validateAnalystArtifacts, validateExperimentPreflight, validateInvestigationArtifacts } from "../src/agent-spec.js";
 
 describe("ForgeGate agent specification", () => {
   it("enables only the configured read-only GitHub tools", () => {
@@ -117,6 +117,14 @@ describe("ForgeGate agent specification", () => {
     expect(scenarioPlanSchema.safeParse({ ...scenario, execution: { ...scenario.execution, entrypoint: "" } }).success).toBe(false);
     expect(scenarioPlanSchema.safeParse({ ...scenario, seed: 1.5 }).success).toBe(false);
     expect(scenarioPlanSchema.safeParse({ ...scenario, injectedFaults: [] }).success).toBe(false);
+  });
+
+  it("requires execution mapping for analyst scenarios while retaining base-schema compatibility", () => {
+    const scenario = { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], seed: 1, testedSha: "a".repeat(40) };
+
+    expect(scenarioPlanSchema.safeParse(scenario).success).toBe(true);
+    expect(executableScenarioPlanSchema.safeParse(scenario).success).toBe(false);
+    expect(executableScenarioPlanSchema.safeParse({ ...scenario, execution: { assertions: ["charges === 1"], entrypoint: "processPayment", inputs: { amount: 500 } } }).success).toBe(true);
   });
 
   it("accepts generic numeric experiment measurements", () => {

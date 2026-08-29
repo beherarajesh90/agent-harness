@@ -234,6 +234,20 @@ describe("investigation control plane", () => {
     expect(snapshot.artifacts[0]!.type).toBe("InvariantCandidate");
   });
 
+  it("rejects failure analyst scenarios without executable mapping", () => {
+    const sha = "a".repeat(40);
+    const snapshot = projectInvestigation("session-1", "url", [{
+      event: {
+        state: { output: { content: JSON.stringify([{ expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "one-charge", ordering: ["charge"], seed: 1, testedSha: sha }]) } },
+        title: "failure-mode-analyst",
+        type: "thread.done",
+      },
+      turnId: "turn-1",
+    }]);
+
+    expect(snapshot.artifacts).toEqual([]);
+  });
+
   it("does not project READY before a primary-agent decision", () => {
     const sha = "a".repeat(40);
     const items = [

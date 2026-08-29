@@ -1,4 +1,4 @@
-import { experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, scenarioPlanSchema, validateInvestigationArtifacts } from "./agent-spec.js";
+import { executableScenarioPlanSchema, experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, scenarioPlanSchema, validateInvestigationArtifacts } from "./agent-spec.js";
 import type { InvestigationDecision } from "./agent-spec.js";
 import { isDeepStrictEqual } from "node:util";
 
@@ -155,7 +155,7 @@ function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: 
     if (sandboxResults.length > 0) return sandboxResults;
   }
   const type = payload.title === "invariant-analyst" ? "InvariantCandidate" : payload.title === "failure-mode-analyst" ? "ScenarioPlan" : undefined;
-  return type && typeof content === "string" ? readArtifact(type, parseJson(content), trustedHeadSha) : [];
+  return type && typeof content === "string" ? readArtifact(type, parseJson(content), trustedHeadSha, type === "ScenarioPlan") : [];
 }
 
 function findBaselineSha(events: HarnessEvent[]) {
@@ -595,13 +595,13 @@ function isRepositoryPath(value: unknown): value is string {
     && !value.split("/").includes("..");
 }
 
-function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string): InvestigationArtifact[] {
+function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string, requireExecutableScenario = false): InvestigationArtifact[] {
   if (type !== "ExperimentResult" && type !== "InvariantCandidate" && type !== "ScenarioPlan") return [];
   const values = Array.isArray(value) ? value : [value];
   return values.flatMap((candidate) => {
     if (!isRecord(candidate)) return [];
     if (type === "InvariantCandidate" && !invariantCandidateSchema.safeParse(candidate).success) return [];
-    if (type === "ScenarioPlan" && !scenarioPlanSchema.safeParse(candidate).success) return [];
+    if (type === "ScenarioPlan" && !(requireExecutableScenario ? executableScenarioPlanSchema : scenarioPlanSchema).safeParse(candidate).success) return [];
     if (type === "ExperimentResult" && !experimentResultSchema.safeParse(candidate).success) return [];
     if (trustedHeadSha && candidate.testedSha !== trustedHeadSha) return [];
     return [{ data: candidate, type }];

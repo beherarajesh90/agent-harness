@@ -101,6 +101,8 @@ export const scenarioPlanSchema = z
   .strict()
   .refine((scenario) => !JSON.stringify(scenario).match(/placeholder|unable to determine/i), "placeholder scenario is not evidence");
 
+export const executableScenarioPlanSchema = scenarioPlanSchema.required({ execution: true });
+
 export const experimentResultSchema = z
   .object({
     artifactLinks: z.array(z.string().min(1)).min(1),
