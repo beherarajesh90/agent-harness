@@ -191,10 +191,10 @@ export function deduplicateScenarioPlans(scenarios: ScenarioPlan[], maxScenarios
 
 export function validateInvestigationArtifacts(input: { decision?: unknown; invariants?: unknown; scenarios?: unknown; experimentResult?: unknown; experimentResults?: unknown }) {
   const { invariants, scenarios } = validateAnalystArtifacts({ invariants: input.invariants, scenarios: input.scenarios });
-  if (input.experimentResult !== undefined && input.experimentResults !== undefined) {
+  if (input.experimentResult !== undefined && input.experimentResult !== null && input.experimentResults !== undefined && input.experimentResults !== null) {
     throw new Error("choose either experimentResult or experimentResults");
   }
-  const experimentResults = z.array(experimentResultSchema).parse(input.experimentResults ?? (input.experimentResult === undefined ? [] : [input.experimentResult]));
+  const experimentResults = z.array(experimentResultSchema).parse(input.experimentResults ?? (input.experimentResult == null ? [] : [input.experimentResult]));
   if (experimentResults.length === 0) throw new Error("experiment results are required");
   const decision = input.decision === undefined ? undefined : investigationDecisionSchema.parse(input.decision);
   const testedSha = invariants[0]?.testedSha ?? scenarios[0]?.testedSha;
