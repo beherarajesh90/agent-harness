@@ -203,6 +203,19 @@ describe("investigation control plane", () => {
     expect(snapshot.artifacts).toContainEqual({ type: "ExperimentResult", data: result });
   });
 
+  it("projects strict wire-format measurements into an experiment result", () => {
+    const sha = "a".repeat(40);
+    const invariant = { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha };
+    const scenario = { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha: sha };
+    const result = { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: [{ name: "charges", value: 1 }, { name: "intents", value: 1 }, { name: "ledgerEntries", value: 1 }], observed: [{ name: "charges", value: 2 }, { name: "intents", value: 1 }, { name: "ledgerEntries", value: 1 }], repetitions: 1, scenarioId: "s1", seed: 1, testedSha: sha, verdict: "fail" };
+    const snapshot = projectInvestigation("session-1", "url", [
+      { event: { content: JSON.stringify({ head: { sha } }), type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "BLOCKED", experimentResult: null, experimentResults: [result], invariants: [invariant], scenarios: [scenario] }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.artifacts).toContainEqual({ type: "ExperimentResult", data: { ...result, expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 2, intents: 1, ledgerEntries: 1 } } });
+  });
+
   it("extracts and validates analyst JSON from completed thread output", () => {
     const sha = "a".repeat(40);
     const snapshot = projectInvestigation("session-1", "url", [
