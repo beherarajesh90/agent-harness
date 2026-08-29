@@ -311,7 +311,7 @@ describe("investigation control plane", () => {
     const subagentEvents = [
       { event: { sequence: 16, threadId: "subagent-1", type: "model.message", usage: { toolCalls: [{ function: { arguments: JSON.stringify({ input: { path: "apps/forgegate/src/payment-lab.ts", ref: sha }, mcp_server: "forgegate-github", tool_name: "get_file" }), name: "call_tool" }, id: subagentCallId }] } }, turnId: "turn-1" },
       { event: { content: JSON.stringify({ success: true, content: "supplemental evidence" }), sequence: 17, threadId: "subagent-1", toolCallId: subagentCallId, type: "tool.response" }, turnId: "turn-1" },
-      { event: { sequence: 18, threadId: "subagent-1", type: "model.message", toolCalls: [{ function: { arguments: JSON.stringify({ command: "echo -n aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa | wc -c", cwd: "/" }), name: "exec" }, id: "subagent-inspection" }] }, turnId: "turn-1" },
+      { event: { sequence: 18, threadId: "subagent-1", type: "model.message", toolCalls: [{ function: { arguments: JSON.stringify({ command: "jq -r '.content' /opt/tf/tool-results/result.txt > /opt/tf/content.txt", cwd: "/" }), name: "exec" }, id: "subagent-inspection" }] }, turnId: "turn-1" },
       { event: { content: JSON.stringify({ success: true, response: { exitCode: 0, result: "150 source line" } }), sequence: 19, threadId: "subagent-1", toolCallId: "subagent-inspection", type: "tool.response" }, turnId: "turn-1" },
     ];
     const finalDecision = { event: { sequence: 18, state: { output: { content: JSON.stringify({ decision: "READY", invariants: [invariant], scenarios: [scenario], experimentResults: [result] }) } }, type: "turn.done" }, turnId: "turn-1" };
@@ -332,8 +332,8 @@ describe("investigation control plane", () => {
       { ...finalDecision, event: { ...finalDecision.event, sequence: 20 } },
     ]);
 
-    expect(rejectedSnapshot.status).toBe("READY");
-    expect(rejectedSnapshot.decision).toBe("READY");
+    expect(rejectedSnapshot.status).toBe("UNCERTAIN");
+    expect(rejectedSnapshot.decision).toBeUndefined();
   });
 
   it("does not let subagent GitHub reads establish the trusted PR evidence", () => {

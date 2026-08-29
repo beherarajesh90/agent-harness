@@ -550,7 +550,8 @@ function isSafeSandboxRead(args: unknown) {
   if (!isRecord(args) || typeof args.command !== "string") return false;
   const command = args.command.trim();
   if (!/^(?:cat|head|tail|wc|jq|nl|sed|echo)\b/i.test(command)) return false;
-  return !/(?:curl|wget|git|npm|pnpm|python|node|rm|mv|cp|chmod|chown|touch|tee|dd|mkfs|shutdown|reboot|\$\(|`|;|&&|\|\||>>?)/i.test(command);
+  if (/(?:curl|wget|git|npm|pnpm|python|node|rm|mv|cp|chmod|chown|touch|tee|dd|mkfs|shutdown|reboot|\$\(|`|;|&&|\|\||>>)/i.test(command)) return false;
+  return !/>\s*(?!\/opt\/tf\/)/i.test(command);
 }
 
 function isAllowedSubagentRead(toolName: string, input: Record<string, unknown>, trustedHeadSha?: string) {
