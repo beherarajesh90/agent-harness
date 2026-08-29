@@ -478,6 +478,7 @@ export function hasSubagentToolPolicyViolation(events: TrueForgeEventItem[]) {
 
 function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string) {
   const calls = new Map<string, "allowed" | "warning" | "hard">();
+  const pending = new Map<string, Array<{ id: string; violation: "allowed" | "warning" | "hard" }>>();
   const roles = new Map<string, "invariant" | "failure">();
   let warning = false;
   let hard = false;
@@ -519,6 +520,9 @@ function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string
         );
         const violation = allowed || recoverableRef ? "allowed" : classifySubagentViolation(call.function.name, args);
         calls.set(call.id, violation);
+        const threadCalls = pending.get(event.threadId ?? "") ?? [];
+        threadCalls.push({ id: call.id, violation });
+        pending.set(event.threadId ?? "", threadCalls);
         if (violation === "warning") warning = true;
         if (violation === "hard") hard = true;
       }
@@ -532,9 +536,22 @@ function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string
       }
       if (violation === "warning") warning = true;
       if (violation === "hard") hard = true;
+      const threadCalls = pending.get(event.threadId ?? "");
+      const index = threadCalls?.findIndex((call) => call.id === event.payload.toolCallId) ?? -1;
+      if (threadCalls && index >= 0) threadCalls.splice(index, 1);
       continue;
     }
-    if (typeof event.payload.content !== "string") continue;
+    const threadCalls = pending.get(event.threadId ?? "");
+    const pendingCall = threadCalls?.shift();
+    if (pendingCall) {
+      if (pendingCall.violation === "warning") warning = true;
+      if (pendingCall.violation === "hard") hard = true;
+      continue;
+    }
+    if (typeof event.payload.content !== "string") {
+      hard = true;
+      continue;
+    }
     const response = parseJson(event.payload.content);
     if (isRecord(response) && isRecord(response.response) && typeof response.response.exitCode === "number") hard = true;
   }
@@ -553,8 +570,9 @@ function classifySubagentViolation(toolName: unknown, args: unknown): "allowed" 
 function isSafeSandboxRead(args: unknown) {
   if (!isRecord(args) || typeof args.command !== "string") return false;
   const command = args.command.trim();
-  if (!/^(?:cat|head|tail|wc|jq|nl|sed|echo)\b/i.test(command)) return false;
-  if (/(?:curl|wget|git|npm|pnpm|python|node|rm|mv|cp|chmod|chown|touch|tee|dd|mkfs|shutdown|reboot|\$\(|`|;|&&|\|\||>>)/i.test(command)) return false;
+  const parts = command.split(/\|\||&&|\|/).map((part) => part.trim());
+  if (!parts.every((part) => /^(?:cat|head|tail|wc|jq|nl|sed|echo|grep|awk|cut|sort|uniq)\b/i.test(part))) return false;
+  if (/(?:curl|wget|git|npm|pnpm|python|node|rm|mv|cp|chmod|chown|touch|tee|dd|mkfs|shutdown|reboot|\$\(|`|;|>>)/i.test(command)) return false;
   return !/>\s*(?!\/opt\/tf\/)/i.test(command);
 }
 
