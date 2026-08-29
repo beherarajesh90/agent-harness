@@ -402,6 +402,7 @@ function hasRequiredGitHubReads(events: HarnessEvent[], trustedHeadSha: string |
 
   const completedTools = new Set<string>();
   const completedFiles = new Set<string>();
+  let changedFileCount: number | undefined;
   for (const event of events) {
     if (!isPrimaryAgentThread(event) || event.type !== "tool.response") continue;
     const call = typeof event.payload.toolCallId === "string" ? calls.get(event.payload.toolCallId) : undefined;
@@ -410,10 +411,16 @@ function hasRequiredGitHubReads(events: HarnessEvent[], trustedHeadSha: string |
       if (trustedHeadSha && call.input.ref === trustedHeadSha && typeof call.input.path === "string") completedFiles.add(call.input.path);
       continue;
     }
+    if (call.toolName === "get_pull_request_files") {
+      const response = typeof event.payload.content === "string" ? parseJson(event.payload.content) : undefined;
+      if (isRecord(response) && Array.isArray(response.files)) {
+        changedFileCount = response.files.filter((file) => isRecord(file) && typeof (file.filename ?? file.path) === "string").length;
+      }
+    }
     completedTools.add(call.toolName);
   }
   return requiredGitHubReadTools.every((toolName) => completedTools.has(toolName))
-    && completedFiles.size >= 2;
+    && completedFiles.size >= (changedFileCount === undefined ? 2 : Math.min(2, changedFileCount));
 }
 
 function primaryGithubToolCalls(events: HarnessEvent[]) {

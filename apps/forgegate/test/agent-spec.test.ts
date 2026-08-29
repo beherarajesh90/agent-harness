@@ -228,6 +228,7 @@ describe("ForgeGate agent specification", () => {
 
     expect(validateInvestigationArtifacts({ invariants: [invariant], scenarios: [scenario], experimentResult })).toMatchObject({ experimentResult });
     expect(validateInvestigationArtifacts({ decision: "BLOCKED", invariants: [invariant], scenarios: [scenario], experimentResult: null, experimentResults: [experimentResult] })).toMatchObject({ decision: "BLOCKED" });
+    expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios: [scenario], experimentResult: { ...experimentResult, observed: { numPassedTests: 15 } } })).toThrow("same keys");
     expect(investigationResponseSchema.safeParse({ decision: "BLOCKED", invariants: [invariant], scenarios: [scenario], experimentResults: [experimentResult] }).success).toBe(false);
     expect(investigationResponseSchema.safeParse({ decision: "BLOCKED", invariants: [invariant], scenarios: [scenario], experimentResult, experimentResults: [experimentResult] }).success).toBe(false);
     expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios: [scenario], experimentResult, experimentResults: [experimentResult] })).toThrow("choose either experimentResult or experimentResults");

@@ -122,7 +122,6 @@ describe("investigation control plane", () => {
       ["get_pull_request", { pull_number: 7 }],
       ["get_pull_request_files", { pull_number: 7 }],
       ["get_file", { path: "apps/forgegate/src/payment-lab.ts", ref: sha }],
-      ["get_file", { path: "apps/forgegate/test/payment-lab.test.ts", ref: sha }],
       ["get_checks", { ref: sha }],
       ["get_qodo_reviews", { pull_number: 7 }],
       ["get_review_comments", { pull_number: 7 }],
@@ -131,7 +130,7 @@ describe("investigation control plane", () => {
       const id = `native-call-${index}`;
       return [
         { event: { sequence: index * 2 + 1, type: "model.message", toolCalls: [{ function: { arguments: JSON.stringify(input), name: toolName }, id }] }, turnId: "turn-1" },
-        { event: { content: JSON.stringify(toolName === "get_pull_request" ? { head: { sha } } : toolName === "get_pull_request_files" ? { complete: true, files: [] } : toolName === "get_file" ? { content: "source", sha: "c".repeat(40) } : toolName === "get_checks" ? { check_runs: [] } : toolName === "get_qodo_reviews" ? { complete: true, reviews: [] } : { comments: [] }), sequence: index * 2 + 2, toolCallId: id, type: "tool.response" }, turnId: "turn-1" },
+        { event: { content: JSON.stringify(toolName === "get_pull_request" ? { head: { sha } } : toolName === "get_pull_request_files" ? { complete: true, files: [{ filename: "apps/forgegate/src/payment-lab.ts" }] } : toolName === "get_file" ? { content: "source", sha: "c".repeat(40) } : toolName === "get_checks" ? { check_runs: [] } : toolName === "get_qodo_reviews" ? { complete: true, reviews: [] } : { comments: [] }), sequence: index * 2 + 2, toolCallId: id, type: "tool.response" }, turnId: "turn-1" },
       ];
     });
     const snapshot = projectInvestigation("session-1", "url", [

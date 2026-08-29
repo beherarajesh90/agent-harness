@@ -277,6 +277,9 @@ export function validateInvestigationArtifacts(input: { decision?: unknown; inva
   if (experimentResults.some((result) => JSON.stringify(result.expected) !== baselineMeasurements)) {
     throw new Error("all experiment results must use the same baseline measurements");
   }
+  if (experimentResults.some((result) => JSON.stringify(Object.keys(result.expected).sort()) !== JSON.stringify(Object.keys(result.observed).sort()))) {
+    throw new Error("expected and observed measurements must use the same keys");
+  }
   if (baselineSha === testedSha) {
     throw new Error("baseline SHA must differ from tested SHA");
   }
@@ -333,6 +336,7 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "Subagents must not call list_tools, get_tool_info, commit_files, raw GitHub or curl access, exec, sandbox experiments, patch, or any other mutation capability.",
       "Subagents receive the repository, PR URL, exact head SHA, allowed paths, and role constraints, and must fetch only approved evidence through read-only MCP calls; never pass unrestricted repository contents.",
       "After get_pull_request_files succeeds, derive the approved path list from its exact returned filenames and include that literal JSON path list, repository, and exact PR head SHA in the invariant-analyst delegated input; never invent, broaden, or omit the path list.",
+      "The primary agent must independently call get_file for each changed file when there are two or fewer changed files, or at least two changed files when there are more; use the exact PR head SHA and wait for successful responses before making a final decision. Subagent get_file calls are supplemental and do not satisfy this primary read gate.",
       "Before scenario generation, build a repository capability map from exact-SHA evidence covering real operations, inputs, outputs, tests, fixtures, mocks, supported failure controls, build/test commands, and required environment variables.",
       "Create failure-mode-analyst only after invariant-analyst has completed; include the exact validated invariant JSON and repository capability map in the second analyst input, never a placeholder or an instruction to discover it. The delegated input must contain exactly: You have no tools. Reason only from the supplied invariant JSON and repository capability map. Do not create the subagent if this boundary is absent.",
       "Use cwd / for sandbox commands; /workspace does not exist in the Daytona image. Clone into /agent-harness or another path under /. Inspect the repository package metadata, build it with its documented command, and generate a temporary scenario runner from the repository code; never assume a ForgeGate or product-specific module path.",
