@@ -45,6 +45,18 @@ describe("investigation control plane", () => {
     expect(snapshot.warnings).toEqual(["SUBAGENT_TOOL_POLICY_VIOLATION"]);
   });
 
+  it("allows a native exact-SHA get_file call from the invariant analyst", () => {
+    const sha = "a".repeat(40);
+    const snapshot = projectInvestigation("session-1", "url", [
+      { event: { content: JSON.stringify({ head: { sha } }), sequence: 1, type: "tool.response" }, turnId: "turn-1" },
+      { event: { sequence: 2, threadId: "analyst-1", title: "invariant-analyst", type: "thread.created" }, turnId: "turn-1" },
+      { event: { sequence: 3, threadId: "analyst-1", toolCalls: [{ id: "tools-1", function: { arguments: JSON.stringify({ path: "apps/forgegate/src/payment-lab.ts", ref: sha }), name: "get_file" } }], type: "model.message" }, turnId: "turn-1" },
+      { event: { sequence: 4, threadId: "analyst-1", toolCallId: "tools-1", content: "{}", type: "tool.response" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.warnings).toBeUndefined();
+  });
+
   it("labels every threaded analyst event as a subagent event", () => {
     const snapshot = projectInvestigation("session-1", "url", [
       { event: { sequence: 1, threadId: "invariant-thread", type: "thread.created" }, turnId: "turn-1" },

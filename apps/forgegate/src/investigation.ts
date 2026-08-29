@@ -407,13 +407,16 @@ function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string
           continue;
         }
         const args = typeof call.function.arguments === "string" ? parseJson(call.function.arguments) : call.function.arguments;
-        const allowed = role === "invariant" && call.function.name === "call_tool"
-          ? isRecord(args)
-            && args.mcp_server === "forgegate-github"
-            && args.tool_name === "get_file"
-            && isRecord(args.input)
-            && isAllowedSubagentRead(args.tool_name, args.input, trustedHeadSha)
-          : false;
+        const allowed = role === "invariant" && (
+          call.function.name === "get_file"
+            ? isRecord(args) && isAllowedSubagentRead("get_file", args, trustedHeadSha)
+            : call.function.name === "call_tool"
+              && isRecord(args)
+              && args.mcp_server === "forgegate-github"
+              && args.tool_name === "get_file"
+              && isRecord(args.input)
+              && isAllowedSubagentRead(args.tool_name, args.input, trustedHeadSha)
+        );
         const violation = allowed ? "allowed" : classifySubagentViolation(call.function.name, args);
         calls.set(call.id, violation);
         if (violation === "warning") warning = true;
