@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createForgeGateAgentSpec, deduplicateScenarioPlans, experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, scenarioPlanSchema, validateAnalystArtifacts, validateInvestigationArtifacts } from "../src/agent-spec.js";
+import { createForgeGateAgentSpec, deduplicateScenarioPlans, experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, parsePreflightResult, scenarioPlanSchema, validateAnalystArtifacts, validateInvestigationArtifacts } from "../src/agent-spec.js";
 
 describe("ForgeGate agent specification", () => {
   it("enables only the configured read-only GitHub tools", () => {
@@ -52,6 +52,7 @@ describe("ForgeGate agent specification", () => {
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("ScenarioPlan"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Each ScenarioPlan must include execution.entrypoint, execution.inputs, and one or more execution.assertions"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("compile or type-check the runner"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("phase=preflight, status=pass"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("exactly two visible dynamic subagents"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("evidence objects use sha"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("injectedFaults is string[]"));
@@ -128,6 +129,14 @@ describe("ForgeGate agent specification", () => {
     };
 
     expect(experimentResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("accepts only structured successful preflight evidence", () => {
+    const preflight = { entrypoint: "processPayment", measurements: { requests: 1 }, phase: "preflight", status: "pass" };
+
+    expect(parsePreflightResult(preflight)).toEqual(preflight);
+    expect(() => parsePreflightResult({ ...preflight, status: "failed" })).toThrow();
+    expect(() => parsePreflightResult({ ...preflight, measurements: {} })).toThrow();
   });
 
   it("deduplicates scenarios by normalized execution identity and applies a bound", () => {

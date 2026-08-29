@@ -56,6 +56,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Each ScenarioPlan must include execution.entrypoint, execution.inputs, and one or more execution.assertions");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("compile or type-check the temporary runner");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("A runner/import/setup/preflight failure is an untestable scenario, not a product failure");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("phase=preflight, status=pass");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Never run recursive repository scans");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("build a repository capability map from exact-SHA evidence");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("pass the exact validated invariant JSON and repository capability map");
