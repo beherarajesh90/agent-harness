@@ -37,6 +37,7 @@ describe("ForgeGate agent specification", () => {
     expect(schema).toMatchObject({ type: "object", additionalProperties: false });
     expect(schema).not.toHaveProperty("anyOf");
     expect(schema).toMatchObject({ properties: { experimentResult: { type: "null" } } });
+    expect(JSON.stringify(schema)).toContain("preflightArtifactLink");
     expect(schema).not.toHaveProperty("properties.experimentResults.anyOf.0.items.properties.expected.propertyNames");
     expect(schema).toMatchObject({ required: ["decision", "experimentResult", "experimentResults", "invariants", "scenarios"] });
     const hasCompleteBranch = (value: unknown): boolean => {
@@ -54,6 +55,7 @@ describe("ForgeGate agent specification", () => {
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("compile or type-check the runner"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("phase=preflight, status=pass"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("sole source for ExperimentResult.expected"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("concrete preflightArtifactLink"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("exactly two visible dynamic subagents"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("evidence objects use sha"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("injectedFaults is string[]"));
@@ -123,6 +125,7 @@ describe("ForgeGate agent specification", () => {
       baselineSha: "b".repeat(40),
       expected: { requests: 10, invariantViolations: 0 },
       observed: { requests: 10, invariantViolations: 1 },
+      preflightArtifactLink: "sandbox:preflight",
       repetitions: 1,
       seed: 42,
       testedSha: "a".repeat(40),
@@ -130,6 +133,7 @@ describe("ForgeGate agent specification", () => {
     };
 
     expect(experimentResultSchema.parse(result)).toEqual(result);
+    expect(experimentResultSchema.safeParse({ ...result, preflightArtifactLink: "not a link" }).success).toBe(false);
   });
 
   it("accepts only structured successful preflight evidence", () => {
