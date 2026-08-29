@@ -67,6 +67,16 @@ describe("investigation control plane", () => {
     expect(snapshot.warnings).toBeUndefined();
   });
 
+  it("allows bounded read-only MCP discovery from the invariant analyst", () => {
+    const snapshot = projectInvestigation("session-1", "url", [
+      { event: { sequence: 1, threadId: "analyst-1", title: "invariant-analyst", type: "thread.created" }, turnId: "turn-1" },
+      { event: { sequence: 2, threadId: "analyst-1", toolCalls: [{ id: "files-1", function: { arguments: JSON.stringify({ pull_number: 1 }), name: "get_pull_request_files" } }], type: "model.message" }, turnId: "turn-1" },
+      { event: { sequence: 3, threadId: "analyst-1", toolCallId: "files-1", content: "{}", type: "tool.response" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.warnings).toBeUndefined();
+  });
+
   it("allows a safe sandbox exec when TrueForge emits one tool call as an object", () => {
     const sha = "a".repeat(40);
     const snapshot = projectInvestigation("session-1", "url", [

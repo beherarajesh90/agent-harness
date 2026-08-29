@@ -47,7 +47,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Subagents receive the repository, PR URL, exact head SHA");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("derive the approved path list from its exact returned filenames");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("must fetch only approved evidence through read-only MCP calls");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("invariant-analyst delegated input must allow one forgegate-github list_tools discovery call");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("invariant-analyst delegated input must allow bounded read-only forgegate-github tools");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("failure-mode-analyst delegated input must state exactly");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).not.toContain("Pass bounded literal excerpts");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Subagents may use only bounded read-only forgegate-github MCP tools");

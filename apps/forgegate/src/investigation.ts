@@ -515,14 +515,15 @@ function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string
         const allowed = invariantAnalyst && (
           call.function.name === "list_tools"
             ? role === "invariant" && event.threadId !== undefined && isRecord(args) && args.mcp_server === "forgegate-github" && (discoveryCalls.get(event.threadId) ?? 0) === 0
-            : call.function.name === "get_file"
-            ? isRecord(args) && isAllowedSubagentRead("get_file", args, trustedHeadSha)
             : call.function.name === "call_tool"
+              ? isRecord(args)
+                && args.mcp_server === "forgegate-github"
+                && typeof args.tool_name === "string"
+                && isRecord(args.input)
+                && isAllowedSubagentRead(args.tool_name, args.input, trustedHeadSha)
+            : typeof call.function.name === "string"
               && isRecord(args)
-              && args.mcp_server === "forgegate-github"
-              && args.tool_name === "get_file"
-              && isRecord(args.input)
-              && isAllowedSubagentRead(args.tool_name, args.input, trustedHeadSha)
+              && isAllowedSubagentRead(call.function.name, args, trustedHeadSha)
         );
         if (allowed && call.function.name === "list_tools" && event.threadId) discoveryCalls.set(event.threadId, (discoveryCalls.get(event.threadId) ?? 0) + 1);
         const violation = allowed || recoverableRef ? "allowed" : classifySubagentViolation(call.function.name, args);
@@ -575,7 +576,7 @@ function isSafeSandboxRead(args: unknown) {
 function isAllowedSubagentRead(toolName: string, input: Record<string, unknown>, trustedHeadSha?: string) {
   if (toolName === "get_file") return Boolean(trustedHeadSha && input.ref === trustedHeadSha && isRepositoryPath(input.path));
   if (toolName === "get_checks") return Boolean(trustedHeadSha && input.ref === trustedHeadSha);
-  return true;
+  return ["get_pull_request", "get_pull_request_files", "get_qodo_reviews", "get_review_comments"].includes(toolName);
 }
 
 function isRecoverableSubagentRef(toolName: unknown, input: unknown, trustedHeadSha?: string) {
