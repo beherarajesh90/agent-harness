@@ -170,6 +170,9 @@ export function validateAnalystArtifacts(input: { invariants: unknown; scenarios
       throw new Error("all analyst artifacts must use the same tested SHA");
     }
   }
+  if (invariants.some((invariant) => !scenarios.some((scenario) => scenario.invariantId === invariant.id))) {
+    throw new Error("every accepted invariant must have a scenario");
+  }
   return { invariants, scenarios };
 }
 
@@ -282,6 +285,7 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "Mark the verdict fail when the observed counts violate an accepted invariant, even if the scenario reproduces the expected failure.",
       "Do not accept prose as an artifact; validate every candidate and scenario against the ForgeGate schemas before using it.",
       "Before claiming READY, require every accepted artifact to use one testedSha, every ScenarioPlan invariantId to reference an accepted invariant, every scenario to have one ExperimentResult, and every experiment to pass.",
+      "Every accepted invariant must have at least one ScenarioPlan; if any invariant has no scenario, return UNCERTAIN.",
       "Before finalizing BLOCKED, READY, or post-experiment UNCERTAIN, include the complete persisted invariants, scenarios, and experimentResults bundle; do not omit scenarios or results.",
       "Every ExperimentResult for a ScenarioPlan with scenarioId must copy that exact scenarioId; do not rely on seed alone when scenario IDs exist.",
       "InvariantCandidate evidence objects use sha (not testedSha) and must reference apps/forgegate/src/payment-lab.ts or apps/forgegate/test/payment-lab.test.ts at the exact testedSha.",

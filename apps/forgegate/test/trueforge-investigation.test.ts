@@ -56,6 +56,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("runPaymentExperiment exactly once per accepted ScenarioPlan");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("using scenario: { scenarioId, seed, injectedFaults } copied from that plan");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("You have no tools. Reason only from the supplied invariant JSON.");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Every accepted invariant must have at least one ScenarioPlan");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("pnpm exec tsx");
   });
 

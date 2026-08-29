@@ -68,6 +68,7 @@ describe("ForgeGate agent specification", () => {
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("runPaymentExperiment exactly once per accepted ScenarioPlan"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("using scenario: { scenarioId, seed, injectedFaults } copied from that plan"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("You have no tools. Reason only from the supplied invariant JSON."));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Every accepted invariant must have at least one ScenarioPlan"));
   });
 
   it("requires an invariant to cite two files at the tested SHA", () => {

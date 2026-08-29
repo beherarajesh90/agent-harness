@@ -418,6 +418,23 @@ describe("investigation control plane", () => {
     expect(projectInvestigation("session-1", "url", items).status).toBe("UNCERTAIN");
   });
 
+  it("does not project READY when an accepted invariant has no scenario", () => {
+    const sha = "a".repeat(40);
+    const invariant = (id: string) => ({ confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id, statement: "one charge", testedSha: sha });
+    const scenario = { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha: sha };
+    const result = { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 1, intents: 1, ledgerEntries: 1 }, repetitions: 1, scenarioId: "s1", seed: 1, testedSha: sha, verdict: "pass" as const };
+    const items = [
+      { event: { content: JSON.stringify({ head: { sha } }), sequence: 1, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifact: invariant("i1"), artifactType: "InvariantCandidate", sequence: 2, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifact: invariant("i2"), artifactType: "InvariantCandidate", sequence: 3, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifact: scenario, artifactType: "ScenarioPlan", sequence: 4, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifact: result, artifactType: "ExperimentResult", sequence: 5, type: "tool.response" }, turnId: "turn-1" },
+      { event: { sequence: 6, state: { output: { content: JSON.stringify({ decision: "READY", invariants: [invariant("i1"), invariant("i2")], scenarios: [scenario], experimentResults: [result] }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+
+    expect(projectInvestigation("session-1", "url", items).status).toBe("UNCERTAIN");
+  });
+
   it("projects artifacts from a valid final investigation bundle", () => {
     const sha = "a".repeat(40);
     const bundle = {
