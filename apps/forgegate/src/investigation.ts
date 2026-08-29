@@ -389,7 +389,7 @@ function hasRequiredGitHubReads(events: HarnessEvent[], trustedHeadSha: string |
   for (const event of events) {
     if (!isPrimaryAgentThread(event) || event.type !== "tool.response" || typeof event.payload.toolCallId !== "string") continue;
     const call = calls.get(event.payload.toolCallId);
-    if (!call || !isSuccessfulToolResponse(event.payload)) continue;
+    if (!call || !isSuccessfulToolResponse(event.payload, call.toolName)) continue;
     if (call.toolName === "get_file") {
       if (trustedHeadSha && call.input.ref === trustedHeadSha && typeof call.input.path === "string") completedFiles.add(call.input.path);
       continue;
@@ -433,13 +433,14 @@ function readToolCalls(payload: Record<string, unknown>) {
   return usage?.toolCalls;
 }
 
-function isSuccessfulToolResponse(payload: Record<string, unknown>) {
+function isSuccessfulToolResponse(payload: Record<string, unknown>, toolName?: string) {
   if (payload.isError === true) return false;
   if (typeof payload.content !== "string") return false;
   const parsed = parseJson(payload.content);
   if (!isRecord(parsed) || "error" in parsed) return false;
   if ("success" in parsed) return parsed.success === true;
-  return isRecord(payload.structuredContent);
+  if (isRecord(payload.structuredContent)) return true;
+  return typeof toolName === "string" && githubToolNames.includes(toolName as typeof githubToolNames[number]);
 }
 
 function latestSandboxCommandSucceeded(events: HarnessEvent[]) {
@@ -560,7 +561,7 @@ function findPullRequestHeadSha(events: HarnessEvent[]) {
   if (sawToolCallMetadata && !sawForgeGateCall) return undefined;
   for (const event of events) {
     if (!isPrimaryAgentThread(event) || event.type !== "tool.response" || typeof event.payload.content !== "string") continue;
-    if (sawToolCallMetadata && (typeof event.payload.toolCallId !== "string" || calls.get(event.payload.toolCallId)?.toolName !== "get_pull_request" || !isSuccessfulToolResponse(event.payload))) continue;
+    if (sawToolCallMetadata && (typeof event.payload.toolCallId !== "string" || calls.get(event.payload.toolCallId)?.toolName !== "get_pull_request" || !isSuccessfulToolResponse(event.payload, "get_pull_request"))) continue;
     const response = parseJson(event.payload.content);
     if (isRecord(response) && isRecord(response.head) && typeof response.head.sha === "string" && /^[a-f0-9]{40}$/.test(response.head.sha)) {
       return response.head.sha;

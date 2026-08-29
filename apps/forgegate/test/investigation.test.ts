@@ -75,7 +75,7 @@ describe("investigation control plane", () => {
       const id = `native-call-${index}`;
       return [
         { event: { sequence: index * 2 + 1, type: "model.message", toolCalls: [{ function: { arguments: JSON.stringify(input), name: toolName }, id }] }, turnId: "turn-1" },
-        { event: { content: JSON.stringify(toolName === "get_pull_request" ? { head: { sha }, success: true } : { success: true, response: {} }), sequence: index * 2 + 2, toolCallId: id, type: "tool.response" }, turnId: "turn-1" },
+        { event: { content: JSON.stringify(toolName === "get_pull_request" ? { head: { sha } } : toolName === "get_pull_request_files" ? { complete: true, files: [] } : toolName === "get_file" ? { content: "source", sha: "c".repeat(40) } : toolName === "get_checks" ? { check_runs: [] } : toolName === "get_qodo_reviews" ? { complete: true, reviews: [] } : { comments: [] }), sequence: index * 2 + 2, toolCallId: id, type: "tool.response" }, turnId: "turn-1" },
       ];
     });
     const snapshot = projectInvestigation("session-1", "url", [
