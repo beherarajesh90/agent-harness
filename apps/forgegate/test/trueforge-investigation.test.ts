@@ -53,6 +53,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Subagents may use only bounded read-only forgegate-github MCP tools");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Create failure-mode-analyst only after invariant-analyst thread.done");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("pass the exact validated invariant JSON and repository capability map in its input");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Do not create the subagent if this boundary is absent");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Each ScenarioPlan must include execution.entrypoint, execution.inputs, and one or more execution.assertions");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("compile or type-check the temporary runner");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("A runner/import/setup/preflight failure is an untestable scenario, not a product failure");
