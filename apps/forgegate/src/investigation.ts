@@ -93,7 +93,7 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const rejectedFinal = hasRejectedPrimaryFinal(events, trustedHeadSha);
   const githubReadsComplete = hasRequiredGitHubReads(events, trustedHeadSha);
   const sandboxSucceeded = latestSandboxCommandSucceeded(events);
-  const forbiddenSubagentToolUse = hasForbiddenSubagentToolUse(events);
+  const forbiddenSubagentToolUse = hasForbiddenSubagentToolUse(events, trustedHeadSha);
   const reportedDecision = findFinalDecision(events, trustedHeadSha, artifacts, accepted.hasConflicts || rejectedFinal || !githubReadsComplete || !sandboxSucceeded || forbiddenSubagentToolUse);
   const last = events.at(-1);
   const terminal = last ? isPrimaryAgentTurn(last) : false;
@@ -378,7 +378,7 @@ function latestSandboxCommandSucceeded(events: HarnessEvent[]) {
   return true;
 }
 
-function hasForbiddenSubagentToolUse(events: HarnessEvent[]) {
+function hasForbiddenSubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string) {
   const calls = new Map<string, boolean>();
   for (const event of events) {
     if (isPrimaryAgentThread(event)) continue;
@@ -391,7 +391,8 @@ function hasForbiddenSubagentToolUse(events: HarnessEvent[]) {
           && args.mcp_server === "forgegate-github"
           && typeof args.tool_name === "string"
           && allowedSubagentMcpTools.has(args.tool_name)
-          && isRecord(args.input);
+          && isRecord(args.input)
+          && isAllowedSubagentRead(args.tool_name, args.input, trustedHeadSha);
         calls.set(call.id, allowed);
         if (!allowed) return true;
       }
@@ -406,6 +407,12 @@ function hasForbiddenSubagentToolUse(events: HarnessEvent[]) {
     if (isRecord(response) && isRecord(response.response) && typeof response.response.exitCode === "number") return true;
   }
   return false;
+}
+
+function isAllowedSubagentRead(toolName: string, input: Record<string, unknown>, trustedHeadSha?: string) {
+  if (toolName === "get_file") return Boolean(trustedHeadSha && input.ref === trustedHeadSha && requiredEvidencePaths.includes(input.path as (typeof requiredEvidencePaths)[number]));
+  if (toolName === "get_checks") return Boolean(trustedHeadSha && input.ref === trustedHeadSha);
+  return true;
 }
 
 function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string): InvestigationArtifact[] {
