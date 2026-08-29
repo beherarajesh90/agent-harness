@@ -154,7 +154,7 @@ function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: 
     const sandboxResults = readSandboxExperimentResults(parsed, trustedHeadSha, baselineSha);
     if (sandboxResults.length > 0) return sandboxResults;
   }
-  const type = payload.title === "invariant-analyst" ? "InvariantCandidate" : payload.title === "failure-mode-analyst" ? "ScenarioPlan" : undefined;
+  const type = typeof payload.title === "string" && payload.title.startsWith("invariant-analyst") ? "InvariantCandidate" : typeof payload.title === "string" && payload.title.startsWith("failure-mode-analyst") ? "ScenarioPlan" : undefined;
   return type && typeof content === "string" ? readArtifact(type, parseJson(content), trustedHeadSha, type === "ScenarioPlan") : [];
 }
 
@@ -486,8 +486,8 @@ function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string
   let hard = false;
   for (const event of events) {
     if (event.type === "thread.created" && event.threadId) {
-      if (event.payload.title === "invariant-analyst") roles.set(event.threadId, "invariant");
-      if (event.payload.title === "failure-mode-analyst") roles.set(event.threadId, "failure");
+      if (typeof event.payload.title === "string" && event.payload.title.startsWith("invariant-analyst")) roles.set(event.threadId, "invariant");
+      if (typeof event.payload.title === "string" && event.payload.title.startsWith("failure-mode-analyst")) roles.set(event.threadId, "failure");
     }
   }
   for (const event of events) {
@@ -650,8 +650,8 @@ function applyThreadStages(events: HarnessEvent[]) {
 }
 
 function analystStage(title: unknown): Stage | undefined {
-  if (title === "invariant-analyst") return "INVARIANTS";
-  if (title === "failure-mode-analyst") return "HYPOTHESES";
+  if (typeof title === "string" && title.startsWith("invariant-analyst")) return "INVARIANTS";
+  if (typeof title === "string" && title.startsWith("failure-mode-analyst")) return "HYPOTHESES";
   return undefined;
 }
 
