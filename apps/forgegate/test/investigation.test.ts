@@ -57,6 +57,16 @@ describe("investigation control plane", () => {
     expect(snapshot.warnings).toBeUndefined();
   });
 
+  it("allows a safe sandbox exec when TrueForge emits one tool call as an object", () => {
+    const snapshot = projectInvestigation("session-1", "url", [
+      { event: { sequence: 1, threadId: "analyst-1", title: "invariant-analyst", type: "thread.created" }, turnId: "turn-1" },
+      { event: { sequence: 2, threadId: "analyst-1", toolCalls: { id: "exec-1", function: { arguments: JSON.stringify({ command: "nl -ba /opt/tf/tool-results/result.txt | head -n 20" }), name: "exec" }, type: "function" }, type: "model.message" }, turnId: "turn-1" },
+      { event: { sequence: 3, threadId: "analyst-1", toolCallId: "exec-1", content: JSON.stringify({ success: true, response: { exitCode: 0, result: "1 source line" } }), type: "tool.response" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.warnings).toBeUndefined();
+  });
+
   it("accepts native primary MCP calls when validating complete evidence", () => {
     const sha = "a".repeat(40);
     const invariant = { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha };

@@ -489,7 +489,11 @@ function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string
     if (isPrimaryAgentThread(event)) continue;
     const role = event.threadId ? roles.get(event.threadId) : undefined;
     const usage = isRecord(event.payload.usage) ? event.payload.usage : undefined;
-    const toolCalls = Array.isArray(event.payload.toolCalls) ? event.payload.toolCalls : usage?.toolCalls;
+    const toolCalls = Array.isArray(event.payload.toolCalls)
+      ? event.payload.toolCalls
+      : isRecord(event.payload.toolCalls)
+        ? [event.payload.toolCalls]
+        : usage?.toolCalls;
     if (Array.isArray(toolCalls)) {
       for (const call of toolCalls) {
         if (!isRecord(call) || typeof call.id !== "string" || !isRecord(call.function)) {
