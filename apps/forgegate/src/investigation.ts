@@ -50,7 +50,6 @@ export type InvestigationArtifact = {
 };
 
 const requiredGitHubReadTools = ["get_pull_request", "get_pull_request_files", "get_checks", "get_qodo_reviews", "get_review_comments"] as const;
-const requiredEvidencePaths = ["apps/forgegate/src/payment-lab.ts", "apps/forgegate/test/payment-lab.test.ts"] as const;
 type TrueForgeEventItem = { event: Record<string, unknown>; turnId: string };
 type InvestigationRecord = { pullRequestUrl: string; turnId: string };
 type LaunchResult = { sessionId: string; turnId: string };
@@ -180,11 +179,7 @@ function readSandboxExperimentResults(payload: unknown, testedSha?: string, base
       artifactLinks: candidate.artifactLinks,
       baselineSha,
       expected: candidate.expected,
-      observed: isRecord(candidate.observed) ? {
-        charges: candidate.observed.charges,
-        intents: candidate.observed.intents,
-        ledgerEntries: candidate.observed.ledgerEntries,
-      } : candidate.observed,
+      observed: candidate.observed,
       repetitions: candidate.repetitions ?? 1,
       scenarioId: candidate.scenarioId,
       seed: candidate.seed,
@@ -398,7 +393,7 @@ function hasRequiredGitHubReads(events: HarnessEvent[], trustedHeadSha: string |
     completedTools.add(call.toolName);
   }
   return requiredGitHubReadTools.every((toolName) => completedTools.has(toolName))
-    && requiredEvidencePaths.every((path) => completedFiles.has(path));
+    && completedFiles.size >= 2;
 }
 
 function primaryGithubToolCalls(events: HarnessEvent[]) {
@@ -530,7 +525,7 @@ function classifySubagentViolation(toolName: unknown, args: unknown): "warning" 
 }
 
 function isAllowedSubagentRead(toolName: string, input: Record<string, unknown>, trustedHeadSha?: string) {
-  if (toolName === "get_file") return Boolean(trustedHeadSha && input.ref === trustedHeadSha && requiredEvidencePaths.includes(input.path as (typeof requiredEvidencePaths)[number]));
+  if (toolName === "get_file") return Boolean(trustedHeadSha && input.ref === trustedHeadSha && isRepositoryPath(input.path));
   if (toolName === "get_checks") return Boolean(trustedHeadSha && input.ref === trustedHeadSha);
   return true;
 }
@@ -539,9 +534,17 @@ function isRecoverableSubagentRef(toolName: unknown, input: unknown, trustedHead
   return toolName === "get_file"
     && Boolean(trustedHeadSha)
     && isRecord(input)
-    && requiredEvidencePaths.includes(input.path as (typeof requiredEvidencePaths)[number])
+    && isRepositoryPath(input.path)
     && typeof input.ref === "string"
     && !/^[a-f0-9]{40}$/.test(input.ref);
+}
+
+function isRepositoryPath(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && !value.startsWith("/")
+    && !/^[A-Za-z]:/.test(value)
+    && !value.split("/").includes("..");
 }
 
 function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string): InvestigationArtifact[] {
