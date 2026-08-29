@@ -537,12 +537,20 @@ function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string
   return { warning, hard };
 }
 
-function classifySubagentViolation(toolName: unknown, args: unknown): "warning" | "hard" {
+function classifySubagentViolation(toolName: unknown, args: unknown): "allowed" | "warning" | "hard" {
   if (toolName === "list_tools" || toolName === "get_tool_info") return "warning";
+  if (toolName === "exec") return isSafeSandboxRead(args) ? "allowed" : "hard";
   if (toolName !== "call_tool") return "hard";
   if (!isRecord(args) || args.mcp_server !== "forgegate-github") return "hard";
   if (args.tool_name === "commit_files") return "hard";
   return "warning";
+}
+
+function isSafeSandboxRead(args: unknown) {
+  if (!isRecord(args) || typeof args.command !== "string") return false;
+  const command = args.command.trim();
+  if (!/^(?:cat|head|tail|wc|jq|nl|sed)\b/i.test(command)) return false;
+  return !/(?:curl|wget|git|npm|pnpm|python|node|rm|mv|cp|chmod|chown|touch|tee|dd|mkfs|shutdown|reboot|\$\(|`|;|&&|\|\||>>?)/i.test(command);
 }
 
 function isAllowedSubagentRead(toolName: string, input: Record<string, unknown>, trustedHeadSha?: string) {

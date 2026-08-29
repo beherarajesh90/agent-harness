@@ -131,7 +131,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
     const createTurn = vi.fn(async () => ({ data: { id: "unexpected" } }));
     const listEvents = vi.fn(async () => [
       { event: { threadId: "analyst-1", title: "invariant-analyst", type: "thread.created" }, turnId: "turn-1" },
-      { event: { threadId: "analyst-1", toolCalls: [{ id: "exec-1", function: { arguments: JSON.stringify({ command: "nl -ba file" }), name: "exec" } }], type: "model.message" }, turnId: "turn-1" },
+      { event: { threadId: "analyst-1", toolCalls: [{ id: "exec-1", function: { arguments: JSON.stringify({ command: "curl -s https://example.com" }), name: "exec" } }], type: "model.message" }, turnId: "turn-1" },
       { event: { state: { output: { content: JSON.stringify({ decision: "BLOCKED" }) } }, type: "turn.done" }, turnId: "turn-1" },
     ]);
     const controller = createInvestigationPhaseController({ createTurn, listEvents, pollIntervalMs: 0, maxPolls: 1 });
@@ -342,6 +342,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
   it("does not recover an invalid MCP call made by a subagent", async () => {
     const createTurn = vi.fn(async () => ({ data: { id: "unexpected" } }));
     const listEvents = vi.fn(async () => [
+      { event: { threadId: "subagent-1", toolCalls: [{ id: "invalid-1", function: { arguments: "{}", name: "list_tools" } }], type: "model.message" }, turnId: "turn-1" },
       { event: { content: JSON.stringify({ error: [{ type: "text", text: "Tool call failed: Tool 'list_tools' is not allowed" }] }), threadId: "subagent-1", type: "tool.response" }, turnId: "turn-1" },
       { event: { state: { status: "done" }, type: "turn.done" }, turnId: "turn-1" },
     ]);

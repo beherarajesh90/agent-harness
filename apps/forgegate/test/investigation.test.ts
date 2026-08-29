@@ -286,7 +286,7 @@ describe("investigation control plane", () => {
     expect(snapshot.decision).toBeUndefined();
   });
 
-  it("accepts a read-only subagent MCP read but rejects subagent sandbox execution", () => {
+  it("accepts read-only subagent MCP and sandbox inspection", () => {
     const sha = "a".repeat(40);
     const invariant = { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha };
     const scenario = { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha: sha };
@@ -327,12 +327,13 @@ describe("investigation control plane", () => {
 
     const rejectedSnapshot = projectInvestigation("session-1", "url", [
       ...events,
+      { event: { sequence: 15, threadId: "subagent-1", title: "invariant-analyst", type: "thread.created" }, turnId: "turn-1" },
       ...subagentEvents,
       { ...finalDecision, event: { ...finalDecision.event, sequence: 20 } },
     ]);
 
-    expect(rejectedSnapshot.status).toBe("UNCERTAIN");
-    expect(rejectedSnapshot.decision).toBeUndefined();
+    expect(rejectedSnapshot.status).toBe("READY");
+    expect(rejectedSnapshot.decision).toBe("READY");
   });
 
   it("does not let subagent GitHub reads establish the trusted PR evidence", () => {
