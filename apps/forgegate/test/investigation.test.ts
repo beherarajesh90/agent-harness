@@ -171,6 +171,41 @@ describe("investigation control plane", () => {
     expect(snapshot.decision).toBeUndefined();
   });
 
+  it("reconciles failed evidence to BLOCKED when the decision is on the completed turn output", () => {
+    const sha = "a".repeat(40);
+    const invariant = { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha };
+    const scenario = { expectedOutcome: "duplicate charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha: sha };
+    const result = { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 2, intents: 1, ledgerEntries: 1 }, repetitions: 1, scenarioId: "s1", seed: 1, testedSha: sha, verdict: "fail" as const };
+    const final = JSON.stringify({ decision: "READY", invariants: [invariant], scenarios: [scenario], experimentResults: [result] });
+    const reads = [
+      ["get_pull_request", { pull_number: 7 }],
+      ["get_pull_request_files", { pull_number: 7 }],
+      ["get_checks", { pull_number: 7, ref: sha }],
+      ["get_qodo_reviews", { pull_number: 7 }],
+      ["get_review_comments", { pull_number: 7 }],
+      ["get_file", { path: "apps/forgegate/src/payment-lab.ts", ref: sha }],
+      ["get_file", { path: "apps/forgegate/test/payment-lab.test.ts", ref: sha }],
+    ].flatMap(([toolName, input], index) => {
+      const id = `read-${index}`;
+      return [
+        { event: { sequence: index * 2 + 1, type: "model.message", usage: { toolCalls: [{ function: { arguments: JSON.stringify({ input, mcp_server: "forgegate-github", tool_name: toolName }), name: "call_tool" }, id }] } }, turnId: "turn-1" },
+        { event: { content: JSON.stringify({ head: { sha }, success: true }), sequence: index * 2 + 2, toolCallId: id, type: "tool.response" }, turnId: "turn-1" },
+      ];
+    });
+    const snapshot = projectInvestigation("session-1", "url", [
+      ...reads,
+      { event: { artifact: invariant, artifactType: "InvariantCandidate", sequence: 15, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifact: scenario, artifactType: "ScenarioPlan", sequence: 16, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifact: result, artifactType: "ExperimentResult", sequence: 17, type: "tool.response" }, turnId: "turn-1" },
+      { event: { content: JSON.stringify({ response: { exitCode: 0, result: "experiment complete" }, success: true }), sequence: 18, type: "tool.response" }, turnId: "turn-1" },
+      { event: { content: final, sequence: 19, type: "model.message" }, turnId: "turn-1" },
+      { event: { sequence: 20, state: { status: "done" }, type: "turn.done" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.status).toBe("BLOCKED");
+    expect(snapshot.decision).toBe("BLOCKED");
+  });
+
   it("does not accept a final decision after the latest sandbox command fails", () => {
     const sha = "a".repeat(40);
     const invariant = { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha };

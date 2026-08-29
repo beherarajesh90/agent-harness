@@ -226,7 +226,11 @@ function scenarioMatchesResult(scenario: Record<string, unknown>, result: Record
 
 function readFinalBundle(payload: Record<string, unknown>, trustedHeadSha?: string) {
   const output = isRecord(payload.state) && isRecord(payload.state.output) ? payload.state.output : undefined;
-  const parsed = typeof output?.content === "string" ? parseJson(output.content) : undefined;
+  return typeof output?.content === "string" ? readFinalBundleContent(output.content, trustedHeadSha) : undefined;
+}
+
+function readFinalBundleContent(content: string, trustedHeadSha?: string) {
+  const parsed = parseJson(content);
   if (!isRecord(parsed)) return undefined;
   const parsedResponse = investigationResponseSchema.safeParse(parsed);
   if (!parsedResponse.success) return undefined;
@@ -250,12 +254,13 @@ function readFinalBundle(payload: Record<string, unknown>, trustedHeadSha?: stri
 
 function findFinalDecision(events: HarnessEvent[], trustedHeadSha: string | undefined, artifacts: InvestigationArtifact[], hasArtifactConflicts: boolean): InvestigationDecision | undefined {
   if (hasArtifactConflicts) return undefined;
-  for (const event of [...events].reverse()) {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]!;
     if (!isPrimaryAgentTurn(event)) continue;
-    const bundle = readFinalBundle(event.payload, trustedHeadSha);
+    const content = primaryFinalOutput(events, index);
+    const bundle = content ? readFinalBundleContent(content, trustedHeadSha) : undefined;
     if (bundle?.decision) return bundle.decision;
-    const output = isRecord(event.payload.state) && isRecord(event.payload.state.output) ? event.payload.state.output : undefined;
-    const parsed = typeof output?.content === "string" ? parseJson(output.content) : undefined;
+    const parsed = content ? parseJson(content) : undefined;
     if (!isRecord(parsed) || (parsed.decision !== "BLOCKED" && parsed.decision !== "READY")) continue;
     try {
       validateInvestigationArtifacts({
@@ -282,24 +287,38 @@ function isPrimaryAgentThread(event: HarnessEvent) {
 
 function hasRejectedPrimaryFinal(events: HarnessEvent[], trustedHeadSha: string | undefined) {
   let rejected = false;
-  for (const event of events) {
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index]!;
     if (!isPrimaryAgentTurn(event)) continue;
-    const output = isRecord(event.payload.state) && isRecord(event.payload.state.output) ? event.payload.state.output : undefined;
-    const parsed = typeof output?.content === "string" ? parseJson(output.content) : undefined;
+    const content = primaryFinalOutput(events, index);
+    const parsed = content ? parseJson(content) : undefined;
     if (!isRecord(parsed) || !["BLOCKED", "READY", "UNCERTAIN"].includes(parsed.decision as string)) continue;
-    rejected = readFinalBundle(event.payload, trustedHeadSha) === undefined;
+    rejected = content === undefined || readFinalBundleContent(content, trustedHeadSha) === undefined;
   }
   return rejected;
 }
 
 function hasRejectedCompleteEvidenceFinal(events: HarnessEvent[], trustedHeadSha: string | undefined) {
-  return events.some((event) => {
+  return events.some((event, index) => {
     if (!isPrimaryAgentTurn(event)) return false;
-    const output = isRecord(event.payload.state) && isRecord(event.payload.state.output) ? event.payload.state.output : undefined;
-    const parsed = typeof output?.content === "string" ? parseJson(output.content) : undefined;
+    const content = primaryFinalOutput(events, index);
+    const parsed = content ? parseJson(content) : undefined;
     const hasResults = isRecord(parsed) && ((Array.isArray(parsed.experimentResults) && parsed.experimentResults.length > 0) || isRecord(parsed.experimentResult));
-    return isRecord(parsed) && (parsed.decision === "READY" || parsed.decision === "BLOCKED") && Array.isArray(parsed.invariants) && parsed.invariants.length > 0 && Array.isArray(parsed.scenarios) && parsed.scenarios.length > 0 && hasResults && readFinalBundle(event.payload, trustedHeadSha) === undefined;
+    return isRecord(parsed) && (parsed.decision === "READY" || parsed.decision === "BLOCKED") && Array.isArray(parsed.invariants) && parsed.invariants.length > 0 && Array.isArray(parsed.scenarios) && parsed.scenarios.length > 0 && hasResults && (content === undefined || readFinalBundleContent(content, trustedHeadSha) === undefined);
   });
+}
+
+function primaryFinalOutput(events: HarnessEvent[], turnDoneIndex: number) {
+  const turnDone = events[turnDoneIndex]!;
+  const doneOutput = isRecord(turnDone.payload.state) && isRecord(turnDone.payload.state.output) ? turnDone.payload.state.output : undefined;
+  if (typeof doneOutput?.content === "string") return doneOutput.content;
+  for (let index = turnDoneIndex - 1; index >= 0; index -= 1) {
+    const event = events[index]!;
+    if (event.turnId !== turnDone.turnId) continue;
+    if (event.type === "turn.done") break;
+    if (isPrimaryAgentThread(event) && event.type === "model.message" && typeof event.payload.content === "string") return event.payload.content;
+  }
+  return undefined;
 }
 
 function hasConsistentEvidence(artifacts: InvestigationArtifact[]) {
