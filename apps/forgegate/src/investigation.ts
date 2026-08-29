@@ -397,15 +397,15 @@ function hasFailedExperiment(artifacts: InvestigationArtifact[]) {
 }
 
 function hasRequiredGitHubReads(events: HarnessEvent[], trustedHeadSha: string | undefined) {
-  const { calls, sawForgeGateCall, sawToolCallMetadata } = primaryGithubToolCalls(events);
+  const { calls, callsBySequence, sawForgeGateCall, sawToolCallMetadata } = primaryGithubToolCalls(events);
   if (!sawToolCallMetadata) return !events.some((event) => isPrimaryAgentThread(event) && event.type === "model.message");
   if (!sawForgeGateCall) return false;
 
   const completedTools = new Set<string>();
   const completedFiles = new Set<string>();
   for (const event of events) {
-    if (!isPrimaryAgentThread(event) || event.type !== "tool.response" || typeof event.payload.toolCallId !== "string") continue;
-    const call = calls.get(event.payload.toolCallId);
+    if (!isPrimaryAgentThread(event) || event.type !== "tool.response") continue;
+    const call = primaryCallForResponse(event, calls, callsBySequence);
     if (!call || !isSuccessfulToolResponse(event.payload, call.toolName)) continue;
     if (call.toolName === "get_file") {
       if (trustedHeadSha && call.input.ref === trustedHeadSha && typeof call.input.path === "string") completedFiles.add(call.input.path);
@@ -419,6 +419,7 @@ function hasRequiredGitHubReads(events: HarnessEvent[], trustedHeadSha: string |
 
 function primaryGithubToolCalls(events: HarnessEvent[]) {
   const calls = new Map<string, { input: Record<string, unknown>; toolName: string }>();
+  const callsBySequence = new Map<number, { input: Record<string, unknown>; toolName: string }>();
   let sawToolCallMetadata = false;
   let sawForgeGateCall = false;
   for (const event of events) {
@@ -432,14 +433,23 @@ function primaryGithubToolCalls(events: HarnessEvent[]) {
       if (call.function.name === "call_tool") {
         if (!isRecord(args) || args.mcp_server !== "forgegate-github" || typeof args.tool_name !== "string" || !isRecord(args.input)) continue;
         sawForgeGateCall = true;
-        calls.set(call.id, { input: args.input, toolName: args.tool_name });
+        const metadata = { input: args.input, toolName: args.tool_name };
+        calls.set(call.id, metadata);
+        callsBySequence.set(event.sequence, metadata);
       } else if (githubToolNames.includes(call.function.name as typeof githubToolNames[number]) && isRecord(args)) {
         sawForgeGateCall = true;
-        calls.set(call.id, { input: args, toolName: call.function.name });
+        const metadata = { input: args, toolName: call.function.name };
+        calls.set(call.id, metadata);
+        callsBySequence.set(event.sequence, metadata);
       }
     }
   }
-  return { calls, sawForgeGateCall, sawToolCallMetadata };
+  return { calls, callsBySequence, sawForgeGateCall, sawToolCallMetadata };
+}
+
+function primaryCallForResponse(event: HarnessEvent, calls: Map<string, { input: Record<string, unknown>; toolName: string }>, callsBySequence: Map<number, { input: Record<string, unknown>; toolName: string }>) {
+  if (typeof event.payload.toolCallId === "string") return calls.get(event.payload.toolCallId);
+  return callsBySequence.get(event.sequence - 1);
 }
 
 const githubToolNames = [...requiredGitHubReadTools, "get_file"] as const;
@@ -613,11 +623,12 @@ function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string): I
 }
 
 function findPullRequestHeadSha(events: HarnessEvent[]) {
-  const { calls, sawForgeGateCall, sawToolCallMetadata } = primaryGithubToolCalls(events);
+  const { calls, callsBySequence, sawForgeGateCall, sawToolCallMetadata } = primaryGithubToolCalls(events);
   if (sawToolCallMetadata && !sawForgeGateCall) return undefined;
   for (const event of events) {
     if (!isPrimaryAgentThread(event) || event.type !== "tool.response" || typeof event.payload.content !== "string") continue;
-    if (sawToolCallMetadata && (typeof event.payload.toolCallId !== "string" || calls.get(event.payload.toolCallId)?.toolName !== "get_pull_request" || !isSuccessfulToolResponse(event.payload, "get_pull_request"))) continue;
+    const call = primaryCallForResponse(event, calls, callsBySequence);
+    if (sawToolCallMetadata && (call?.toolName !== "get_pull_request" || !isSuccessfulToolResponse(event.payload, "get_pull_request"))) continue;
     const response = parseJson(event.payload.content);
     if (isRecord(response) && isRecord(response.head) && typeof response.head.sha === "string" && /^[a-f0-9]{40}$/.test(response.head.sha)) {
       return response.head.sha;
