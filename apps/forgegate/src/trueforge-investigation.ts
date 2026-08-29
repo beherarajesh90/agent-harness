@@ -26,6 +26,7 @@ const continuationPrompts = [
 const mcpRecoveryPrompt = "The previous MCP call used an invalid server or tool name. Do not call list_tools, get_tool_info, get_pr, list_changed_files, or changed_files. Use only forgegate-github tools named get_pull_request, get_pull_request_files, get_file, get_checks, get_qodo_reviews, and get_review_comments. Retry the required read now, starting with get_pull_request.";
 const subagentRefRecoveryPrompt = "The invariant analyst used an invalid get_file ref. Retry the same allowed get_file reads now using the exact full 40-character PR head commit SHA from the primary agent context, not PR_HEAD, a branch name, or any placeholder. Do not call any other tool.";
 const sandboxRecoveryPrompt = "The previous sandbox command failed with a transient startup or process-bridge error. Retry the same sandbox command once now, then continue the investigation. Do not mark the investigation UNCERTAIN unless the retry also fails.";
+const scenarioRecoveryPrompt = "A scenario runner or preflight failed. Do not treat this as a product failure and do not emit an ExperimentResult from it. Repair the runner using only repository capabilities and exact-SHA evidence, then compile or type-check it and run a bounded preflight that emits structured measurements. If the scenario cannot be expressed, return UNCERTAIN without an ExperimentResult.";
 const decisionRepairInstruction = "Final response rejected: the evidence exists, but the decision bundle is incomplete. Return one complete JSON object containing the full invariants, scenarios, and experimentResults arrays plus decision. Set experimentResult to null; use experimentResults as the only result representation. Copy the exact persisted evidence below; do not summarize, omit, or alter any array. Do not emit another partial BLOCKED or READY response.";
 
 export function createTrueForgeInvestigationLauncher({
@@ -114,6 +115,7 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
     let mcpRecoveryAttempted = false;
     let subagentRefRecoveryAttempted = false;
     let sandboxRecoveryAttempted = false;
+    let scenarioRecoveryAttempted = false;
     let experimentRecoveryAttempts = 0;
     let decisionRepairAttempted = false;
     let evidenceRecoveryAttempted = false;
@@ -145,6 +147,13 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
         if (isSubagentThread(transientSandboxFailure.event.threadId)) return;
         sandboxRecoveryAttempted = true;
         turnId = (await createTurn(sessionId, { input: [{ content: sandboxRecoveryPrompt, type: "user.message" }] })).data.id;
+        continue;
+      }
+      const failedScenarioExecution = findFailedScenarioExecutions(events, turnId);
+      if (failedScenarioExecution.length > 0) {
+        if (scenarioRecoveryAttempted) return;
+        scenarioRecoveryAttempted = true;
+        turnId = (await createTurn(sessionId, { input: [{ content: scenarioRecoveryPrompt, type: "user.message" }] })).data.id;
         continue;
       }
       if (hasInconsistentCompleteEvidence(events)) {
@@ -312,6 +321,15 @@ function findTransientSandboxFailures(events: InvestigationEvent[], turnId: stri
     if (!isRecord(response) || response.success !== true || !isRecord(response.response)) return false;
     if (typeof response.response.exitCode !== "number" || typeof response.response.result !== "string") return false;
     return /fork\/exec \/usr\/bin\/bash|command execution timeout|sandbox.*(?:unavailable|startup)|process.?bridge/i.test(response.response.result);
+  });
+}
+
+function findFailedScenarioExecutions(events: InvestigationEvent[], turnId: string) {
+  return events.filter(({ event, turnId: eventTurnId }) => {
+    if (eventTurnId !== turnId || event.type !== "tool.response" || typeof event.content !== "string") return false;
+    const response = parseJson(event.content);
+    if (!isRecord(response) || response.success !== true || !isRecord(response.response)) return false;
+    return typeof response.response.exitCode === "number" && response.response.exitCode !== 0;
   });
 }
 
