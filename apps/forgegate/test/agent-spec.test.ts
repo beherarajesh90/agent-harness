@@ -65,6 +65,7 @@ describe("ForgeGate agent specification", () => {
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Create failure-mode-analyst only after invariant-analyst has completed"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("pnpm --filter @forgegate/app build"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("dist/src/payment-lab.js"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("runPaymentExperiment exactly once per accepted ScenarioPlan"));
   });
 
   it("requires an invariant to cite two files at the tested SHA", () => {
