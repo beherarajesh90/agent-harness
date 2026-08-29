@@ -40,12 +40,11 @@ export function createGitHubMcpServer({
         readOnlyHint: true,
       },
       description: "Read one pull request from the configured ForgeGate demo repository.",
-      inputSchema: z.object({ pull_number: z.number().int().positive(), repository: z.string().min(1) }),
+      inputSchema: z.object({ pull_number: z.number().int().positive() }),
       outputSchema: jsonObjectSchema,
     },
-    async ({ pull_number, repository: requestedRepository }) => {
+    async ({ pull_number }) => {
       try {
-        assertConfiguredRepository(requestedRepository, repository);
         const pullRequest = await getPullRequest(pull_number);
         return structuredJson(pullRequest);
       } catch {
@@ -67,12 +66,11 @@ export function createGitHubMcpServer({
         readOnlyHint: true,
       },
       description: "Read pull request reviews for later Qodo-origin classification.",
-      inputSchema: z.object({ pull_number: z.number().int().positive(), repository: z.string().min(1) }),
+      inputSchema: z.object({ pull_number: z.number().int().positive() }),
       outputSchema: jsonObjectSchema,
     },
-    async ({ pull_number, repository: requestedRepository }) => {
+    async ({ pull_number }) => {
       try {
-        assertConfiguredRepository(requestedRepository, repository);
         return structuredJson(await getQodoReviews(pull_number));
       } catch {
         return { content: [{ text: "GitHub pull request reviews read failed.", type: "text" }], isError: true };
@@ -90,12 +88,11 @@ export function createGitHubMcpServer({
         readOnlyHint: true,
       },
       description: "Read pull request review comments for later Qodo-origin classification.",
-      inputSchema: z.object({ pull_number: z.number().int().positive(), repository: z.string().min(1) }),
+      inputSchema: z.object({ pull_number: z.number().int().positive() }),
       outputSchema: jsonObjectSchema,
     },
-    async ({ pull_number, repository: requestedRepository }) => {
+    async ({ pull_number }) => {
       try {
-        assertConfiguredRepository(requestedRepository, repository);
         return structuredJson(await getReviewComments(pull_number));
       } catch {
         return { content: [{ text: "GitHub review comments read failed.", type: "text" }], isError: true };
@@ -113,12 +110,11 @@ export function createGitHubMcpServer({
         readOnlyHint: true,
       },
       description: "Read the changed files for one pull request from the configured repository.",
-      inputSchema: z.object({ pull_number: z.number().int().positive(), repository: z.string().min(1) }),
+      inputSchema: z.object({ pull_number: z.number().int().positive() }),
       outputSchema: jsonObjectSchema,
     },
-    async ({ pull_number, repository: requestedRepository }) => {
+    async ({ pull_number }) => {
       try {
-        assertConfiguredRepository(requestedRepository, repository);
         return structuredJson(await getPullRequestFiles(pull_number));
       } catch {
         return { content: [{ text: "GitHub pull request files read failed.", type: "text" }], isError: true };
@@ -139,13 +135,11 @@ export function createGitHubMcpServer({
       inputSchema: z.object({
         path: z.string().min(1),
         ref: z.string().refine(isFullCommitSha, "ref must be a full commit SHA"),
-        repository: z.string().min(1),
       }),
       outputSchema: jsonObjectSchema,
     },
-    async ({ path, ref, repository: requestedRepository }) => {
+    async ({ path, ref }) => {
       try {
-        assertConfiguredRepository(requestedRepository, repository);
         return structuredJson(await getFile(path, ref));
       } catch {
         return { content: [{ text: "GitHub file read failed.", type: "text" }], isError: true };
@@ -163,12 +157,11 @@ export function createGitHubMcpServer({
         readOnlyHint: true,
       },
       description: "Read check runs for an exact Git ref.",
-      inputSchema: z.object({ ref: z.string().min(1), repository: z.string().min(1) }),
+      inputSchema: z.object({ ref: z.string().min(1) }),
       outputSchema: jsonObjectSchema,
     },
-    async ({ ref, repository: requestedRepository }) => {
+    async ({ ref }) => {
       try {
-        assertConfiguredRepository(requestedRepository, repository);
         return structuredJson(await getChecks(ref));
       } catch {
         return { content: [{ text: "GitHub checks read failed.", type: "text" }], isError: true };
@@ -191,12 +184,11 @@ export function createGitHubMcpServer({
         expected_head_sha: z.string().length(40),
         files: z.array(z.object({ content: z.string(), path: z.string().min(1) })).min(1),
         message: z.string().min(1).max(200),
-        repository: z.string().min(1),
         approval_token: z.string().min(1),
       }),
       outputSchema: jsonObjectSchema,
     },
-    async ({ approval_token, branch, expected_head_sha, files, message, repository }) => {
+    async ({ approval_token, branch, expected_head_sha, files, message }) => {
       try {
         const input = {
           branch,
@@ -220,12 +212,6 @@ export function createGitHubMcpServer({
   );
 
   return server;
-}
-
-function assertConfiguredRepository(requestedRepository: string, configuredRepository: string) {
-  if (requestedRepository !== configuredRepository) {
-    throw new Error("repository is not allowed");
-  }
 }
 
 function structuredJson(value: unknown) {

@@ -138,6 +138,19 @@ export const investigationResponseSchema = z
     }
   });
 
+// Strict structured-output providers require a plain object at the schema root
+// and every property to be required. Runtime validation above retains the
+// conditional evidence rules; null fields represent omitted evidence on the wire.
+const investigationResponseJsonSchema = z
+  .object({
+    decision: investigationDecisionSchema,
+    experimentResult: finalExperimentResultSchema.nullable(),
+    experimentResults: z.array(finalExperimentResultSchema).min(1).nullable(),
+    invariants: z.array(invariantCandidateSchema).min(1).nullable(),
+    scenarios: z.array(finalScenarioPlanSchema).min(1).nullable(),
+  })
+  .strict();
+
 export function validateAnalystArtifacts(input: { invariants: unknown; scenarios: unknown }) {
   const invariants = z.array(invariantCandidateSchema).parse(input.invariants);
   const scenarios = deduplicateScenarioPlans(z.array(scenarioPlanSchema).parse(input.scenarios), maxScenarioCount);
@@ -272,7 +285,7 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       jsonSchema: {
         description: "Complete ForgeGate investigation evidence bundle.",
         name: "forgegate_investigation",
-        schema: z.toJSONSchema(investigationResponseSchema),
+        schema: z.toJSONSchema(investigationResponseJsonSchema),
         strict: true,
       },
     },

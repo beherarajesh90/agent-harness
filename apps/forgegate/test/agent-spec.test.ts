@@ -35,6 +35,9 @@ describe("ForgeGate agent specification", () => {
     });
     const responseFormat = createForgeGateAgentSpec("ollama-local/qwen35-4b").responseFormat as { jsonSchema?: { schema?: unknown } };
     const schema = responseFormat.jsonSchema?.schema ?? {};
+    expect(schema).toMatchObject({ type: "object", additionalProperties: false });
+    expect(schema).not.toHaveProperty("anyOf");
+    expect(schema).toMatchObject({ required: ["decision", "experimentResult", "experimentResults", "invariants", "scenarios"] });
     const hasCompleteBranch = (value: unknown): boolean => {
       if (Array.isArray(value)) return value.some(hasCompleteBranch);
       if (!value || typeof value !== "object") return false;

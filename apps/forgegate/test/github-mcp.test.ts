@@ -174,12 +174,6 @@ describe("GitHub MCP server", () => {
       ],
     });
     await expect(
-      client.callTool({
-        arguments: { pull_number: 42, repository: "other-owner/other-repo" },
-        name: "get_pull_request",
-      }),
-    ).resolves.toMatchObject({ isError: true });
-    await expect(
       client.callTool({ arguments: { pull_number: 42, repository: "beherarajesh90/agent-harness" }, name: "get_pull_request_files" }),
     ).resolves.toMatchObject({
       content: [{ text: JSON.stringify({ complete: true, files: [{ number: 42 }], truncated: false }), type: "text" }],
@@ -190,9 +184,14 @@ describe("GitHub MCP server", () => {
       content: [{ text: JSON.stringify({ path: "payment-lab.ts", ref: "a".repeat(40) }), type: "text" }],
     });
     await expect(
+      client.callTool({ arguments: { path: "payment-lab.ts", ref: "a".repeat(40) }, name: "get_file" }),
+    ).resolves.toMatchObject({
+      content: [{ text: JSON.stringify({ path: "payment-lab.ts", ref: "a".repeat(40) }), type: "text" }],
+    });
+    await expect(
       client.callTool({ arguments: { path: "payment-lab.ts", ref: "main", repository: "beherarajesh90/agent-harness" }, name: "get_file" }),
     ).resolves.toMatchObject({ isError: true });
-    expect(getFile).toHaveBeenCalledOnce();
+    expect(getFile).toHaveBeenCalledTimes(2);
     await expect(
       client.callTool({ arguments: { ref: "a".repeat(40), repository: "beherarajesh90/agent-harness" }, name: "get_checks" }),
     ).resolves.toMatchObject({
