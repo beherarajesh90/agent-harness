@@ -92,6 +92,7 @@ describe("GitHub commit client", () => {
     });
     await expect(client.getFile("apps/forgegate/src/payment-lab.ts", "b".repeat(40))).resolves.toEqual({
       content: "payment source",
+      lineNumberedContent: "1 | payment source",
       path: "apps/forgegate/src/payment-lab.ts",
       sha: "b".repeat(40),
     });
