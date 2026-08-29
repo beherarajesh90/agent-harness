@@ -1352,7 +1352,7 @@ Status: `[x]` verified complete, `[ ]` not started, `[~]` in progress, `[?]` blo
 
 ## Current Implementation State
 
-Last repository verification: 2026-08-26.
+Last repository verification: 2026-08-28.
 
 - [x] Product, architecture, API, safety, workflow, and demo requirements are documented in this plan.
 - [x] Repository-level branch, PR, Qodo, and merge rules are recorded in `AGENTS.md`.
@@ -1472,29 +1472,35 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [x] Create saved ForgeGate agent specification.
 - [x] Add ForgeGate skill with evidence hierarchy, stopping rules, and approval policy.
 - [x] Configure dynamic subagents.
-- [ ] Implement visible invariant analyst subagent.
-- [ ] Implement visible failure-mode analyst subagent.
-- [ ] Require two repository evidence references for each accepted invariant.
-- [ ] Produce `InvariantCandidate` artifacts.
-- [ ] Produce deterministic `ScenarioPlan` artifacts.
-- [ ] Run baseline comparison against `master`.
-- [ ] Check out exact PR SHA in selected sandbox.
-- [ ] Run the generated adversarial scenario and independent oracle.
-- [ ] Produce `ExperimentResult` with SHA, seed, repetitions, observed values, verdict, and artifact links.
-- [ ] Reach a real `BLOCKED` decision for the seeded unsafe PR.
+- [x] Implement visible invariant analyst subagent.
+- [x] Implement visible failure-mode analyst subagent.
+- [x] Require two repository evidence references for each accepted invariant.
+- [x] Produce `InvariantCandidate` artifacts.
+- [x] Produce deterministic `ScenarioPlan` artifacts.
+- [x] Run baseline comparison against `master`.
+- [x] Require every `ExperimentResult` to record one immutable `master` baseline SHA and its expected baseline counts; reject missing, mixed, or PR-equal baseline SHA evidence.
+- [x] Check out exact PR SHA in selected sandbox.
+- [x] Run the generated adversarial scenario and independent oracle.
+- [x] Produce `ExperimentResult` with SHA, seed, repetitions, observed values, verdict, and artifact links.
+- [x] Reach a real `BLOCKED` decision for the seeded unsafe PR.
+- [x] Preload the bounded GitHub MCP catalog and direct the primary agent to complete MCP/sandbox work before delegating evidence-only analyst tasks.
+- [x] Stop controller recovery after an invalid subagent MCP call so it cannot create duplicate analyst threads; the investigation fails closed as `UNCERTAIN`.
+- [ ] Diagnose and fix premature terminal `UNCERTAIN` outcomes when the run has not completed the required evidence phases; expose the exact blocking cause in the projected session state.
+- [ ] Rehearse a real investigation with the configured model and verify a complete evidence bundle produces a non-null terminal `BLOCKED`/`READY` decision; record any remaining model or orchestration limitation.
 
 ### Event projection and investigation API
 
 - [x] Implement create-investigation API with repository/PR validation.
-- [ ] Complete matching/conflicting idempotency-key handling.
+- [x] Complete matching/conflicting idempotency-key handling.
 - [x] Implement snapshot reconstruction from TrueForge events.
 - [x] Implement normalized SSE event stream.
-- [ ] Merge model deltas into base events.
-- [ ] Deduplicate by TrueForge `sequence`; use `eventId` only for tracing and mismatch detection.
+- [x] Merge model deltas into base events.
+- [x] Deduplicate by TrueForge `sequence`; use `eventId` only for tracing and mismatch detection.
 - [x] Implement `Last-Event-ID` resume behavior.
+- [x] Project invariant/failure-mode analyst and sandbox events to their truthful public stages; attribute subagent tool activity to `SUBAGENT`.
 - [x] Implement get-investigation API.
 - [x] Implement cancel API.
-- [ ] Implement live and readiness health APIs.
+- [x] Implement live and readiness health APIs.
 
 ## Phase 4 - Repair and Approval
 
@@ -1542,6 +1548,12 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [ ] Show subagent thread lifecycle.
 - [ ] Show sandbox creation, command, exit code, working directory, and bounded output.
 - [ ] Show invariant, scenario, expected/observed values, and evidence links.
+- [ ] Show the total number of unique scenarios discovered.
+- [ ] Show duplicate scenarios rejected and the deduplication reason.
+- [ ] Show per-scenario states: `PENDING`, `RUNNING`, `PASSED`, `FAILED`, and `UNCERTAIN`.
+- [ ] Show each scenario's invariant, fault sequence, seed, expected values, observed values, and verdict.
+- [ ] Show aggregate scenario progress, such as completed scenarios out of the total.
+- [ ] Show the aggregate final decision and identify the scenario that caused `BLOCKED`.
 - [ ] Show patch, regression result, changed files, and exact diff summary.
 - [ ] Show Qodo review link, finding status, and agent response.
 - [ ] Show retry/failure/recovery steps.
@@ -1594,3 +1606,37 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [ ] Verify repository README, architecture, security model, and AI-assistance disclosure.
 - [ ] Verify public repository, video, and write-up are ready for submission.
 - [ ] Submit before the hackathon deadline.
+
+## Addendum - Unique Scenario Coverage and Three-Agent Boundary
+
+This addendum clarifies scenario coverage without changing the existing three-agent architecture or implementation phases.
+
+### Agent responsibilities
+
+- The primary ForgeGate agent remains the coordinator and experiment executor. It validates evidence, deduplicates scenarios, runs the selected scenarios in the disposable sandbox, aggregates results, and makes the final decision.
+- The visible `invariant-analyst` remains responsible only for discovering `InvariantCandidate` artifacts with exact-SHA evidence.
+- The visible `failure-mode-analyst` remains responsible for generating all valid, unique `ScenarioPlan` artifacts from the accepted invariants. It does not execute experiments.
+- No separate `experiment-runner` agent is introduced. The system therefore continues to have exactly three agents: one primary agent and two dynamic subagents. The phase controller is orchestration code, not an agent.
+
+### Unique scenario handling
+
+- The failure-mode analyst should return every materially distinct scenario it can justify for the accepted payment invariants, rather than returning only one scenario.
+- Before execution, the primary agent validates every plan against the existing `ScenarioPlan` schema and rejects scenarios that reference unknown invariants, stale SHAs, invalid seeds, or placeholder content.
+- Deduplicate scenarios using a canonical fingerprint composed of `invariantId`, normalized `injectedFaults`, normalized `ordering`, and `seed`.
+- Execute each accepted unique scenario up to the existing bounded execution limits. Do not allow model output to create an unbounded experiment loop.
+- A scenario is materially distinct when its invariant, fault set, ordering, or deterministic seed changes the execution schedule or expected observable outcome. Merely reworded plans are duplicates.
+
+### Experiment result contract
+
+- Each executed scenario produces one `ExperimentResult` artifact linked to its scenario through the existing artifact/event context; the result records the tested SHA, seed, repetitions, expected counts, observed counts, verdict, and artifact links.
+- The primary agent aggregates all scenario results for the final decision. `BLOCKED` is allowed when any valid executed scenario violates an accepted invariant. `READY` is allowed only when every accepted scenario executes successfully and passes. `UNCERTAIN` is required when a scenario cannot be validated, executed, or reconciled.
+- If the current singular `experimentResult` response field cannot represent multiple results, the implementation must preserve each result as a separate persisted `ExperimentResult` artifact and return an aggregate decision summary without discarding per-scenario evidence. Do not silently overwrite one result with another.
+
+### Additional implementation checklist
+
+- [x] Instruct the failure-mode analyst to return all materially distinct valid scenarios for accepted invariants.
+- [x] Add deterministic scenario fingerprinting and duplicate rejection before sandbox execution.
+- [x] Enforce a bounded maximum number of accepted/executed scenarios.
+- [x] Persist one `ExperimentResult` for each executed unique scenario.
+- [x] Aggregate all scenario verdicts into the final decision without dropping evidence.
+- [ ] Show scenario count, deduplication, execution progress, and per-scenario results in the harness UI.

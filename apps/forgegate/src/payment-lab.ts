@@ -26,6 +26,19 @@ type PaymentLaboratoryOptions = {
   unsafeRetryForIntentIds?: ReadonlySet<string>;
 };
 
+export type PaymentEvidence = { charges: number; intents: number; ledgerEntries: number };
+
+export type ExperimentResult = {
+  artifactLinks: string[];
+  baselineSha: string;
+  expected: PaymentEvidence;
+  observed: PaymentEvidence;
+  repetitions: number;
+  seed: number;
+  testedSha: string;
+  verdict: "pass" | "fail";
+};
+
 class ProviderTimeoutError extends Error {}
 class ProviderDeclinedError extends Error {}
 
@@ -219,8 +232,13 @@ export function createPaymentLaboratory(options: PaymentLaboratoryOptions = {}) 
   };
 }
 
-export function runUnsafeRetryFixture() {
-  const unsafeIntentIds = new Set(["pi-001", "pi-002"]);
+export function runUnsafeRetryFixture(seed?: number) {
+  const faultCount = seed === undefined ? 2 : ((seed + 1) % 3) + 1;
+  const unsafeIntentIds = new Set(
+    seed === undefined
+      ? ["pi-001", "pi-002"]
+      : Array.from({ length: faultCount }, (_, index) => `pi-${String(((seed * 31 + index * 17) % 100) + 1).padStart(3, "0")}`),
+  );
   const laboratory = createPaymentLaboratory({
     faultSchedule: { timeoutAfterChargeForIntentIds: unsafeIntentIds },
     unsafeRetryForIntentIds: unsafeIntentIds,
@@ -251,4 +269,46 @@ export function runSafeFixture() {
   }
 
   return laboratory.evaluateInvariants();
+}
+
+export function runPaymentExperiment({
+  baselineEvidence,
+  baselineSha,
+  mode,
+  repetitions,
+  seed,
+  testedSha,
+}: {
+  baselineEvidence: PaymentEvidence;
+  baselineSha: string;
+  mode: "safe" | "unsafe";
+  repetitions: number;
+  seed: number;
+  testedSha: string;
+}): ExperimentResult {
+  if (!/^[a-f0-9]{40}$/.test(baselineSha)) throw new Error("baselineSha must be a commit SHA");
+  if (!Number.isInteger(repetitions) || repetitions < 1) throw new Error("repetitions must be a positive integer");
+  if (!Number.isInteger(seed) || seed < 0) throw new Error("seed must be a non-negative integer");
+  if (!/^[a-f0-9]{40}$/.test(testedSha)) throw new Error("testedSha must be a commit SHA");
+  if (Object.values(baselineEvidence).some((value) => !Number.isInteger(value) || value < 0)) {
+    throw new Error("baselineEvidence must contain non-negative integer counts");
+  }
+
+  const run = mode === "unsafe" ? () => runUnsafeRetryFixture(seed) : runSafeFixture;
+  const observed = run();
+  for (let repetition = 1; repetition < repetitions; repetition += 1) {
+    const next = run();
+    if (JSON.stringify(next) !== JSON.stringify(observed)) throw new Error("experiment was not deterministic");
+  }
+
+  return {
+    artifactLinks: ["payment-lab:evidence"],
+    baselineSha,
+    expected: baselineEvidence,
+    observed: { charges: observed.charges, intents: observed.intents, ledgerEntries: observed.ledgerEntries },
+    repetitions,
+    seed,
+    testedSha,
+    verdict: observed.verdict as ExperimentResult["verdict"],
+  };
 }
