@@ -252,8 +252,19 @@ export function runScenarioFixture({
   injectedFaults,
   seed,
 }: Pick<PaymentScenario, "injectedFaults" | "seed"> & { affectedIntentIds?: ReadonlySet<string> }) {
-  const faults = new Set(injectedFaults.map((fault) => fault.trim().toLowerCase()));
-  const supportedFaults = new Set(["timeout-after-charge", "unsafe-retry"]);
+  const faults = new Set(injectedFaults.map((fault) => fault.trim().toLowerCase().replaceAll("_", "-").replaceAll(" ", "-")));
+  const faultAliases = new Map([
+    ["timeoutafterchargeforintentids", "timeout-after-charge"],
+    ["failbeforechargeforintentids", "fail-before-charge"],
+  ]);
+  for (const fault of [...faults]) {
+    const canonical = faultAliases.get(fault.replaceAll("-", ""));
+    if (canonical) {
+      faults.delete(fault);
+      faults.add(canonical);
+    }
+  }
+  const supportedFaults = new Set(["timeout-after-charge", "fail-before-charge", "unsafe-retry"]);
   const unsupportedFault = [...faults].find((fault) => !supportedFaults.has(fault));
   if (unsupportedFault) throw new Error(`unsupported payment fault: ${unsupportedFault}`);
 
@@ -262,13 +273,24 @@ export function runScenarioFixture({
     Array.from({ length: faultCount }, (_, index) => `pi-${String(((seed * 31 + index * 17) % 100) + 1).padStart(3, "0")}`),
   );
   const laboratory = createPaymentLaboratory({
-    ...(faults.has("timeout-after-charge") ? { faultSchedule: { timeoutAfterChargeForIntentIds: affectedIntentIds } } : {}),
+    ...(faults.has("timeout-after-charge") || faults.has("fail-before-charge")
+      ? {
+          faultSchedule: {
+            ...(faults.has("timeout-after-charge") ? { timeoutAfterChargeForIntentIds: affectedIntentIds } : {}),
+            ...(faults.has("fail-before-charge") ? { failBeforeChargeForIntentIds: affectedIntentIds } : {}),
+          },
+        }
+      : {}),
     ...(faults.has("unsafe-retry") ? { unsafeRetryForIntentIds: affectedIntentIds } : {}),
   });
 
   for (let index = 1; index <= 100; index += 1) {
     const intentId = `pi-${String(index).padStart(3, "0")}`;
-    laboratory.processPayment({ amount: 500, idempotencyKey: `checkout-${index}`, intentId });
+    try {
+      laboratory.processPayment({ amount: 500, idempotencyKey: `checkout-${index}`, intentId });
+    } catch (error) {
+      if (!faults.has("fail-before-charge")) throw error;
+    }
   }
 
   return laboratory.evaluateInvariants();

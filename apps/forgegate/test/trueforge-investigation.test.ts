@@ -52,8 +52,9 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Create failure-mode-analyst only after invariant-analyst thread.done");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("include the exact validated invariant JSON in its input");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Never run grep -R, find, or any recursive repository scan");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("timeout-after-charge and unsafe-retry");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("timeout-after-charge, fail-before-charge, and unsafe-retry");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("runPaymentExperiment exactly once per accepted ScenarioPlan");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("using scenario: { scenarioId, seed, injectedFaults } copied from that plan");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("pnpm exec tsx");
   });
 
