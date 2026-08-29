@@ -36,6 +36,12 @@ describe("ForgeGate agent specification", () => {
     const schema = responseFormat.jsonSchema?.schema ?? {};
     expect(schema).toMatchObject({ type: "object", additionalProperties: false });
     expect(schema).not.toHaveProperty("anyOf");
+    const containsAnyOf = (value: unknown): boolean => {
+      if (Array.isArray(value)) return value.some(containsAnyOf);
+      if (!value || typeof value !== "object") return false;
+      return Object.entries(value).some(([key, child]) => key === "anyOf" || containsAnyOf(child));
+    };
+    expect(containsAnyOf(schema)).toBe(false);
     expect(schema).toMatchObject({ properties: { experimentResult: { type: "null" } } });
     expect(JSON.stringify(schema)).toContain("preflightArtifactLink");
     expect(schema).not.toHaveProperty("properties.experimentResults.anyOf.0.items.properties.expected.propertyNames");

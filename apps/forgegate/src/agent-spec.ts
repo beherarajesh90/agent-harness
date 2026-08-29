@@ -196,9 +196,11 @@ const investigationResponseJsonSchema = z
     // Preserve the legacy property in the strict wire shape, but make the
     // singular representation unusable. Runtime parsing remains compatible.
     experimentResult: z.null(),
-    experimentResults: z.array(wireFinalExperimentResultSchema).min(1).nullable(),
-    invariants: z.array(invariantCandidateSchema).min(1).nullable(),
-    scenarios: z.array(finalScenarioPlanSchema).min(1).nullable(),
+    // Strict xgrammar providers reject nullable arrays because Zod emits
+    // `anyOf`; empty arrays represent unavailable evidence on the wire.
+    experimentResults: z.array(wireFinalExperimentResultSchema),
+    invariants: z.array(invariantCandidateSchema),
+    scenarios: z.array(finalScenarioPlanSchema),
   })
   .strict();
 
