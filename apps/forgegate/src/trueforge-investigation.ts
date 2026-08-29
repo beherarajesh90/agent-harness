@@ -1,4 +1,4 @@
-import { createForgeGateAgentSpec, validateInvestigationArtifacts } from "./agent-spec.js";
+import { createForgeGateAgentSpec, validateExperimentPreflight, validateInvestigationArtifacts } from "./agent-spec.js";
 import { hasSubagentToolPolicyViolation, projectInvestigation } from "./investigation.js";
 
 type TrueForgeSessions = {
@@ -73,7 +73,7 @@ export function createTrueForgeInvestigationLauncher({
             "Use cwd / for sandbox commands; /workspace does not exist in the Daytona image. Clone into /agent-harness or another path under /.",
             "Inspect the repository package metadata, install dependencies with its documented package manager, build it with its documented command, and generate a temporary scenario runner in the sandbox. Never assume a ForgeGate or product-specific module path.",
             "Before every experiment, verify execution.entrypoint and inputs against the checked-out repository, compile or type-check the temporary runner, run a bounded preflight, and require structured measurements before the full run. A runner/import/setup/preflight failure is an untestable scenario, not a product failure; repair once, then return UNCERTAIN without an ExperimentResult.",
-            "The preflight runner must emit one raw JSON object with phase=preflight, status=pass, the mapped entrypoint, and non-empty numeric measurements; preserve that successful tool response as auditable evidence before running the full experiment.",
+            "The preflight runner must emit one raw JSON object with artifactLink, phase=preflight, status=pass, the mapped entrypoint, and non-empty numeric measurements; preserve that successful tool response as auditable evidence before running the full experiment.",
             "Use the successful master baseline preflight measurements as the sole source for ExperimentResult.expected; copy that exact measurement set into every result and never recompute, hardcode, or infer different expected values per scenario.",
             "Every ExperimentResult must include a concrete preflightArtifactLink pointing to the successful preflight evidence; never use prose or a placeholder link.",
             "Execute every accepted ScenarioPlan exactly once using a preflighted temporary runner generated from that plan; copy scenarioId and seed unchanged, and never substitute a fixture, mode, or hardcoded scenario. Return UNCERTAIN when the repository cannot express or execute the scenario.",
@@ -172,6 +172,12 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
       }
       if (hasIncompleteExperiments(events)) return;
       if (hasExplicitUncertainDecision(events) && !hasAnyEvidence(events)) return;
+      if (hasMismatchedPreflight(events)) {
+        if (scenarioRecoveryAttempted) return;
+        scenarioRecoveryAttempted = true;
+        turnId = (await createTurn(sessionId, { input: [{ content: scenarioRecoveryPrompt, type: "user.message" }] })).data.id;
+        continue;
+      }
       if (hasIncompleteDecision(events)) {
         if (decisionRepairAttempted) return;
         decisionRepairAttempted = true;
@@ -212,6 +218,27 @@ function hasExplicitUncertainDecision(events: InvestigationEvent[]) {
 
 function hasAnyEvidence(events: InvestigationEvent[]) {
   return projectInvestigation("controller", "", events).artifacts.length > 0;
+}
+
+function hasMismatchedPreflight(events: InvestigationEvent[]) {
+  const preflights = events.flatMap(({ event }) => {
+    if (event.type !== "tool.response" || typeof event.content !== "string") return [];
+    const response = parseJson(event.content);
+    if (!isRecord(response) || response.success !== true || !isRecord(response.response) || response.response.exitCode !== 0 || typeof response.response.result !== "string") return [];
+    const preflight = parseJson(response.response.result);
+    return isRecord(preflight) && preflight.phase === "preflight" ? [preflight] : [];
+  });
+  if (!preflights.length) return false;
+  return projectInvestigation("controller", "", events).artifacts
+    .filter((artifact) => artifact.type === "ExperimentResult")
+    .some(({ data }) => typeof data.preflightArtifactLink === "string" && !preflights.some((preflight) => {
+      try {
+        validateExperimentPreflight(data, preflight);
+        return true;
+      } catch {
+        return false;
+      }
+    }));
 }
 
 function hasInconsistentCompleteEvidence(events: InvestigationEvent[]) {

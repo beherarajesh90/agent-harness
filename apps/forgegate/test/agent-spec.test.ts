@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createForgeGateAgentSpec, deduplicateScenarioPlans, experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, parsePreflightResult, scenarioPlanSchema, validateAnalystArtifacts, validateInvestigationArtifacts } from "../src/agent-spec.js";
+import { createForgeGateAgentSpec, deduplicateScenarioPlans, experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, parsePreflightResult, scenarioPlanSchema, validateAnalystArtifacts, validateExperimentPreflight, validateInvestigationArtifacts } from "../src/agent-spec.js";
 
 describe("ForgeGate agent specification", () => {
   it("enables only the configured read-only GitHub tools", () => {
@@ -137,11 +137,20 @@ describe("ForgeGate agent specification", () => {
   });
 
   it("accepts only structured successful preflight evidence", () => {
-    const preflight = { entrypoint: "processPayment", measurements: { requests: 1 }, phase: "preflight", status: "pass" };
+    const preflight = { artifactLink: "sandbox:preflight", entrypoint: "processPayment", measurements: { requests: 1 }, phase: "preflight", status: "pass" };
 
     expect(parsePreflightResult(preflight)).toEqual(preflight);
     expect(() => parsePreflightResult({ ...preflight, status: "failed" })).toThrow();
     expect(() => parsePreflightResult({ ...preflight, measurements: {} })).toThrow();
+  });
+
+  it("requires experiment expectations to match the linked preflight", () => {
+    const preflight = { artifactLink: "sandbox:preflight", entrypoint: "processPayment", measurements: { charges: 1 }, phase: "preflight", status: "pass" };
+    const result = { artifactLinks: ["sandbox:experiment"], baselineSha: "b".repeat(40), expected: { charges: 1 }, observed: { charges: 2 }, preflightArtifactLink: "sandbox:preflight", repetitions: 1, seed: 1, testedSha: "a".repeat(40), verdict: "fail" as const };
+
+    expect(validateExperimentPreflight(result, preflight)).toEqual(preflight);
+    expect(() => validateExperimentPreflight({ ...result, expected: { charges: 2 } }, preflight)).toThrow("expected measurements");
+    expect(() => validateExperimentPreflight(result, { ...preflight, artifactLink: "sandbox:other" })).toThrow("preflight artifact link");
   });
 
   it("deduplicates scenarios by normalized execution identity and applies a bound", () => {

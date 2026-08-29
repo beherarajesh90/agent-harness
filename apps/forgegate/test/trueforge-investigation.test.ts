@@ -440,6 +440,24 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(createTurn).toHaveBeenCalledOnce();
   });
 
+  it("repairs an experiment whose expected measurements differ from its preflight", async () => {
+    let events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { content: JSON.stringify({ success: true, response: { exitCode: 0, result: JSON.stringify({ artifactLink: "sandbox:preflight", entrypoint: "processPayment", measurements: { charges: 1 }, phase: "preflight", status: "pass" }) } }), type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["sandbox:experiment"], baselineSha: "b".repeat(40), expected: { charges: 2 }, observed: { charges: 2 }, preflightArtifactLink: "sandbox:preflight", repetitions: 1, seed: 1, testedSha: "a".repeat(40), verdict: "pass" }, type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      expect(request.input[0]?.content).toContain("scenario runner or preflight failed");
+      events = [{ event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-2" }];
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+  });
+
   it("surfaces phase controller failures through the launcher callback", async () => {
     const onControllerError = vi.fn();
     const launch = createTrueForgeInvestigationLauncher({

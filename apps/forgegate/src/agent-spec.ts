@@ -11,6 +11,7 @@ const measurementSchema = z.record(z.string().min(1), z.number().int().nonnegati
 
 export const preflightResultSchema = z
   .object({
+    artifactLink: z.string().min(1).refine((link) => !/placeholder|unable to determine/i.test(link) && !/\s/.test(link) && /[/:]/.test(link), "preflight artifact link must be concrete"),
     entrypoint: identifierSchema,
     measurements: measurementSchema,
     phase: z.literal("preflight"),
@@ -20,6 +21,14 @@ export const preflightResultSchema = z
 
 export function parsePreflightResult(input: unknown) {
   return preflightResultSchema.parse(input);
+}
+
+export function validateExperimentPreflight(result: unknown, preflight: unknown) {
+  const parsedResult = experimentResultSchema.parse(result);
+  const parsedPreflight = parsePreflightResult(preflight);
+  if (parsedResult.preflightArtifactLink !== parsedPreflight.artifactLink) throw new Error("preflight artifact link does not match");
+  if (JSON.stringify(parsedResult.expected) !== JSON.stringify(parsedPreflight.measurements)) throw new Error("expected measurements do not match preflight");
+  return parsedPreflight;
 }
 
 const evidenceReferenceSchema = z
@@ -321,7 +330,7 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "Use concrete sandbox artifact identifiers in ExperimentResult artifactLinks; never put an explanation or sentence in artifactLinks.",
       "Use only these exact forgegate-github tool names: get_pull_request, get_pull_request_files, get_file, get_checks, get_qodo_reviews, and get_review_comments. Do not call list_tools, get_tool_info, get_pr, list_changed_files, or changed_files.",
       "Generate one temporary scenario runner from each accepted ScenarioPlan. Before each experiment, verify execution.entrypoint and inputs against the checked-out repository, compile or type-check the runner, run a bounded preflight, and require structured measurements before the full run. A runner/import/setup/preflight failure is an untestable scenario, not a product failure; repair once, then return UNCERTAIN without an ExperimentResult. Run one scenario-independent baseline on master without injected faults before checking out the exact PR head SHA, then reuse that same baseline measurement set as expected in every ExperimentResult; use PR experiment values as observed.",
-      "The preflight runner must emit one raw JSON object with phase=preflight, status=pass, the mapped entrypoint, and non-empty numeric measurements; preserve that successful tool response as auditable evidence before running the full experiment.",
+      "The preflight runner must emit one raw JSON object with artifactLink, phase=preflight, status=pass, the mapped entrypoint, and non-empty numeric measurements; preserve that successful tool response as auditable evidence before running the full experiment.",
       "Use the successful master baseline preflight measurements as the sole source for ExperimentResult.expected; copy that exact measurement set into every result and never recompute, hardcode, or infer different expected values per scenario.",
       "Every ExperimentResult must include a concrete preflightArtifactLink pointing to the successful preflight evidence; never use prose or a placeholder link.",
       "Represent expected and observed measurements as non-empty arrays of unique { name, value } objects in the final response.",
