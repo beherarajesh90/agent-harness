@@ -281,7 +281,6 @@ function readTerminalEvidenceBundle(events: HarnessEvent[], trustedHeadSha?: str
     if (!isPrimaryAgentTurn(event)) continue;
     const content = primaryFinalOutput(events, index);
     const doneOutput = isRecord(event.payload.state) && isRecord(event.payload.state.output) ? event.payload.state.output : undefined;
-    if (typeof doneOutput?.content === "string") continue;
     const parsed = content ? parseJson(content) : undefined;
     if (!isRecord(parsed) || (parsed.decision !== "READY" && parsed.decision !== "BLOCKED")) continue;
     const experimentResults = parsed.experimentResults ?? (parsed.experimentResult === undefined ? undefined : [parsed.experimentResult]);

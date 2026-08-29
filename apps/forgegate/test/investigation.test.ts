@@ -139,7 +139,8 @@ describe("investigation control plane", () => {
       { event: { artifactType: "InvariantCandidate", artifact: invariant, sequence: 15, type: "tool.response" }, turnId: "turn-1" },
       { event: { artifactType: "ScenarioPlan", artifact: scenario, sequence: 16, type: "tool.response" }, turnId: "turn-1" },
       { event: { artifactType: "ExperimentResult", artifact: result, sequence: 17, type: "tool.response" }, turnId: "turn-1" },
-      { event: { state: { output: { content: JSON.stringify({ decision: "READY", invariants: [invariant], scenarios: [scenario], experimentResults: [result] }) } }, sequence: 18, type: "turn.done" }, turnId: "turn-1" },
+      { event: { artifactType: "ScenarioPlan", artifact: { ...scenario, scenarioId: "stale-scenario", seed: 2 }, sequence: 18, type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "READY", invariants: [invariant], scenarios: [scenario], experimentResults: [result] }) } }, sequence: 19, type: "turn.done" }, turnId: "turn-1" },
     ]);
 
     expect(snapshot.status).toBe("READY");
@@ -533,7 +534,7 @@ describe("investigation control plane", () => {
     ]);
 
     expect(snapshot.artifacts.map((artifact) => artifact.type)).toEqual(["InvariantCandidate", "ScenarioPlan", "ExperimentResult"]);
-    expect(snapshot.decision).toBe("BLOCKED");
+    expect(snapshot.decision).toBeUndefined();
   });
 
   it("preserves individually valid artifacts from an incomplete final bundle", () => {
