@@ -41,6 +41,7 @@ export type InvestigationSnapshot = {
   stage: Stage;
   status: Status;
   turnId: string;
+  warnings?: string[];
 };
 
 export type InvestigationArtifact = {
@@ -103,6 +104,7 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const decision = reportedDecision ?? (reconciledFailure ? "BLOCKED" : undefined);
   const subagentMcpFailure = hasSubagentMcpFailure(events);
   const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure || forbiddenSubagentToolUse ? "UNCERTAIN" : terminal ? (completeEvidence || reconciledFailure) && decision ? decision : "UNCERTAIN" : "RUNNING";
+  const warnings = forbiddenSubagentToolUse ? ["SUBAGENT_TOOL_POLICY_VIOLATION"] : [];
 
   return {
     artifacts,
@@ -113,6 +115,7 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
     stage: last?.stage ?? "CONTEXT",
     status,
     turnId: last?.turnId ?? "",
+    ...(warnings.length ? { warnings } : {}),
   };
 }
 
@@ -374,6 +377,11 @@ function latestSandboxCommandSucceeded(events: HarnessEvent[]) {
     if (typeof response?.exitCode === "number") return response.exitCode === 0;
   }
   return true;
+}
+
+export function hasSubagentToolPolicyViolation(events: TrueForgeEventItem[]) {
+  const projected = events.map((item, index) => toHarnessEvent("controller", item, index + 1));
+  return hasForbiddenSubagentToolUse(projected, findPullRequestHeadSha(projected));
 }
 
 function hasForbiddenSubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string) {

@@ -1,5 +1,5 @@
 import { createForgeGateAgentSpec, validateInvestigationArtifacts } from "./agent-spec.js";
-import { projectInvestigation } from "./investigation.js";
+import { hasSubagentToolPolicyViolation, projectInvestigation } from "./investigation.js";
 
 type TrueForgeSessions = {
   create: (request: { agent: { spec: ReturnType<typeof createForgeGateAgentSpec> } }) => Promise<{ data: { id: string } }>;
@@ -114,6 +114,7 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
       if (isTerminalTurn(completed.event)) return;
       const events = await listEvents(sessionId);
       if (hasRepeatedRejectedDecision(events)) return;
+      if (hasSubagentToolPolicyViolation(events)) return;
       const invalidMcpToolCall = findInvalidMcpToolCall(events);
       if (invalidMcpToolCall) {
         if (isSubagentThread(invalidMcpToolCall.event.threadId) || mcpRecoveryAttempted) return;
