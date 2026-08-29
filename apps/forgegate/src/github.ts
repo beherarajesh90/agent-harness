@@ -132,7 +132,6 @@ export function createGitHubReadClient({
 
       const content = Buffer.from(data.content, "base64").toString("utf8");
       return {
-        content,
         lineNumberedContent: content
           .split(/\r?\n/)
           .map((line, index) => `${index + 1} | ${line}`)
