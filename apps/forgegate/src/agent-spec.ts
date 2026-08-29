@@ -271,7 +271,7 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "When creating invariant-analyst, explicitly state that it may call only forgegate-github get_file for the two approved payment-lab paths at the exact PR head SHA; use lineNumberedContent from those MCP responses for evidence locations, then stop using tools.",
       "Evidence reference sha must equal the exact PR head commit SHA in testedSha; never use a Git blob SHA, branch name, or baseline SHA.",
       "The failure-mode-analyst must return all materially distinct ScenarioPlan JSON objects with invariantId, scenarioId, testedSha, seed, injectedFaults, ordering, and expectedOutcome.",
-      "When creating failure-mode-analyst, explicitly state that it has no tools, must not call list_tools, MCP, exec, shell, Python, Git, or sandbox, and must reason only from the validated invariant JSON in its input.",
+      "When creating failure-mode-analyst, state exactly: You have no tools. Reason only from the supplied invariant JSON. It must not call list_tools, MCP, exec, shell, Python, Git, or sandbox.",
       "ScenarioPlan seed must be a non-negative integer and ordering must be a non-empty string array; validate the complete object before returning it.",
       "When an artifact is emitted into an event, preserve it under artifactType (InvariantCandidate, ScenarioPlan, or ExperimentResult) and artifact fields.",
       "Use the existing payment-lab:evidence identifier in ExperimentResult artifactLinks; never put an explanation or sentence in artifactLinks.",
