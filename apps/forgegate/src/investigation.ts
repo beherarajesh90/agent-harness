@@ -92,19 +92,20 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const rejectedFinal = hasRejectedPrimaryFinal(events, trustedHeadSha);
   const githubReadsComplete = hasRequiredGitHubReads(events, trustedHeadSha);
   const sandboxSucceeded = latestSandboxCommandSucceeded(events);
-  const forbiddenSubagentToolUse = hasForbiddenSubagentToolUse(events, trustedHeadSha);
-  const reportedDecision = findFinalDecision(events, trustedHeadSha, artifacts, accepted.hasConflicts || rejectedFinal || !githubReadsComplete || !sandboxSucceeded || forbiddenSubagentToolUse);
+  const subagentToolPolicy = classifySubagentToolUse(events, trustedHeadSha);
+  const subagentToolViolation = subagentToolPolicy.warning || subagentToolPolicy.hard;
+  const reportedDecision = findFinalDecision(events, trustedHeadSha, artifacts, accepted.hasConflicts || rejectedFinal || !githubReadsComplete || !sandboxSucceeded || subagentToolViolation);
   const last = events.at(-1);
   const terminal = last ? isPrimaryAgentTurn(last) : false;
   const state = last?.payload.state as { status?: string } | undefined;
   const artifactTypes = new Set(artifacts.map((artifact) => artifact.type));
   const requiredArtifactTypes: InvestigationArtifact["type"][] = ["InvariantCandidate", "ScenarioPlan", "ExperimentResult"];
-  const completeEvidence = !accepted.hasConflicts && !rejectedFinal && githubReadsComplete && sandboxSucceeded && !forbiddenSubagentToolUse && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts);
-  const reconciledFailure = hasRejectedCompleteEvidenceFinal(events, trustedHeadSha) && !accepted.hasConflicts && githubReadsComplete && sandboxSucceeded && !forbiddenSubagentToolUse && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts) && hasFailedExperiment(artifacts);
+  const completeEvidence = !accepted.hasConflicts && !rejectedFinal && githubReadsComplete && sandboxSucceeded && !subagentToolViolation && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts);
+  const reconciledFailure = hasRejectedCompleteEvidenceFinal(events, trustedHeadSha) && !accepted.hasConflicts && githubReadsComplete && sandboxSucceeded && !subagentToolViolation && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts) && hasFailedExperiment(artifacts);
   const decision = reportedDecision ?? (reconciledFailure ? "BLOCKED" : undefined);
   const subagentMcpFailure = hasSubagentMcpFailure(events);
-  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure || forbiddenSubagentToolUse ? "UNCERTAIN" : terminal ? (completeEvidence || reconciledFailure) && decision ? decision : "UNCERTAIN" : "RUNNING";
-  const warnings = forbiddenSubagentToolUse ? ["SUBAGENT_TOOL_POLICY_VIOLATION"] : [];
+  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure || subagentToolViolation ? "UNCERTAIN" : terminal ? (completeEvidence || reconciledFailure) && decision ? decision : "UNCERTAIN" : "RUNNING";
+  const warnings = subagentToolPolicy.warning ? ["SUBAGENT_TOOL_POLICY_VIOLATION"] : subagentToolPolicy.hard ? ["SUBAGENT_HARD_TOOL_VIOLATION"] : [];
 
   return {
     artifacts,
@@ -381,12 +382,15 @@ function latestSandboxCommandSucceeded(events: HarnessEvent[]) {
 
 export function hasSubagentToolPolicyViolation(events: TrueForgeEventItem[]) {
   const projected = events.map((item, index) => toHarnessEvent("controller", item, index + 1));
-  return hasForbiddenSubagentToolUse(projected, findPullRequestHeadSha(projected));
+  const policy = classifySubagentToolUse(projected, findPullRequestHeadSha(projected));
+  return policy.warning || policy.hard;
 }
 
-function hasForbiddenSubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string) {
-  const calls = new Map<string, boolean>();
+function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string) {
+  const calls = new Map<string, "allowed" | "warning" | "hard">();
   const roles = new Map<string, "invariant" | "failure">();
+  let warning = false;
+  let hard = false;
   for (const event of events) {
     if (event.type === "thread.created" && event.threadId) {
       if (event.payload.title === "invariant-analyst") roles.set(event.threadId, "invariant");
@@ -398,7 +402,10 @@ function hasForbiddenSubagentToolUse(events: HarnessEvent[], trustedHeadSha?: st
     const toolCalls = Array.isArray(event.payload.toolCalls) ? event.payload.toolCalls : usage?.toolCalls;
     if (Array.isArray(toolCalls)) {
       for (const call of toolCalls) {
-        if (!isRecord(call) || typeof call.id !== "string" || !isRecord(call.function)) return true;
+        if (!isRecord(call) || typeof call.id !== "string" || !isRecord(call.function)) {
+          hard = true;
+          continue;
+        }
         const args = typeof call.function.arguments === "string" ? parseJson(call.function.arguments) : call.function.arguments;
         const allowed = role === "invariant" && call.function.name === "call_tool"
           ? isRecord(args)
@@ -407,20 +414,36 @@ function hasForbiddenSubagentToolUse(events: HarnessEvent[], trustedHeadSha?: st
             && isRecord(args.input)
             && isAllowedSubagentRead(args.tool_name, args.input, trustedHeadSha)
           : false;
-        calls.set(call.id, allowed);
-        if (!allowed) return true;
+        const violation = allowed ? "allowed" : classifySubagentViolation(call.function.name, args);
+        calls.set(call.id, violation);
+        if (violation === "warning") warning = true;
+        if (violation === "hard") hard = true;
       }
     }
     if (event.type !== "tool.response") continue;
     if (typeof event.payload.toolCallId === "string") {
-      if (!calls.get(event.payload.toolCallId)) return true;
+      const violation = calls.get(event.payload.toolCallId);
+      if (!violation) {
+        hard = true;
+        continue;
+      }
+      if (violation === "warning") warning = true;
+      if (violation === "hard") hard = true;
       continue;
     }
     if (typeof event.payload.content !== "string") continue;
     const response = parseJson(event.payload.content);
-    if (isRecord(response) && isRecord(response.response) && typeof response.response.exitCode === "number") return true;
+    if (isRecord(response) && isRecord(response.response) && typeof response.response.exitCode === "number") hard = true;
   }
-  return false;
+  return { warning, hard };
+}
+
+function classifySubagentViolation(toolName: unknown, args: unknown): "warning" | "hard" {
+  if (toolName === "list_tools" || toolName === "get_tool_info") return "warning";
+  if (toolName !== "call_tool") return "hard";
+  if (!isRecord(args) || args.mcp_server !== "forgegate-github") return "hard";
+  if (args.tool_name === "commit_files") return "hard";
+  return "warning";
 }
 
 function isAllowedSubagentRead(toolName: string, input: Record<string, unknown>, trustedHeadSha?: string) {

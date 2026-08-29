@@ -32,6 +32,19 @@ describe("investigation control plane", () => {
     expect(snapshot.events.map((event) => event.stage)).toEqual(["INVARIANTS", "INVARIANTS", "HYPOTHESES", "HYPOTHESES", "EXPERIMENT", "TESTING"]);
   });
 
+  it("records a non-mutating subagent tool violation as a warning", () => {
+    const snapshot = projectInvestigation("session-1", "url", [
+      { event: { threadId: "analyst-1", title: "invariant-analyst", type: "thread.created" }, turnId: "turn-1" },
+      { event: { threadId: "analyst-1", toolCalls: [{ id: "tools-1", function: { arguments: "{}", name: "get_tool_info" } }], type: "model.message" }, turnId: "turn-1" },
+      { event: { threadId: "analyst-1", toolCallId: "tools-1", content: "{}", type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "BLOCKED" }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.status).toBe("UNCERTAIN");
+    expect(snapshot.decision).toBeUndefined();
+    expect(snapshot.warnings).toEqual(["SUBAGENT_TOOL_POLICY_VIOLATION"]);
+  });
+
   it("labels every threaded analyst event as a subagent event", () => {
     const snapshot = projectInvestigation("session-1", "url", [
       { event: { sequence: 1, threadId: "invariant-thread", type: "thread.created" }, turnId: "turn-1" },
