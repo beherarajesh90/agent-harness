@@ -111,7 +111,7 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const decision = evidenceDecision ?? reportedDecision ?? (reconciledFailure ? "BLOCKED" : undefined);
   const subagentMcpFailure = hasSubagentMcpFailure(events);
   const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure || subagentToolViolation ? "UNCERTAIN" : terminal ? (completeEvidence || reconciledFailure) && decision ? decision : "UNCERTAIN" : "RUNNING";
-  const warnings = subagentToolPolicy.warning ? ["SUBAGENT_TOOL_POLICY_VIOLATION"] : subagentToolPolicy.hard ? ["SUBAGENT_HARD_TOOL_VIOLATION"] : [];
+  const warnings = subagentToolPolicy.hard ? ["SUBAGENT_HARD_TOOL_VIOLATION"] : subagentToolPolicy.warning ? ["SUBAGENT_TOOL_POLICY_VIOLATION"] : [];
 
   return {
     artifacts,
@@ -488,6 +488,8 @@ function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string
       if (event.payload.title === "invariant-analyst") roles.set(event.threadId, "invariant");
       if (event.payload.title === "failure-mode-analyst") roles.set(event.threadId, "failure");
     }
+  }
+  for (const event of events) {
     if (isPrimaryAgentThread(event)) continue;
     const role = event.threadId ? roles.get(event.threadId) : undefined;
     const usage = isRecord(event.payload.usage) ? event.payload.usage : undefined;
@@ -525,7 +527,9 @@ function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string
         if (violation === "hard") hard = true;
       }
     }
-    if (event.type !== "tool.response") continue;
+  }
+  for (const event of events) {
+    if (isPrimaryAgentThread(event) || event.type !== "tool.response") continue;
     if (typeof event.payload.toolCallId === "string") {
       const violation = calls.get(event.payload.toolCallId);
       if (!violation) {
