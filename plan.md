@@ -1660,14 +1660,14 @@ TrueForge gives dynamic subagents a clean context but shares the configured MCP 
 
 ### Tracked implementation checklist
 
-- [ ] Decide and document the allowed subagent read-only tool set: `get_pull_request`, `get_pull_request_files`, `get_file`, `get_checks`, `get_qodo_reviews`, and `get_review_comments`.
-- [ ] Remove `commit_files` from the investigation agent's enabled tools; retain it only in the later repair/approval workflow if that workflow requires it.
-- [ ] Update the investigation prompt so analysts may use only the approved read-only MCP tools and must not use raw GitHub calls, `commit_files`, or experiment execution.
-- [ ] Replace the generic subagent-tool-use failure path with classification of allowed reads versus forbidden writes, raw calls, and sandbox execution.
-- [ ] Preserve primary-only required-read completion and final-decision ownership in the projector/controller.
+- [x] Decide and document the allowed subagent read-only tool set: `get_pull_request`, `get_pull_request_files`, `get_file`, `get_checks`, `get_qodo_reviews`, and `get_review_comments`.
+- [x] Remove `commit_files` from the investigation agent's enabled tools; retain it only in the later repair/approval workflow if that workflow requires it.
+- [x] Update the investigation prompt so analysts may use only the approved read-only MCP tools and must not use raw GitHub calls, `commit_files`, or experiment execution.
+- [x] Replace the generic subagent-tool-use failure path with classification of allowed reads versus forbidden writes, raw calls, and sandbox execution.
+- [x] Preserve primary-only required-read completion and final-decision ownership in the projector/controller.
 - [ ] Pass repository, PR head SHA, allowed paths, and role-specific constraints to each analyst; do not pass unrestricted repository contents.
 - [ ] Keep analyst requests bounded and prevent recursive delegation or unbounded file/search operations.
-- [ ] Add tests for allowed subagent read calls, forbidden mutation calls, forbidden sandbox execution, wrong repository/ref/path, and primary-only final decisions.
+- [x] Add tests for allowed subagent read calls, forbidden mutation calls, forbidden sandbox execution, wrong repository/ref/path, and primary-only final decisions.
 - [ ] Run the full test suite and one real investigation before considering this backlog item complete.
 - [ ] Update the harness UI/event copy so approved analyst reads are shown as valid subagent work rather than failures.
 
