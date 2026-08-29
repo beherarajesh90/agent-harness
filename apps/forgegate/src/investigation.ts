@@ -405,20 +405,32 @@ function primaryGithubToolCalls(events: HarnessEvent[]) {
   let sawToolCallMetadata = false;
   let sawForgeGateCall = false;
   for (const event of events) {
-    const usage = isRecord(event.payload.usage) ? event.payload.usage : undefined;
-    const toolCalls = usage?.toolCalls;
+    const toolCalls = readToolCalls(event.payload);
     if (!Array.isArray(toolCalls)) continue;
-    sawToolCallMetadata = true;
     if (!isPrimaryAgentThread(event)) continue;
+    sawToolCallMetadata = true;
     for (const call of toolCalls) {
-      if (!isRecord(call) || typeof call.id !== "string" || !isRecord(call.function) || call.function.name !== "call_tool") continue;
+      if (!isRecord(call) || typeof call.id !== "string" || !isRecord(call.function) || typeof call.function.name !== "string") continue;
       const args = typeof call.function.arguments === "string" ? parseJson(call.function.arguments) : call.function.arguments;
-      if (!isRecord(args) || args.mcp_server !== "forgegate-github" || typeof args.tool_name !== "string" || !isRecord(args.input)) continue;
-      sawForgeGateCall = true;
-      calls.set(call.id, { input: args.input, toolName: args.tool_name });
+      if (call.function.name === "call_tool") {
+        if (!isRecord(args) || args.mcp_server !== "forgegate-github" || typeof args.tool_name !== "string" || !isRecord(args.input)) continue;
+        sawForgeGateCall = true;
+        calls.set(call.id, { input: args.input, toolName: args.tool_name });
+      } else if (githubToolNames.includes(call.function.name as typeof githubToolNames[number]) && isRecord(args)) {
+        sawForgeGateCall = true;
+        calls.set(call.id, { input: args, toolName: call.function.name });
+      }
     }
   }
   return { calls, sawForgeGateCall, sawToolCallMetadata };
+}
+
+const githubToolNames = [...requiredGitHubReadTools, "get_file"] as const;
+
+function readToolCalls(payload: Record<string, unknown>) {
+  if (Array.isArray(payload.toolCalls)) return payload.toolCalls;
+  const usage = isRecord(payload.usage) ? payload.usage : undefined;
+  return usage?.toolCalls;
 }
 
 function isSuccessfulToolResponse(payload: Record<string, unknown>) {

@@ -57,6 +57,39 @@ describe("investigation control plane", () => {
     expect(snapshot.warnings).toBeUndefined();
   });
 
+  it("accepts native primary MCP calls when validating complete evidence", () => {
+    const sha = "a".repeat(40);
+    const invariant = { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha };
+    const scenario = { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha: sha };
+    const result = { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 1, intents: 1, ledgerEntries: 1 }, repetitions: 1, scenarioId: "s1", seed: 1, testedSha: sha, verdict: "pass" as const };
+    const reads = [
+      ["get_pull_request", { pull_number: 7 }],
+      ["get_pull_request_files", { pull_number: 7 }],
+      ["get_file", { path: "apps/forgegate/src/payment-lab.ts", ref: sha }],
+      ["get_file", { path: "apps/forgegate/test/payment-lab.test.ts", ref: sha }],
+      ["get_checks", { ref: sha }],
+      ["get_qodo_reviews", { pull_number: 7 }],
+      ["get_review_comments", { pull_number: 7 }],
+    ] as const;
+    const events = reads.flatMap(([toolName, input], index) => {
+      const id = `native-call-${index}`;
+      return [
+        { event: { sequence: index * 2 + 1, type: "model.message", toolCalls: [{ function: { arguments: JSON.stringify(input), name: toolName }, id }] }, turnId: "turn-1" },
+        { event: { content: JSON.stringify(toolName === "get_pull_request" ? { head: { sha }, success: true } : { success: true, response: {} }), sequence: index * 2 + 2, toolCallId: id, type: "tool.response" }, turnId: "turn-1" },
+      ];
+    });
+    const snapshot = projectInvestigation("session-1", "url", [
+      ...events,
+      { event: { artifactType: "InvariantCandidate", artifact: invariant, sequence: 15, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ScenarioPlan", artifact: scenario, sequence: 16, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: result, sequence: 17, type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "READY", invariants: [invariant], scenarios: [scenario], experimentResults: [result] }) } }, sequence: 18, type: "turn.done" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.status).toBe("READY");
+    expect(snapshot.decision).toBe("READY");
+  });
+
   it("labels every threaded analyst event as a subagent event", () => {
     const snapshot = projectInvestigation("session-1", "url", [
       { event: { sequence: 1, threadId: "invariant-thread", type: "thread.created" }, turnId: "turn-1" },
