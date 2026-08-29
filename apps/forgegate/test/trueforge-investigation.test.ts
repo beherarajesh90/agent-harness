@@ -42,11 +42,9 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Evidence reference sha must equal the exact PR head commit SHA");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("The final decision response must include invariants, scenarios, experimentResults, and decision");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Use exactly one of experimentResult or experimentResults, never both");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Never pass [content omitted for brevity] to a subagent");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Pass bounded literal excerpts");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("payment-lab.ts lines 125-170");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("payment-lab.test.ts lines 110-180");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("12,000 characters");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Subagents receive the repository, PR URL, exact head SHA");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("must fetch only approved evidence through read-only MCP calls");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).not.toContain("Pass bounded literal excerpts");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Subagents may use only bounded read-only forgegate-github MCP tools");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Create failure-mode-analyst only after invariant-analyst thread.done");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("include the exact validated invariant JSON in its input");
