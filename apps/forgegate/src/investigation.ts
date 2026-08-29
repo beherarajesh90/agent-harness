@@ -549,7 +549,7 @@ function classifySubagentViolation(toolName: unknown, args: unknown): "allowed" 
 function isSafeSandboxRead(args: unknown) {
   if (!isRecord(args) || typeof args.command !== "string") return false;
   const command = args.command.trim();
-  if (!/^(?:cat|head|tail|wc|jq|nl|sed)\b/i.test(command)) return false;
+  if (!/^(?:cat|head|tail|wc|jq|nl|sed|echo)\b/i.test(command)) return false;
   return !/(?:curl|wget|git|npm|pnpm|python|node|rm|mv|cp|chmod|chown|touch|tee|dd|mkfs|shutdown|reboot|\$\(|`|;|&&|\|\||>>?)/i.test(command);
 }
 

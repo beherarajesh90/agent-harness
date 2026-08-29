@@ -287,6 +287,7 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "The invariant-analyst must return one or more InvariantCandidate JSON objects with id, statement, confidence, testedSha, and at least two distinct evidence references containing path, startLine, endLine, and the same testedSha.",
       "When creating invariant-analyst, explicitly state that it may call only forgegate-github get_file for approved repository paths at the exact PR head SHA; use lineNumberedContent from those MCP responses for evidence locations, then stop using tools.",
       "Evidence reference sha must equal the exact PR head commit SHA in testedSha; never use a Git blob SHA, branch name, or baseline SHA.",
+      "Copy the exact PR head SHA unchanged from the primary context; never count, transform, pad, truncate, or retry get_file with an alternate SHA.",
       "The failure-mode-analyst must return all materially distinct ScenarioPlan JSON objects with invariantId, scenarioId, testedSha, seed, injectedFaults, ordering, and expectedOutcome.",
       "When creating failure-mode-analyst, state exactly: You have no tools. Reason only from the supplied invariant JSON. It must not call list_tools, MCP, exec, shell, Python, Git, or sandbox.",
       "ScenarioPlan seed must be a non-negative integer and ordering must be a non-empty string array; validate the complete object before returning it.",

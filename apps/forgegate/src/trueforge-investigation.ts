@@ -72,6 +72,7 @@ export function createTrueForgeInvestigationLauncher({
             "Inspect the repository package metadata, install dependencies with its documented package manager, build it with its documented command, and generate a temporary scenario runner in the sandbox. Never assume a ForgeGate or product-specific module path.",
             "Execute every accepted ScenarioPlan exactly once using a temporary runner generated from that plan; copy scenarioId and seed unchanged, and never substitute a fixture, mode, or hardcoded scenario. Return UNCERTAIN when the repository cannot express or execute the scenario.",
             "Evidence reference sha must equal the exact PR head commit SHA, which is testedSha; never use a Git blob SHA, branch name, or baseline SHA for evidence.",
+            "Copy the exact PR head SHA unchanged from the primary context; never count, transform, pad, truncate, or retry get_file with an alternate SHA.",
             "Spawn exactly two visible dynamic subagents:",
             "- invariant-analyst: return InvariantCandidate JSON objects with at least two exact-SHA repository evidence references.",
             "- failure-mode-analyst: wait for the accepted invariant JSON from invariant-analyst, then return every materially distinct deterministic ScenarioPlan JSON object tied to it.",
