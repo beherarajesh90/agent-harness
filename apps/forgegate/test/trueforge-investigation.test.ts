@@ -44,6 +44,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("The final decision response must include invariants, scenarios, experimentResults, and decision");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Set experimentResult to null");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Subagents receive the repository, PR URL, exact head SHA");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("derive the approved path list from its exact returned filenames");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("must fetch only approved evidence through read-only MCP calls");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("invariant-analyst delegated input must explicitly allow only forgegate-github get_file");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("failure-mode-analyst delegated input must state exactly");
