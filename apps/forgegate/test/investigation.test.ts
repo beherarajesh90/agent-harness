@@ -196,10 +196,11 @@ describe("investigation control plane", () => {
       ...reads,
       { event: { artifact: invariant, artifactType: "InvariantCandidate", sequence: 15, type: "tool.response" }, turnId: "turn-1" },
       { event: { artifact: scenario, artifactType: "ScenarioPlan", sequence: 16, type: "tool.response" }, turnId: "turn-1" },
-      { event: { artifact: result, artifactType: "ExperimentResult", sequence: 17, type: "tool.response" }, turnId: "turn-1" },
-      { event: { content: JSON.stringify({ response: { exitCode: 0, result: "experiment complete" }, success: true }), sequence: 18, type: "tool.response" }, turnId: "turn-1" },
-      { event: { content: final, sequence: 19, type: "model.message" }, turnId: "turn-1" },
-      { event: { sequence: 20, state: { status: "done" }, type: "turn.done" }, turnId: "turn-1" },
+      { event: { artifact: { ...scenario, scenarioId: "intermediate-only", seed: 99 }, artifactType: "ScenarioPlan", sequence: 17, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifact: result, artifactType: "ExperimentResult", sequence: 18, type: "tool.response" }, turnId: "turn-1" },
+      { event: { content: JSON.stringify({ response: { exitCode: 0, result: "experiment complete" }, success: true }), sequence: 19, type: "tool.response" }, turnId: "turn-1" },
+      { event: { content: final, sequence: 20, type: "model.message" }, turnId: "turn-1" },
+      { event: { sequence: 21, state: { status: "done" }, type: "turn.done" }, turnId: "turn-1" },
     ]);
 
     expect(snapshot.status).toBe("BLOCKED");

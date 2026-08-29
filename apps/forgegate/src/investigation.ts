@@ -94,14 +94,20 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const sandboxSucceeded = latestSandboxCommandSucceeded(events);
   const subagentToolPolicy = classifySubagentToolUse(events, trustedHeadSha);
   const subagentToolViolation = subagentToolPolicy.warning || subagentToolPolicy.hard;
-  const reportedDecision = findFinalDecision(events, trustedHeadSha, artifacts, accepted.hasConflicts || rejectedFinal || !githubReadsComplete || !sandboxSucceeded || subagentToolViolation);
+  const terminalBundle = readTerminalEvidenceBundle(events, trustedHeadSha);
+  const terminalArtifacts = terminalBundle?.artifacts.length ? terminalBundle.artifacts : artifacts;
+  const terminalAccepted = deduplicateArtifacts(terminalArtifacts);
+  const safeForDecision = githubReadsComplete && sandboxSucceeded && !subagentToolViolation && Boolean(trustedHeadSha);
+  const reportedDecision = terminalBundle?.fromModel && !safeForDecision
+    ? undefined
+    : terminalBundle?.decision ?? findFinalDecision(events, trustedHeadSha, artifacts, accepted.hasConflicts || rejectedFinal || !githubReadsComplete || !sandboxSucceeded || subagentToolViolation);
   const last = events.at(-1);
   const terminal = last ? isPrimaryAgentTurn(last) : false;
   const state = last?.payload.state as { status?: string } | undefined;
-  const artifactTypes = new Set(artifacts.map((artifact) => artifact.type));
   const requiredArtifactTypes: InvestigationArtifact["type"][] = ["InvariantCandidate", "ScenarioPlan", "ExperimentResult"];
-  const completeEvidence = !accepted.hasConflicts && !rejectedFinal && githubReadsComplete && sandboxSucceeded && !subagentToolViolation && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts);
-  const reconciledFailure = hasRejectedCompleteEvidenceFinal(events, trustedHeadSha) && !accepted.hasConflicts && githubReadsComplete && sandboxSucceeded && !subagentToolViolation && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts) && hasFailedExperiment(artifacts);
+  const terminalArtifactTypes = new Set(terminalArtifacts.map((artifact) => artifact.type));
+  const completeEvidence = !terminalAccepted.hasConflicts && (Boolean(terminalBundle) || !rejectedFinal) && githubReadsComplete && sandboxSucceeded && !subagentToolViolation && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => terminalArtifactTypes.has(type)) && hasConsistentEvidence(terminalArtifacts);
+  const reconciledFailure = (terminalBundle?.decision === "BLOCKED" || hasRejectedCompleteEvidenceFinal(events, trustedHeadSha)) && !terminalAccepted.hasConflicts && githubReadsComplete && sandboxSucceeded && !subagentToolViolation && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => terminalArtifactTypes.has(type)) && hasConsistentEvidence(terminalArtifacts) && hasFailedExperiment(terminalArtifacts);
   const decision = reportedDecision ?? (reconciledFailure ? "BLOCKED" : undefined);
   const subagentMcpFailure = hasSubagentMcpFailure(events);
   const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure || subagentToolViolation ? "UNCERTAIN" : terminal ? (completeEvidence || reconciledFailure) && decision ? decision : "UNCERTAIN" : "RUNNING";
@@ -252,13 +258,48 @@ function readFinalBundleContent(content: string, trustedHeadSha?: string) {
   }
 }
 
+function readTerminalEvidenceBundle(events: HarnessEvent[], trustedHeadSha?: string) {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]!;
+    if (!isPrimaryAgentTurn(event)) continue;
+    const content = primaryFinalOutput(events, index);
+    const doneOutput = isRecord(event.payload.state) && isRecord(event.payload.state.output) ? event.payload.state.output : undefined;
+    if (typeof doneOutput?.content === "string") continue;
+    const parsed = content ? parseJson(content) : undefined;
+    if (!isRecord(parsed) || (parsed.decision !== "READY" && parsed.decision !== "BLOCKED")) continue;
+    const experimentResults = parsed.experimentResults ?? (parsed.experimentResult === undefined ? undefined : [parsed.experimentResult]);
+    if (!Array.isArray(parsed.invariants) || !Array.isArray(parsed.scenarios) || !Array.isArray(experimentResults)) continue;
+    try {
+      const bundle = validateInvestigationArtifacts({ decision: parsed.decision, invariants: parsed.invariants, scenarios: parsed.scenarios, experimentResults });
+      return { decision: bundle.decision, fromModel: true, artifacts: [
+        ...bundle.invariants.map((data) => ({ data, type: "InvariantCandidate" as const })),
+        ...bundle.scenarios.map((data) => ({ data, type: "ScenarioPlan" as const })),
+        ...bundle.experimentResults.map((data) => ({ data, type: "ExperimentResult" as const })),
+      ] };
+    } catch {
+      if (parsed.decision !== "READY" || !experimentResults.some((result) => isRecord(result) && result.verdict === "fail")) continue;
+      try {
+        const bundle = validateInvestigationArtifacts({ decision: "BLOCKED", invariants: parsed.invariants, scenarios: parsed.scenarios, experimentResults });
+        return { decision: "BLOCKED" as const, fromModel: true, artifacts: [
+          ...bundle.invariants.map((data) => ({ data, type: "InvariantCandidate" as const })),
+          ...bundle.scenarios.map((data) => ({ data, type: "ScenarioPlan" as const })),
+          ...bundle.experimentResults.map((data) => ({ data, type: "ExperimentResult" as const })),
+        ] };
+      } catch {
+        continue;
+      }
+    }
+  }
+  return undefined;
+}
+
 function findFinalDecision(events: HarnessEvent[], trustedHeadSha: string | undefined, artifacts: InvestigationArtifact[], hasArtifactConflicts: boolean): InvestigationDecision | undefined {
   if (hasArtifactConflicts) return undefined;
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]!;
     if (!isPrimaryAgentTurn(event)) continue;
     const content = primaryFinalOutput(events, index);
-    const bundle = content ? readFinalBundleContent(content, trustedHeadSha) : undefined;
+    const bundle = readFinalBundle(event.payload, trustedHeadSha) ?? (content ? readFinalBundleContent(content, trustedHeadSha) : undefined);
     if (bundle?.decision) return bundle.decision;
     const parsed = content ? parseJson(content) : undefined;
     if (!isRecord(parsed) || (parsed.decision !== "BLOCKED" && parsed.decision !== "READY")) continue;
