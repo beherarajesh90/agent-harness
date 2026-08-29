@@ -234,7 +234,7 @@ function readFinalBundle(payload: Record<string, unknown>, trustedHeadSha?: stri
 function readFinalBundleContent(content: string, trustedHeadSha?: string) {
   const parsed = parseJson(content);
   if (!isRecord(parsed)) return undefined;
-  const parsedResponse = investigationResponseSchema.safeParse(parsed);
+  const parsedResponse = investigationResponseSchema.safeParse(normalizeWireMeasurements(parsed));
   if (!parsedResponse.success) return undefined;
   if (parsedResponse.data.decision === "UNCERTAIN") {
     return {
@@ -252,6 +252,27 @@ function readFinalBundleContent(content: string, trustedHeadSha?: string) {
   } catch {
     return undefined;
   }
+}
+
+function normalizeWireMeasurements(value: Record<string, unknown>) {
+  const normalizeResult = (result: unknown) => {
+    if (!isRecord(result)) return result;
+    const normalize = (measurements: unknown) => {
+      if (!Array.isArray(measurements)) return measurements;
+      const normalized: Record<string, number> = {};
+      for (const measurement of measurements) {
+        if (!isRecord(measurement) || typeof measurement.name !== "string" || typeof measurement.value !== "number" || measurement.name.length === 0 || measurement.name in normalized) return measurements;
+        normalized[measurement.name] = measurement.value;
+      }
+      return normalized;
+    };
+    return { ...result, expected: normalize(result.expected), observed: normalize(result.observed) };
+  };
+  return {
+    ...value,
+    experimentResult: normalizeResult(value.experimentResult),
+    experimentResults: Array.isArray(value.experimentResults) ? value.experimentResults.map(normalizeResult) : value.experimentResults,
+  };
 }
 
 function readTerminalEvidenceBundle(events: HarnessEvent[], trustedHeadSha?: string) {

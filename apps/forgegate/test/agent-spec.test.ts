@@ -37,6 +37,7 @@ describe("ForgeGate agent specification", () => {
     expect(schema).toMatchObject({ type: "object", additionalProperties: false });
     expect(schema).not.toHaveProperty("anyOf");
     expect(schema).toMatchObject({ properties: { experimentResult: { type: "null" } } });
+    expect(schema).not.toHaveProperty("properties.experimentResults.anyOf.0.items.properties.expected.propertyNames");
     expect(schema).toMatchObject({ required: ["decision", "experimentResult", "experimentResults", "invariants", "scenarios"] });
     const hasCompleteBranch = (value: unknown): boolean => {
       if (Array.isArray(value)) return value.some(hasCompleteBranch);

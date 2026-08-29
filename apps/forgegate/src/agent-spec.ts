@@ -140,13 +140,28 @@ export const investigationResponseSchema = z
 // Strict structured-output providers require a plain object at the schema root
 // and every property to be required. Runtime validation above retains the
 // conditional evidence rules; null fields represent omitted evidence on the wire.
+const wireMeasurementSchema = z.array(z.object({ name: z.string().min(1), value: z.number().int().nonnegative() }).strict()).min(1);
+const wireFinalExperimentResultSchema = z
+  .object({
+    artifactLinks: z.array(z.string().min(1)).min(1),
+    baselineSha: shaSchema,
+    expected: wireMeasurementSchema,
+    observed: wireMeasurementSchema,
+    repetitions: z.number().int().positive(),
+    scenarioId: z.string().min(1),
+    seed: z.number().int().nonnegative(),
+    testedSha: shaSchema,
+    verdict: z.enum(["pass", "fail"]),
+  })
+  .strict();
+
 const investigationResponseJsonSchema = z
   .object({
     decision: investigationDecisionSchema,
     // Preserve the legacy property in the strict wire shape, but make the
     // singular representation unusable. Runtime parsing remains compatible.
     experimentResult: z.null(),
-    experimentResults: z.array(finalExperimentResultSchema).min(1).nullable(),
+    experimentResults: z.array(wireFinalExperimentResultSchema).min(1).nullable(),
     invariants: z.array(invariantCandidateSchema).min(1).nullable(),
     scenarios: z.array(finalScenarioPlanSchema).min(1).nullable(),
   })
@@ -278,6 +293,7 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "Use concrete sandbox artifact identifiers in ExperimentResult artifactLinks; never put an explanation or sentence in artifactLinks.",
       "Use only these exact forgegate-github tool names: get_pull_request, get_pull_request_files, get_file, get_checks, get_qodo_reviews, and get_review_comments. Do not call list_tools, get_tool_info, get_pr, list_changed_files, or changed_files.",
       "Generate one temporary scenario runner from each accepted ScenarioPlan and run the same runner on master before checking out the exact PR head SHA. Every ExperimentResult must record that immutable master baselineSha and use its measured values as expected; use PR experiment values as observed.",
+      "Represent expected and observed measurements as non-empty arrays of unique { name, value } objects in the final response.",
       "Execute every accepted ScenarioPlan exactly once with its scenarioId and seed copied unchanged into the generated runner; do not substitute a fixture, mode, or hardcoded scenario. Return UNCERTAIN when the repository cannot express or execute the scenario.",
       "Use the ScenarioPlan seed to drive a deterministic fault schedule; repeated runs with the same seed must reproduce the same observations, and different seeds must be allowed to exercise different schedules.",
       "Mark the verdict fail when the observed values violate an accepted invariant, even if the scenario reproduces the expected failure.",
