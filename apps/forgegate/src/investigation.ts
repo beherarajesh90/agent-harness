@@ -205,7 +205,7 @@ function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: 
       extracted.push(...map);
     }
   }
-  const bundle = readFinalBundle(payload, trustedHeadSha);
+  const bundle = readFinalBundle(payload, trustedHeadSha, baselineSha);
   if (bundle) {
     return [
       ...extracted,
@@ -228,7 +228,7 @@ function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: 
         ...extracted,
         ...(Array.isArray(normalized.invariants) ? readArtifact("InvariantCandidate", normalized.invariants, trustedHeadSha) : []),
         ...(Array.isArray(normalized.scenarios) ? readArtifact("ScenarioPlan", normalized.scenarios, trustedHeadSha) : []),
-        ...readArtifact("ExperimentResult", results, trustedHeadSha),
+        ...readArtifact("ExperimentResult", results, trustedHeadSha, false, baselineSha),
       ];
     }
     const sandboxResults = readSandboxExperimentResults(parsed, trustedHeadSha, baselineSha, preflightArtifactLink);
@@ -305,8 +305,9 @@ function deduplicateArtifacts(artifacts: InvestigationArtifact[]) {
     const existing = unique.get(identity);
     if (!existing) {
       unique.set(identity, artifact);
+    } else if (artifact.type === "ExperimentResult" && sameExperimentEvidence(existing.data, data)) {
+      if (typeof existing.data.preflightArtifactLink !== "string" && typeof data.preflightArtifactLink === "string") unique.set(identity, artifact);
     } else if (!isDeepStrictEqual(existing.data, data)
-      && !(artifact.type === "ExperimentResult" && sameExperimentEvidence(existing.data, data))
       && !(artifact.type === "InvariantCandidate" && sameInvariantEvidence(existing.data, data))
       && !(artifact.type === "ScenarioPlan" && sameScenarioExecution(existing.data, data))) {
       hasConflicts = true;
@@ -371,12 +372,12 @@ function scenarioMatchesResult(scenario: Record<string, unknown>, result: Record
   return typeof result.scenarioId !== "string" && result.seed === scenario.seed;
 }
 
-function readFinalBundle(payload: Record<string, unknown>, trustedHeadSha?: string) {
+function readFinalBundle(payload: Record<string, unknown>, trustedHeadSha?: string, baselineSha?: string) {
   const output = isRecord(payload.state) && isRecord(payload.state.output) ? payload.state.output : undefined;
-  return typeof output?.content === "string" ? readFinalBundleContent(output.content, trustedHeadSha) : undefined;
+  return typeof output?.content === "string" ? readFinalBundleContent(output.content, trustedHeadSha, baselineSha) : undefined;
 }
 
-function readFinalBundleContent(content: string, trustedHeadSha?: string) {
+function readFinalBundleContent(content: string, trustedHeadSha?: string, baselineSha?: string) {
   const parsed = parseJson(content);
   if (!isRecord(parsed)) return undefined;
   const parsedResponse = investigationResponseSchema.safeParse(normalizeWireMeasurements(parsed));
@@ -393,6 +394,7 @@ function readFinalBundleContent(content: string, trustedHeadSha?: string) {
   try {
     const bundle = validateInvestigationArtifacts(parsedResponse.data);
     if (trustedHeadSha && [...bundle.invariants, ...bundle.scenarios, ...bundle.experimentResults].some((artifact) => artifact.testedSha !== trustedHeadSha)) return undefined;
+    if (baselineSha && bundle.experimentResults.some((result) => result.baselineSha !== baselineSha)) return undefined;
     return bundle;
   } catch {
     return undefined;
@@ -804,7 +806,7 @@ function isRepositoryPath(value: unknown): value is string {
     && !value.split("/").includes("..");
 }
 
-function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string, requireExecutableScenario = false): InvestigationArtifact[] {
+function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string, requireExecutableScenario = false, baselineSha?: string): InvestigationArtifact[] {
   if (type !== "ExperimentResult" && type !== "InvariantCandidate" && type !== "PatchProposal" && type !== "RepositoryCapabilityMap" && type !== "ScenarioPlan") return [];
   const values = Array.isArray(value) ? value : [value];
   return values.flatMap((candidate) => {
@@ -818,7 +820,7 @@ function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string, re
       const executable = executableScenarioPlanSchema.safeParse(normalized).success;
       if (!valid || (requireExecutableScenario && !executable)) return [];
     }
-    if (type === "ExperimentResult" && !experimentResultSchema.safeParse(candidate).success) return [];
+    if (type === "ExperimentResult" && (!experimentResultSchema.safeParse(candidate).success || (baselineSha && normalized.baselineSha !== baselineSha))) return [];
     if (type === "RepositoryCapabilityMap" && !repositoryCapabilityMapSchema.safeParse(normalized).success) return [];
     if (type === "PatchProposal" && !patchProposalSchema.safeParse(normalized).success) return [];
     if (trustedHeadSha && (type === "PatchProposal" ? normalized.expectedHeadSha !== trustedHeadSha : normalized.testedSha !== trustedHeadSha)) return [];
