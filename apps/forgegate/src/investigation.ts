@@ -55,6 +55,7 @@ type TrueForgeEventItem = { event: Record<string, unknown>; turnId: string };
 type InvestigationRecord = { pullRequestUrl: string; turnId: string };
 type LaunchResult = { sessionId: string; turnId: string };
 type InvestigationGateway = {
+  approve?: (sessionId: string, input: { decision: "allow" | "deny"; threadId: string; toolCallId: string }) => Promise<unknown>;
   cancel: (sessionId: string) => Promise<unknown>;
   findByRequestFingerprint?: (fingerprint: string) => Promise<{ pullRequestUrl: string; result: LaunchResult } | undefined>;
   getMetadata?: (sessionId: string) => Promise<InvestigationRecord | undefined>;
@@ -73,6 +74,13 @@ export class InvestigationNotFoundError extends Error {
   constructor() {
     super("investigation not found");
     this.name = "InvestigationNotFoundError";
+  }
+}
+
+export class ApprovalNotFoundError extends Error {
+  constructor() {
+    super("pending approval not found");
+    this.name = "ApprovalNotFoundError";
   }
 }
 
@@ -904,6 +912,15 @@ export function createInvestigationService(gateway: InvestigationGateway) {
   const inFlight = new Map<string, { pullRequestUrl: string; promise: Promise<LaunchResult> }>();
 
   return {
+    async approve(sessionId: string, approvalId: string, decision: "allow" | "deny") {
+      const record = await resolveRecord(sessionId);
+      if (!record) throw new InvestigationNotFoundError();
+      const pending = (await gateway.listEvents(sessionId)).map((item) => item.event).reverse().find((event) => event.type === "tool.approval_required" && pendingToolCallIds(event).includes(approvalId));
+      if (!pending || typeof pending.threadId !== "string") throw new ApprovalNotFoundError();
+      if (!gateway.approve) throw new Error("approval resumer is unavailable");
+      await gateway.approve(sessionId, { decision, threadId: pending.threadId, toolCallId: approvalId });
+      return get(sessionId);
+    },
     async cancel(sessionId: string) {
       const record = await resolveRecord(sessionId);
       if (!record) throw new InvestigationNotFoundError();
@@ -966,6 +983,12 @@ export function createInvestigationService(gateway: InvestigationGateway) {
     if (!record) throw new InvestigationNotFoundError();
     return projectInvestigation(sessionId, record.pullRequestUrl, await gateway.listEvents(sessionId));
   }
+}
+
+function pendingToolCallIds(event: Record<string, unknown>) {
+  if (typeof event.toolCallId === "string") return [event.toolCallId];
+  const calls = Array.isArray(event.toolCalls) ? event.toolCalls : [];
+  return calls.flatMap((call) => isRecord(call) && typeof call.id === "string" ? [call.id] : []);
 }
 
 function requestFingerprint(key: string) {

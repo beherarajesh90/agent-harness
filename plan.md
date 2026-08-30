@@ -1516,7 +1516,7 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [ ] Enforce expected-head-SHA check immediately before write.
 - [ ] Reject force-push, merge, workflow modification, branch deletion, and PR closure.
 - [ ] Render exact diff, SHA, changed files, and risk before approval.
-- [ ] Implement approval API and TrueForge resume with matching tool-call ID.
+- [x] Implement approval API and TrueForge resume with matching tool-call ID.
 - [ ] Verify deny creates zero writes.
 - [ ] Verify allow creates exactly one bounded commit on the existing PR branch.
 - [ ] Verify stale SHA fails closed.

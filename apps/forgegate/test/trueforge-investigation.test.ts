@@ -1,9 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { hasSubagentToolPolicyViolation } from "../src/investigation.js";
-import { createInvestigationPhaseController, createTrueForgeInvestigationLauncher } from "../src/trueforge-investigation.js";
+import { createInvestigationPhaseController, createTrueForgeApprovalResumer, createTrueForgeInvestigationLauncher } from "../src/trueforge-investigation.js";
 
 describe("createTrueForgeInvestigationLauncher", () => {
+  it("resumes a native approval with the exact tool call context", async () => {
+    const createTurn = vi.fn(async () => ({ data: { id: "turn-2" } }));
+    const resume = createTrueForgeApprovalResumer({ createTurn });
+
+    await resume("session-1", { decision: "allow", threadId: "thread-1", toolCallId: "call-1" });
+
+    expect(createTurn).toHaveBeenCalledWith("session-1", {
+      input: [{ approval: { status: "allow" }, threadId: "thread-1", toolCallId: "call-1", type: "user.tool_approval" }],
+    });
+  });
+
   it("creates an agent-backed session and instructs two visible analysts", async () => {
     const sessions = {
       create: vi.fn(async () => ({ data: { id: "session-1" } })),

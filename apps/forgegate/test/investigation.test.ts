@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { buildApp } from "../src/app.js";
-import { createInvestigationService, IdempotencyConflictError, InvestigationNotFoundError, projectInvestigation } from "../src/investigation.js";
+import { ApprovalNotFoundError, createInvestigationService, IdempotencyConflictError, InvestigationNotFoundError, projectInvestigation } from "../src/investigation.js";
 
 describe("investigation control plane", () => {
   it("projects newest-first TrueForge events into ordered SSE events", () => {
@@ -1322,7 +1322,9 @@ describe("investigation control plane", () => {
   });
 
   it("exposes create, snapshot, and cancel endpoints", async () => {
+    const approve = vi.fn(async () => ({ artifacts: [], events: [], pullRequestUrl: "url", sessionId: "session-1", stage: "APPROVAL" as const, status: "PAUSED" as const, turnId: "turn-1" }));
     const service = {
+      approve,
       cancel: vi.fn(async () => ({ artifacts: [], events: [], pullRequestUrl: "url", sessionId: "session-1", stage: "CONTEXT" as const, status: "CANCELLED" as const, turnId: "turn-1" })),
       create: vi.fn(async () => ({ sessionId: "session-1", turnId: "turn-1" })),
       get: vi.fn(async () => ({ artifacts: [], events: [], pullRequestUrl: "url", sessionId: "session-1", stage: "CONTEXT" as const, status: "RUNNING" as const, turnId: "turn-1" })),
@@ -1334,7 +1336,29 @@ describe("investigation control plane", () => {
     await expect(app.inject({ headers: { "idempotency-key": "request-1" }, method: "POST", payload: { pullRequestUrl: "other-url" }, url: "/api/investigations" })).resolves.toMatchObject({ statusCode: 409 });
     await expect(app.inject({ method: "GET", url: "/api/investigations/session-1" })).resolves.toMatchObject({ statusCode: 200 });
     await expect(app.inject({ method: "POST", url: "/api/investigations/session-1/cancel" })).resolves.toMatchObject({ statusCode: 202 });
+    await expect(app.inject({ method: "POST", payload: { decision: "allow" }, url: "/api/investigations/session-1/approvals/call-1" })).resolves.toMatchObject({ statusCode: 202 });
+    expect(approve).toHaveBeenCalledWith("session-1", "call-1", "allow");
+    await expect(app.inject({ method: "POST", payload: { decision: "maybe" }, url: "/api/investigations/session-1/approvals/call-1" })).resolves.toMatchObject({ statusCode: 400 });
     await app.close();
+  });
+
+  it("resumes only a matching pending approval", async () => {
+    const approve = vi.fn(async () => undefined);
+    const gateway = {
+      approve,
+      cancel: vi.fn(async () => undefined),
+      launch: vi.fn(async () => ({ sessionId: "session-1", turnId: "turn-1" })),
+      listEvents: vi.fn(async () => [{
+        event: { threadId: "thread-1", toolCalls: [{ id: "call-1" }], type: "tool.approval_required" },
+        turnId: "turn-1",
+      }]),
+    };
+    const service = createInvestigationService(gateway);
+    await service.create("https://github.com/acme/demo/pull/1");
+
+    await service.approve("session-1", "call-1", "allow");
+    expect(approve).toHaveBeenCalledWith("session-1", { decision: "allow", threadId: "thread-1", toolCallId: "call-1" });
+    await expect(service.approve("session-1", "stale-call", "allow")).rejects.toBeInstanceOf(ApprovalNotFoundError);
   });
 
   it("classifies service failures without hiding them as not found", async () => {

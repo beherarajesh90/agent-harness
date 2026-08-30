@@ -3,10 +3,12 @@ import { hasIncompletePrimaryGitHubReads, hasSubagentToolPolicyViolation, projec
 
 type TrueForgeSessions = {
   create: (request: { agent: { spec: ReturnType<typeof createForgeGateAgentSpec> } }) => Promise<{ data: { id: string } }>;
-  createTurn: (
+  createTurn: {
+    bivarianceHack(
     sessionId: string,
-    request: { input: { content: string; type: "user.message" }[] },
-  ) => Promise<{ data: { id: string } }>;
+    request: { input: ({ content: string; type: "user.message" } | { approval: { status: "allow" | "deny" }; threadId: string; toolCallId: string; type: "user.tool_approval" })[] },
+    ): Promise<{ data: { id: string } }>;
+  }["bivarianceHack"];
 };
 
 type InvestigationEvent = { event: Record<string, unknown>; turnId: string };
@@ -260,6 +262,12 @@ function isTerminalTurn(event: Record<string, unknown>) {
   const state = event.state;
   const status = typeof state === "object" && state !== null && !Array.isArray(state) ? (state as { status?: unknown }).status : event.status;
   return status === "cancelled" || status === "error" || status === "blocked";
+}
+
+export function createTrueForgeApprovalResumer(sessions: Pick<TrueForgeSessions, "createTurn">) {
+  return async (sessionId: string, input: { decision: "allow" | "deny"; threadId: string; toolCallId: string }) => sessions.createTurn(sessionId, {
+    input: [{ approval: { status: input.decision }, threadId: input.threadId, toolCallId: input.toolCallId, type: "user.tool_approval" }],
+  });
 }
 
 function isSubagentCreationError(event: Record<string, unknown>) {
