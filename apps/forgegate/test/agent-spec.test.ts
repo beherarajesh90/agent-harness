@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createForgeGateAgentSpec, deduplicateScenarioPlans, executableScenarioPlanSchema, experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, normalizeScenarioPlan, parsePreflightResult, patchProposalSchema, scenarioPlanSchema, validateAnalystArtifacts, validateExperimentPreflight, validateInvestigationArtifacts } from "../src/agent-spec.js";
 
 describe("ForgeGate agent specification", () => {
-  it("enables only the configured read-only GitHub tools", () => {
+  it("enables read tools and native approval-gated commit_files", () => {
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b")).toMatchObject({
       config: {
         dynamicSubAgents: { enabled: true },
@@ -16,12 +16,13 @@ describe("ForgeGate agent specification", () => {
             "get_pull_request_files",
             "get_file",
             "get_checks",
-            "get_qodo_reviews",
-            "get_review_comments",
-          ],
+          "get_qodo_reviews",
+          "get_review_comments",
+          "commit_files",
+        ],
           name: "forgegate-github",
           preload: true,
-          requireApprovalForTools: [],
+          requireApprovalForTools: ["commit_files"],
         },
       ],
       model: { name: "ollama-local/qwen35-4b" },

@@ -106,7 +106,7 @@ export function createTrueForgeInvestigationLauncher({
             "Artifact contract: evidence objects use sha (not testedSha); ScenarioPlan injectedFaults is string[] and expectedOutcome is a string; return raw JSON only, never Markdown, tables, prose, explanations, or code fences. Every scenarioId must be unique. Once a scenarioId is emitted, reuse its exact executable fields and do not emit a revised copy; if continuing, omit already-emitted scenarioIds and return only new scenarios. Wording-only expectedOutcome enrichment is ignored by deduplication, but changed faults, ordering, seed, invariant, or execution fields are rejected as conflicts.",
             "ScenarioPlan ordering is also a non-empty string[]; validate the complete ScenarioPlan against the ForgeGate schema before preserving it.",
             "ScenarioPlan seed is a non-negative integer; never use a string such as seed-001.",
-            "Reconcile only evidence at the exact PR SHA. Do not write or request approval in this turn.",
+            "Reconcile only evidence at the exact PR SHA. Do not comment, trigger Qodo, merge, deploy, or perform any other mutation. After a validated PatchProposal and repaired passing evidence, commit_files is the only allowed mutation and must remain paused for TrueForge native approval.",
           ].join("\n"),
           type: "user.message",
         },

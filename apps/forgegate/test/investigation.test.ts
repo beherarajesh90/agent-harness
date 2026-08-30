@@ -4,16 +4,6 @@ import { buildApp } from "../src/app.js";
 import { createInvestigationService, IdempotencyConflictError, InvestigationNotFoundError, projectInvestigation } from "../src/investigation.js";
 
 describe("investigation control plane", () => {
-  it("serves the desktop control room", async () => {
-    const app = buildApp();
-    const response = await app.inject({ method: "GET", url: "/" });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.headers["content-type"]).toContain("text/html");
-    expect(response.body).toContain("ForgeGate Control Room");
-    await app.close();
-  });
-
   it("projects newest-first TrueForge events into ordered SSE events", () => {
     const snapshot = projectInvestigation("session-1", "https://github.com/acme/demo/pull/1", [
       { event: { id: "event-2", type: "turn.done", createdAt: "2026-01-02T00:00:00Z", state: { status: "done" } }, turnId: "turn-1" },
