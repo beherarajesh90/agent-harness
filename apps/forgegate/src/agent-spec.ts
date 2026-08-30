@@ -8,6 +8,10 @@ const identifierSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/, "
 export const maxScenarioCount = 8;
 
 const measurementSchema = z.record(z.string().min(1), z.number().int().nonnegative()).refine((measurements) => Object.keys(measurements).length > 0, "measurements must not be empty");
+const sameMeasurements = (left: Record<string, number>, right: Record<string, number>) => {
+  const names = Object.keys(left).sort();
+  return names.length === Object.keys(right).length && names.every((name) => left[name] === right[name]);
+};
 
 export const preflightResultSchema = z
   .object({
@@ -15,6 +19,8 @@ export const preflightResultSchema = z
     entrypoint: identifierSchema,
     measurements: measurementSchema,
     phase: z.literal("preflight"),
+    scenarioId: identifierSchema.optional(),
+    seed: z.number().int().nonnegative().optional(),
     status: z.literal("pass"),
   })
   .strict();
@@ -23,11 +29,19 @@ export function parsePreflightResult(input: unknown) {
   return preflightResultSchema.parse(input);
 }
 
-export function validateExperimentPreflight(result: unknown, preflight: unknown) {
+export function validateExperimentPreflight(result: unknown, preflight: unknown, scenario?: unknown) {
   const parsedResult = experimentResultSchema.parse(result);
   const parsedPreflight = parsePreflightResult(preflight);
   if (parsedResult.preflightArtifactLink !== parsedPreflight.artifactLink) throw new Error("preflight artifact link does not match");
   if (JSON.stringify(parsedResult.expected) !== JSON.stringify(parsedPreflight.measurements)) throw new Error("expected measurements do not match preflight");
+  if (parsedResult.scenarioId !== undefined && parsedPreflight.scenarioId !== parsedResult.scenarioId) throw new Error("preflight scenario does not match result");
+  if (parsedPreflight.scenarioId !== undefined && parsedPreflight.seed !== parsedResult.seed) throw new Error("preflight seed does not match result");
+  if (scenario !== undefined) {
+    const parsedScenario = scenarioPlanSchema.parse(scenario);
+    if (parsedScenario.scenarioId !== parsedPreflight.scenarioId || parsedScenario.seed !== parsedPreflight.seed || parsedScenario.execution?.entrypoint !== parsedPreflight.entrypoint) {
+      throw new Error("preflight does not match scenario execution");
+    }
+  }
   return parsedPreflight;
 }
 
@@ -110,9 +124,11 @@ export function normalizeScenarioPlan(input: unknown): unknown {
   if (Array.isArray(normalized.injectedFaults)) {
     normalized.injectedFaults = normalized.injectedFaults.map((fault) => isRecord(fault) && typeof fault.fault === "string" ? fault.fault : fault);
   }
+  if (typeof normalized.seed === "string" && /^\d+$/.test(normalized.seed)) normalized.seed = Number(normalized.seed);
   if (isRecord(normalized.execution)) {
     const execution = { ...normalized.execution };
     if (execution.inputs === undefined && execution.parameters !== undefined) execution.inputs = execution.parameters;
+    if (typeof execution.assertions === "string") execution.assertions = [execution.assertions];
     delete execution.parameters;
     normalized.execution = execution;
   }
@@ -152,10 +168,11 @@ export const experimentResultSchema = z
   .refine(
     (result) => result.artifactLinks.every((link) => !/placeholder|unable to determine/i.test(link) && !/\s/.test(link) && /[/:]/.test(link)),
     "experiment artifact links must be concrete paths or identifiers",
-  );
+  )
+  .refine((result) => result.verdict === "fail" || sameMeasurements(result.expected, result.observed), "passing experiment measurements must match expected baseline");
 
 const finalScenarioPlanSchema = scenarioPlanSchema.required({ scenarioId: true });
-const finalExperimentResultSchema = experimentResultSchema.required({ scenarioId: true });
+const finalExperimentResultSchema = experimentResultSchema.required({ preflightArtifactLink: true, scenarioId: true });
 
 const uncertainInvestigationResponseSchema = z
   .object({
@@ -382,8 +399,8 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "When creating invariant-analyst, explicitly state that it may call only bounded read-only forgegate-github tools; use get_file for approved repository paths at the exact PR head SHA and use lineNumberedContent from those responses for evidence locations, then stop using tools.",
       "Evidence reference sha must equal the exact PR head commit SHA in testedSha; never use a Git blob SHA, branch name, or baseline SHA.",
       "Copy the exact PR head SHA unchanged from the primary context; never count, transform, pad, truncate, or retry get_file with an alternate SHA.",
-      "The failure-mode-analyst must return a raw JSON array only, never Markdown, tables, prose, explanations, or code fences. Return all materially distinct ScenarioPlan JSON objects with invariantId, scenarioId, testedSha, seed, injectedFaults, ordering, and expectedOutcome, using only executable operations found in the repository capability map. Every scenarioId must be unique; conflicting definitions for one scenarioId are rejected.",
-      "When creating failure-mode-analyst, include this exact output contract in its input: return only a raw JSON array; each object must contain scenarioId, testedSha, seed, invariantId, injectedFaults as a string array, ordering as a non-empty string array, expectedOutcome as a string, and execution with entrypoint, inputs, and assertions. Do not return Markdown, prose, tables, code fences, mode, repetitions, fault objects, or execution.parameters.",
+      "The failure-mode-analyst must return ONLY a JSON array of ScenarioPlan objects. No Markdown, prose, explanations, tables, or code fences. Use only operations from the capability map; scenarioId values must be unique.",
+      "When creating failure-mode-analyst, give it this exact contract: Return ONLY a JSON array. Each item must have scenarioId, testedSha, seed (integer), invariantId, injectedFaults (string[]), ordering (non-empty string[]), expectedOutcome (string), and execution { entrypoint, inputs, assertions }. Do not include mode, repetitions, fault objects, execution.parameters, or any other fields. Return [] only when no executable PR-relevant scenario exists.",
       "Scenario relevance rule: every scenario must target a behavior changed by the PR and include at least one supported injected fault. If the changed behavior depends on an interaction such as timeout followed by retry, combine the complete interaction in one ScenarioPlan; do not substitute a baseline/no-fault or isolated scenario that cannot exercise the change. If no PR-relevant executable fault path exists, return UNCERTAIN.",
       "Each ScenarioPlan must include execution.entrypoint, execution.inputs, and one or more execution.assertions mapped to the capability map; these fields describe executable repository behavior, not invented operations.",
       "When creating failure-mode-analyst, state exactly: You have no tools. Reason only from the supplied invariant JSON and repository capability map. It must not call list_tools, MCP, exec, shell, Python, Git, or sandbox.",
@@ -392,7 +409,9 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "Use concrete sandbox artifact identifiers in ExperimentResult artifactLinks; never put an explanation or sentence in artifactLinks.",
       "Use only these exact forgegate-github tool names: get_pull_request, get_pull_request_files, get_file, get_checks, get_qodo_reviews, and get_review_comments. Do not call list_tools, get_tool_info, get_pr, list_changed_files, or changed_files.",
       "Generate one temporary scenario runner from each accepted ScenarioPlan. Before each experiment, verify execution.entrypoint and inputs against the checked-out repository, compile or type-check the runner, run a bounded preflight, and require structured measurements before the full run. A runner/import/setup/preflight failure is an untestable scenario, not a product failure; repair once, then return UNCERTAIN without an ExperimentResult. Run one scenario-independent baseline on master without injected faults before checking out the exact PR head SHA, then reuse that same baseline measurement set as expected in every ExperimentResult; use PR experiment values as observed.",
+      "For every sandbox exec call, set intent with an explicit phase prefix: runner:, compile:, preflight:, or experiment:. Only runner:, compile:, and preflight: failures may trigger scenario recovery; experiment: output must be parsed as experiment evidence.",
       "The preflight runner must emit one raw JSON object with artifactLink, phase=preflight, status=pass, the mapped entrypoint, and non-empty numeric measurements; preserve that successful tool response as auditable evidence before running the full experiment.",
+      "Every scenario preflight must also include the exact scenarioId and seed from its ScenarioPlan; its entrypoint must equal execution.entrypoint. Baseline preflight may omit scenarioId and seed because it is scenario-independent.",
       "Use the successful master baseline preflight measurements as the sole source for ExperimentResult.expected; copy that exact measurement set into every result and never recompute, hardcode, or infer different expected values per scenario.",
       "Use the structured result emitted by the executed runner as the authoritative source for observed measurements and verdict. If its invariant oracle reports violations, copy verdict=fail; never label a result pass because the scenario was expected to fail or because the command exited successfully.",
       "Every ExperimentResult must include a concrete preflightArtifactLink pointing to the successful preflight evidence; never use prose or a placeholder link.",

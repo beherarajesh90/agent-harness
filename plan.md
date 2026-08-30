@@ -1547,6 +1547,7 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [x] Implement live Agent Run panel from real normalized events.
 - [x] Attribute visible steps to TrueForge, GitHub MCP, subagents, selected sandbox, Qodo, or human.
 - [x] Show tool name, duration, state, and sanitized argument/result summary.
+- [ ] When the React Control Room is implemented, package its build at a deterministic runtime path independent of the process working directory.
 - [ ] Show subagent thread lifecycle.
 - [ ] Show sandbox creation, command, exit code, working directory, and bounded output.
 - [x] Show invariant, scenario, expected/observed values, and evidence links.

@@ -85,7 +85,8 @@ describe("ForgeGate agent specification", () => {
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("generate a temporary scenario runner from the repository code"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Execute every accepted ScenarioPlan exactly once"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("You have no tools. Reason only from the supplied invariant JSON and repository capability map."));
-    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("include this exact output contract in its input"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("give it this exact contract"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("must return ONLY a JSON array of ScenarioPlan objects"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Do not create the subagent if this boundary is absent"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Every accepted invariant must have at least one ScenarioPlan"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("every scenario must target a behavior changed by the PR"));
@@ -131,6 +132,21 @@ describe("ForgeGate agent specification", () => {
       execution: { entrypoint: "runPaymentExperiment", inputs: { seed: 1 } },
       injectedFaults: ["timeout-after-charge"],
     });
+  });
+
+  it("normalizes numeric scenario seeds before strict validation", () => {
+    const scenario = normalizeScenarioPlan({
+      execution: { entrypoint: "runSafeFixture", inputs: {} },
+      expectedOutcome: "baseline measurements",
+      injectedFaults: ["timeout-after-charge"],
+      invariantId: "i1",
+      ordering: ["runSafeFixture"],
+      scenarioId: "s1",
+      seed: "10001",
+      testedSha: "a".repeat(40),
+    });
+
+    expect(executableScenarioPlanSchema.parse(scenario).seed).toBe(10001);
   });
 
   it("requires a deterministic scenario tied to the tested SHA", () => {
@@ -181,6 +197,20 @@ describe("ForgeGate agent specification", () => {
     expect(experimentResultSchema.safeParse({ ...result, preflightArtifactLink: "not a link" }).success).toBe(false);
   });
 
+  it("rejects a passing result when observed measurements differ from expected", () => {
+    const sha = "a".repeat(40);
+    expect(experimentResultSchema.safeParse({
+      artifactLinks: ["sandbox:experiment"],
+      baselineSha: "b".repeat(40),
+      expected: { charges: 100 },
+      observed: { charges: 97 },
+      repetitions: 1,
+      seed: 1,
+      testedSha: sha,
+      verdict: "pass",
+    }).success).toBe(false);
+  });
+
   it("accepts only structured successful preflight evidence", () => {
     const preflight = { artifactLink: "sandbox:preflight", entrypoint: "processPayment", measurements: { requests: 1 }, phase: "preflight", status: "pass" };
 
@@ -196,6 +226,15 @@ describe("ForgeGate agent specification", () => {
     expect(validateExperimentPreflight(result, preflight)).toEqual(preflight);
     expect(() => validateExperimentPreflight({ ...result, expected: { charges: 2 } }, preflight)).toThrow("expected measurements");
     expect(() => validateExperimentPreflight(result, { ...preflight, artifactLink: "sandbox:other" })).toThrow("preflight artifact link");
+  });
+
+  it("requires preflight evidence to match the result scenario and seed", () => {
+    const preflight = { artifactLink: "sandbox:preflight", entrypoint: "runScenarioFixture", measurements: { charges: 1 }, phase: "preflight", scenarioId: "s1", seed: 1, status: "pass" };
+    const result = { artifactLinks: ["sandbox:experiment"], baselineSha: "b".repeat(40), expected: { charges: 1 }, observed: { charges: 2 }, preflightArtifactLink: "sandbox:preflight", repetitions: 1, scenarioId: "s1", seed: 1, testedSha: "a".repeat(40), verdict: "fail" as const };
+
+    expect(validateExperimentPreflight(result, preflight)).toEqual(preflight);
+    expect(() => validateExperimentPreflight({ ...result, scenarioId: "s2" }, preflight)).toThrow("preflight scenario");
+    expect(() => validateExperimentPreflight(result, { ...preflight, seed: 2 })).toThrow("preflight seed");
   });
 
   it("deduplicates scenarios by normalized execution identity and applies a bound", () => {
@@ -260,8 +299,14 @@ describe("ForgeGate agent specification", () => {
 
     expect(validateInvestigationArtifacts({ invariants: [invariant], scenarios: [scenario], experimentResult })).toMatchObject({ experimentResult });
     expect(validateInvestigationArtifacts({ decision: "BLOCKED", invariants: [invariant], scenarios: [scenario], experimentResult: null, experimentResults: [experimentResult] })).toMatchObject({ decision: "BLOCKED" });
-    expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios: [scenario], experimentResult: { ...experimentResult, observed: { numPassedTests: 15 } } })).toThrow("same keys");
+    expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios: [scenario], experimentResult: { ...experimentResult, observed: { numPassedTests: 15 } } })).toThrow("passing experiment measurements");
     expect(investigationResponseSchema.safeParse({ decision: "BLOCKED", invariants: [invariant], scenarios: [scenario], experimentResults: [experimentResult] }).success).toBe(false);
+    expect(investigationResponseSchema.safeParse({
+      decision: "BLOCKED",
+      invariants: [invariant],
+      scenarios: [{ ...scenario, scenarioId: "s1" }],
+      experimentResults: [{ ...experimentResult, scenarioId: "s1" }],
+    }).success).toBe(false);
     expect(investigationResponseSchema.safeParse({ decision: "BLOCKED", invariants: [invariant], scenarios: [scenario], experimentResult, experimentResults: [experimentResult] }).success).toBe(false);
     expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios: [scenario], experimentResult, experimentResults: [experimentResult] })).toThrow("choose either experimentResult or experimentResults");
     expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios: [{ ...scenario, seed: 2 }], experimentResult })).toThrow("experiment seed");
@@ -297,7 +342,7 @@ describe("ForgeGate agent specification", () => {
     const sameSeedResult = { ...result("s2", 1, "pass"), scenarioId: undefined };
     expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios: [idlessScenario, sameSeedScenario], experimentResults: [idlessResult, sameSeedResult] })).toThrow("unique scenario seeds");
     expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios, experimentResults: [result("s1", 1, "pass"), result("s2", 3, "pass")] })).toThrow("experiment seed");
-    expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios, experimentResults: [result("s1", 1, "pass"), { ...result("s2", 2, "pass"), expected: { charges: 2, intents: 1, ledgerEntries: 1 } }] })).toThrow("same baseline measurements");
+    expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios, experimentResults: [result("s1", 1, "pass"), { ...result("s2", 2, "pass"), expected: { charges: 2, intents: 1, ledgerEntries: 1 } }] })).toThrow("passing experiment measurements");
     expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios, experimentResults: [result("s1", 1, "pass"), { ...result("s2", 2, "pass"), baselineSha: "c".repeat(40) }] })).toThrow("same baseline SHA");
     expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios, experimentResults: [result("s1", 1, "pass")] })).toThrow("every scenario");
   });
