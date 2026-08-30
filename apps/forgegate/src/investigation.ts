@@ -349,6 +349,7 @@ function sameInvariantEvidence(left: Record<string, unknown>, right: Record<stri
   const comparable = (value: Record<string, unknown>) => {
     const invariant = { ...value };
     delete invariant.confidence;
+    if (typeof invariant.statement === "string") invariant.statement = normalizeInvariantStatement(invariant.statement);
     if (Array.isArray(invariant.evidence)) {
       invariant.evidence = [...invariant.evidence].sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
     }
@@ -375,6 +376,13 @@ function scenarioMatchesResult(scenario: Record<string, unknown>, result: Record
 function readFinalBundle(payload: Record<string, unknown>, trustedHeadSha?: string, baselineSha?: string) {
   const output = isRecord(payload.state) && isRecord(payload.state.output) ? payload.state.output : undefined;
   return typeof output?.content === "string" ? readFinalBundleContent(output.content, trustedHeadSha, baselineSha) : undefined;
+}
+
+function normalizeInvariantStatement(statement: string) {
+  return statement
+    .replace(/[“”„‟‘’‚‛"']/g, '"')
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function readFinalBundleContent(content: string, trustedHeadSha?: string, baselineSha?: string) {

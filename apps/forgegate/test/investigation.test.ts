@@ -975,6 +975,20 @@ describe("investigation control plane", () => {
     expect(snapshot.status).toBe("UNCERTAIN");
   });
 
+  it("deduplicates invariant typography changes without hiding substantive conflicts", () => {
+    const sha = "a".repeat(40);
+    const invariant = { confidence: 1, evidence: [{ endLine: 2, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 4, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 3 }], id: "i1", statement: 'Every "settled" intent has one charge.', testedSha: sha };
+    const typographyVariant = { ...invariant, statement: "Every ‘settled’ intent has one charge." };
+    const snapshot = projectInvestigation("session-1", "url", [
+      { event: { content: JSON.stringify({ head: { sha } }), sequence: 1, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "InvariantCandidate", artifact: invariant, sequence: 2, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "InvariantCandidate", artifact: typographyVariant, sequence: 3, type: "tool.response" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.artifacts.filter((artifact) => artifact.type === "InvariantCandidate")).toHaveLength(1);
+    expect(snapshot.diagnostics ?? []).not.toContain("CONFLICTING_EVIDENCE");
+  });
+
   it("ignores experiment results that do not belong to an accepted scenario", () => {
     const sha = "a".repeat(40);
     const scenario = { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha: sha };
