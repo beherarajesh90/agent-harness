@@ -169,7 +169,7 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
       }
       if (hasHardSubagentToolPolicyViolation(events)) return;
       if (hasCompleteEvidence(events)) return;
-      if (findInvalidInvariantOutput(events)) {
+      if (findInvalidInvariantOutput(events) && !hasAcceptedArtifact(events, "InvariantCandidate")) {
         if (invariantEvidenceRecoveryAttempted) return;
         invariantEvidenceRecoveryAttempted = true;
         turnId = (await createTurn(sessionId, { input: [{ content: invariantEvidenceRecoveryPrompt, type: "user.message" }] })).data.id;
@@ -181,7 +181,7 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
         turnId = (await createTurn(sessionId, { input: [{ content: capabilityMapPrompt(events), type: "user.message" }] })).data.id;
         continue;
       }
-      if (findInvalidScenarioOutput(events)) {
+      if (findInvalidScenarioOutput(events) && !hasAcceptedArtifact(events, "ScenarioPlan")) {
         if (scenarioFormatRecoveryAttempted) return;
         scenarioFormatRecoveryAttempted = true;
         turnId = (await createTurn(sessionId, { input: [{ content: `${nextRequiredPrompt(events)}\n${conciseScenarioFormatInstruction}`, type: "user.message" }] })).data.id;
@@ -288,6 +288,10 @@ function hasExplicitUncertainDecision(events: InvestigationEvent[]) {
 
 function hasAnyEvidence(events: InvestigationEvent[]) {
   return projectInvestigation("controller", "", events).artifacts.length > 0;
+}
+
+function hasAcceptedArtifact(events: InvestigationEvent[], type: "InvariantCandidate" | "ScenarioPlan") {
+  return projectInvestigation("controller", "", events).artifacts.some((artifact) => artifact.type === type);
 }
 
 function hasMismatchedPreflight(events: InvestigationEvent[]) {
