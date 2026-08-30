@@ -171,6 +171,21 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(createTurn).not.toHaveBeenCalled();
   });
 
+  it("does not stop orchestration for a non-mutating analyst warning", async () => {
+    const createTurn = vi.fn(async () => ({ data: { id: "turn-2" } }));
+    const listEvents = vi.fn(async () => [
+      { event: { threadId: "analyst-1", title: "failure-mode-analyst", type: "thread.created" }, turnId: "turn-1" },
+      { event: { threadId: "analyst-1", toolCalls: [{ id: "list-1", function: { arguments: "{}", name: "list_tools" } }], type: "model.message" }, turnId: "turn-1" },
+      { event: { threadId: "analyst-1", content: "forgegate-github: get_file", toolCallId: "list-1", type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ]);
+    const controller = createInvestigationPhaseController({ createTurn, listEvents, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalled();
+  });
+
   it("continues an UNCERTAIN turn when partial evidence can still be completed", async () => {
     let events: { event: Record<string, unknown>; turnId: string }[] = [
       { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 100, intents: 100, ledgerEntries: 100 }, observed: { charges: 102, intents: 100, ledgerEntries: 100 }, repetitions: 1, seed: 1, testedSha: "a".repeat(40), verdict: "fail" }, type: "tool.response" }, turnId: "turn-1" },

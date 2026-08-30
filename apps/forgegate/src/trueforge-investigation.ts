@@ -1,5 +1,5 @@
 import { createForgeGateAgentSpec, executableScenarioPlanSchema, normalizeScenarioPlan, validateExperimentPreflight, validateInvestigationArtifacts } from "./agent-spec.js";
-import { hasIncompletePrimaryGitHubReads, hasSubagentToolPolicyViolation, projectInvestigation } from "./investigation.js";
+import { hasHardSubagentToolPolicyViolation, hasIncompletePrimaryGitHubReads, projectInvestigation } from "./investigation.js";
 
 type TrueForgeSessions = {
   create: (request: { agent: { spec: ReturnType<typeof createForgeGateAgentSpec> } }) => Promise<{ data: { id: string } }>;
@@ -167,7 +167,7 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
         turnId = (await createTurn(sessionId, { input: [{ content: subagentRefRecoveryPrompt, type: "user.message" }] })).data.id;
         continue;
       }
-      if (hasSubagentToolPolicyViolation(events)) return;
+      if (hasHardSubagentToolPolicyViolation(events)) return;
       if (hasCompleteEvidence(events)) return;
       if (findInvalidInvariantOutput(events)) {
         if (invariantEvidenceRecoveryAttempted) return;

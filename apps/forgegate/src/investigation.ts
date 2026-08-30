@@ -689,6 +689,11 @@ export function hasSubagentToolPolicyViolation(events: TrueForgeEventItem[]) {
   return policy.warning || policy.hard;
 }
 
+export function hasHardSubagentToolPolicyViolation(events: TrueForgeEventItem[]) {
+  const projected = events.map((item, index) => toHarnessEvent("controller", item, index + 1));
+  return classifySubagentToolUse(projected, findPullRequestHeadSha(projected), primaryApprovedChangedFiles(projected)).hard;
+}
+
 export function hasIncompletePrimaryGitHubReads(items: TrueForgeEventItem[]) {
   const events = items.map((item, index) => toHarnessEvent("controller", item, index + 1));
   const calls = primaryGithubToolCalls(events);
