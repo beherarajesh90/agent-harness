@@ -561,6 +561,27 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(createTurn).toHaveBeenCalledOnce();
   });
 
+  it("recovers an invariant analyst read outside the approved SHA and path", async () => {
+    let events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { content: JSON.stringify({ head: { sha: "a".repeat(40) } }), type: "tool.response" }, turnId: "turn-1" },
+      { event: { content: JSON.stringify({ files: [{ filename: "src/payment-lab.ts" }] }), type: "tool.response" }, turnId: "turn-1" },
+      { event: { threadId: "analyst-1", title: "invariant-analyst", type: "thread.created" }, turnId: "turn-1" },
+      { event: { threadId: "analyst-1", toolCalls: [{ id: "read-1", function: { arguments: JSON.stringify({ path: "README.md", ref: "HEAD" }), name: "get_file" } }], type: "model.message" }, turnId: "turn-1" },
+      { event: { threadId: "analyst-1", content: JSON.stringify({ error: [{ type: "text", text: "GitHub file read failed." }] }), toolCallId: "read-1", type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      events = [{ event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-2" }];
+      expect(request.input[0]?.content).toContain("exact full 40-character PR head commit SHA");
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+  });
+
   it("does not classify a rejected subagent placeholder ref as a hard violation", () => {
     const sha = "a".repeat(40);
     expect(hasSubagentToolPolicyViolation([

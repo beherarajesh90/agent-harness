@@ -160,7 +160,8 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
         continue;
       }
       const invalidSubagentRef = findInvalidSubagentRef(events);
-      if (invalidSubagentRef) {
+      const invalidSubagentRead = invalidSubagentRef ?? findInvalidSubagentRead(events);
+      if (invalidSubagentRead) {
         if (subagentRefRecoveryAttempted) return;
         subagentRefRecoveryAttempted = true;
         turnId = (await createTurn(sessionId, { input: [{ content: subagentRefRecoveryPrompt, type: "user.message" }] })).data.id;
@@ -445,6 +446,56 @@ function findInvalidMcpToolCall(events: InvestigationEvent[]) {
 
 function findInvalidSubagentRef(events: InvestigationEvent[]) {
   return events.find(({ event }) => isSubagentThread(event.threadId) && event.type === "tool.response" && typeof event.content === "string" && /ref must be a full commit SHA/i.test(event.content));
+}
+
+function findInvalidSubagentRead(events: InvestigationEvent[]) {
+  const stages = analystStages(events);
+  const trustedHeadSha = findHeadShaFromRawEvents(events);
+  const approvedPaths = approvedPathsFromRawEvents(events);
+  for (const { event } of events) {
+    if (event.type !== "model.message" || !isSubagentThread(event.threadId) || stages.get(typeof event.threadId === "string" ? event.threadId : "") !== "INVARIANTS") continue;
+    const toolCalls = Array.isArray(event.toolCalls) ? event.toolCalls : [];
+    for (const call of toolCalls) {
+      if (!isRecord(call) || !isRecord(call.function)) continue;
+      const args = typeof call.function.arguments === "string" ? parseJson(call.function.arguments) : call.function.arguments;
+      const toolName = call.function.name === "call_tool" && isRecord(args) ? args.tool_name : call.function.name;
+      const input = call.function.name === "call_tool" && isRecord(args) && isRecord(args.input) ? args.input : args;
+      if (toolName === "get_file" && isRecord(input) && !isAllowedRawSubagentRead(input, trustedHeadSha, approvedPaths)) return { event };
+    }
+  }
+  return undefined;
+}
+
+function isAllowedRawSubagentRead(input: Record<string, unknown>, trustedHeadSha: string | undefined, approvedPaths: Set<string>) {
+  return Boolean(trustedHeadSha && input.ref === trustedHeadSha && isSafeRepositoryPath(input.path) && approvedPaths.has(input.path));
+}
+
+function findHeadShaFromRawEvents(events: InvestigationEvent[]) {
+  for (const { event } of events) {
+    if (event.type !== "tool.response" || typeof event.content !== "string") continue;
+    const parsed = parseJson(event.content);
+    if (isRecord(parsed) && isRecord(parsed.head) && typeof parsed.head.sha === "string" && /^[a-f0-9]{40}$/.test(parsed.head.sha)) return parsed.head.sha;
+  }
+  return undefined;
+}
+
+function approvedPathsFromRawEvents(events: InvestigationEvent[]) {
+  const paths = new Set<string>();
+  for (const { event } of events) {
+    if (event.type !== "tool.response" || typeof event.content !== "string") continue;
+    const parsed = parseJson(event.content);
+    if (!isRecord(parsed) || !Array.isArray(parsed.files)) continue;
+    for (const file of parsed.files) {
+      if (!isRecord(file)) continue;
+      const path = file.filename ?? file.path;
+      if (isSafeRepositoryPath(path)) paths.add(path);
+    }
+  }
+  return paths;
+}
+
+function isSafeRepositoryPath(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && !value.startsWith("/") && !/^[A-Za-z]:/.test(value) && !value.split("/").includes("..");
 }
 
 function findInvalidInvariantOutput(events: InvestigationEvent[]) {
