@@ -1,4 +1,4 @@
-import { executableScenarioPlanSchema, experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, normalizeScenarioPlan, repositoryCapabilityMapSchema, scenarioPlanSchema, validateInvestigationArtifacts } from "./agent-spec.js";
+import { executableScenarioPlanSchema, experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, normalizeScenarioPlan, patchProposalSchema, repositoryCapabilityMapSchema, scenarioPlanSchema, validateInvestigationArtifacts } from "./agent-spec.js";
 import type { InvestigationDecision } from "./agent-spec.js";
 import { isDeepStrictEqual } from "node:util";
 
@@ -47,7 +47,7 @@ export type InvestigationSnapshot = {
 
 export type InvestigationArtifact = {
   data: Record<string, unknown>;
-  type: "ExperimentResult" | "InvariantCandidate" | "RepositoryCapabilityMap" | "ScenarioPlan";
+  type: "ExperimentResult" | "InvariantCandidate" | "PatchProposal" | "RepositoryCapabilityMap" | "ScenarioPlan";
 };
 
 const requiredGitHubReadTools = ["get_pull_request", "get_pull_request_files", "get_checks", "get_qodo_reviews", "get_review_comments"] as const;
@@ -55,11 +55,13 @@ type TrueForgeEventItem = { event: Record<string, unknown>; turnId: string };
 type InvestigationRecord = { pullRequestUrl: string; turnId: string };
 type LaunchResult = { sessionId: string; turnId: string };
 type InvestigationGateway = {
+  approve?: (sessionId: string, input: { decision: "allow" | "deny"; threadId: string; toolCallId: string }) => Promise<unknown>;
   cancel: (sessionId: string) => Promise<unknown>;
   findByRequestFingerprint?: (fingerprint: string) => Promise<{ pullRequestUrl: string; result: LaunchResult } | undefined>;
   getMetadata?: (sessionId: string) => Promise<InvestigationRecord | undefined>;
   listEvents: (sessionId: string) => Promise<TrueForgeEventItem[]>;
   launch: (input: { pullRequestUrl: string; requestFingerprint?: string }) => Promise<LaunchResult>;
+  retry?: (sessionId: string) => Promise<{ turnId: string }>;
 };
 
 export class IdempotencyConflictError extends Error {
@@ -76,6 +78,27 @@ export class InvestigationNotFoundError extends Error {
   }
 }
 
+export class InvestigationRetryNotAllowedError extends Error {
+  constructor() {
+    super("only an uncertain investigation can be retried");
+    this.name = "InvestigationRetryNotAllowedError";
+  }
+}
+
+export class ApprovalNotFoundError extends Error {
+  constructor() {
+    super("pending approval not found");
+    this.name = "ApprovalNotFoundError";
+  }
+}
+
+export class ApprovalAlreadySubmittedError extends Error {
+  constructor() {
+    super("approval has already been submitted");
+    this.name = "ApprovalAlreadySubmittedError";
+  }
+}
+
 export function projectInvestigation(sessionId: string, pullRequestUrl: string, items: TrueForgeEventItem[]): InvestigationSnapshot {
   const projected = mergeModelDeltas(items.map((item, index) => toHarnessEvent(sessionId, item, items.length - index)));
   const seenSequences = new Set<number>();
@@ -87,9 +110,9 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const trustedHeadSha = findPullRequestHeadSha(events);
   const baselineSha = findBaselineSha(events);
   const preflightArtifactLink = latestPreflightArtifactLink(events);
-  const deduplicated = deduplicateArtifacts(events.flatMap((event) => artifactFromPayload(event.payload, trustedHeadSha, baselineSha, event.stage, preflightArtifactLink)));
-  const artifacts = retainAcceptedScenarioResults(deduplicated.artifacts);
-  const accepted = deduplicateArtifacts(artifacts);
+  const extractedArtifacts = events.flatMap((event) => artifactFromPayload(event.payload, trustedHeadSha, baselineSha, event.stage, preflightArtifactLink));
+  const accepted = deduplicateArtifacts(retainAcceptedScenarioResults(extractedArtifacts));
+  const artifacts = accepted.artifacts;
   const rejectedFinal = hasRejectedPrimaryFinal(events, trustedHeadSha);
   const githubReadsComplete = hasRequiredGitHubReads(events, trustedHeadSha);
   const sandboxSucceeded = latestSandboxCommandSucceeded(events);
@@ -190,7 +213,7 @@ function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: 
       extracted.push(...map);
     }
   }
-  const bundle = readFinalBundle(payload, trustedHeadSha);
+  const bundle = readFinalBundle(payload, trustedHeadSha, baselineSha);
   if (bundle) {
     return [
       ...extracted,
@@ -213,7 +236,7 @@ function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: 
         ...extracted,
         ...(Array.isArray(normalized.invariants) ? readArtifact("InvariantCandidate", normalized.invariants, trustedHeadSha) : []),
         ...(Array.isArray(normalized.scenarios) ? readArtifact("ScenarioPlan", normalized.scenarios, trustedHeadSha) : []),
-        ...readArtifact("ExperimentResult", results, trustedHeadSha),
+        ...readArtifact("ExperimentResult", results, trustedHeadSha, false, baselineSha),
       ];
     }
     const sandboxResults = readSandboxExperimentResults(parsed, trustedHeadSha, baselineSha, preflightArtifactLink);
@@ -284,12 +307,15 @@ function deduplicateArtifacts(artifacts: InvestigationArtifact[]) {
         ? `${artifact.type}:${data.scenarioId ?? JSON.stringify(data)}`
         : artifact.type === "RepositoryCapabilityMap"
           ? `${artifact.type}:${data.testedSha}`
-        : `${artifact.type}:${data.scenarioId ?? data.seed}:${data.testedSha}`;
+          : artifact.type === "PatchProposal"
+            ? `${artifact.type}:${data.expectedHeadSha}`
+            : `${artifact.type}:${data.scenarioId ?? data.seed}:${data.testedSha}`;
     const existing = unique.get(identity);
     if (!existing) {
       unique.set(identity, artifact);
+    } else if (artifact.type === "ExperimentResult" && sameExperimentEvidence(existing.data, data)) {
+      if (typeof existing.data.preflightArtifactLink !== "string" && typeof data.preflightArtifactLink === "string") unique.set(identity, artifact);
     } else if (!isDeepStrictEqual(existing.data, data)
-      && !(artifact.type === "ExperimentResult" && sameExperimentEvidence(existing.data, data))
       && !(artifact.type === "InvariantCandidate" && sameInvariantEvidence(existing.data, data))
       && !(artifact.type === "ScenarioPlan" && sameScenarioExecution(existing.data, data))) {
       hasConflicts = true;
@@ -331,6 +357,7 @@ function sameInvariantEvidence(left: Record<string, unknown>, right: Record<stri
   const comparable = (value: Record<string, unknown>) => {
     const invariant = { ...value };
     delete invariant.confidence;
+    if (typeof invariant.statement === "string") invariant.statement = normalizeInvariantStatement(invariant.statement);
     if (Array.isArray(invariant.evidence)) {
       invariant.evidence = [...invariant.evidence].sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
     }
@@ -350,16 +377,24 @@ function retainAcceptedScenarioResults(artifacts: InvestigationArtifact[]) {
 }
 
 function scenarioMatchesResult(scenario: Record<string, unknown>, result: Record<string, unknown>) {
-  if (typeof scenario.scenarioId === "string") return result.scenarioId === scenario.scenarioId;
+  if (typeof scenario.scenarioId === "string") return result.scenarioId === scenario.scenarioId && result.seed === scenario.seed;
   return typeof result.scenarioId !== "string" && result.seed === scenario.seed;
 }
 
-function readFinalBundle(payload: Record<string, unknown>, trustedHeadSha?: string) {
+function readFinalBundle(payload: Record<string, unknown>, trustedHeadSha?: string, baselineSha?: string) {
   const output = isRecord(payload.state) && isRecord(payload.state.output) ? payload.state.output : undefined;
-  return typeof output?.content === "string" ? readFinalBundleContent(output.content, trustedHeadSha) : undefined;
+  return typeof output?.content === "string" ? readFinalBundleContent(output.content, trustedHeadSha, baselineSha) : undefined;
 }
 
-function readFinalBundleContent(content: string, trustedHeadSha?: string) {
+function normalizeInvariantStatement(statement: string) {
+  return statement
+    .replace(/[“”„‟‘’‚‛"']/g, '"')
+    .replace(/[\"']/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function readFinalBundleContent(content: string, trustedHeadSha?: string, baselineSha?: string) {
   const parsed = parseJson(content);
   if (!isRecord(parsed)) return undefined;
   const parsedResponse = investigationResponseSchema.safeParse(normalizeWireMeasurements(parsed));
@@ -376,6 +411,7 @@ function readFinalBundleContent(content: string, trustedHeadSha?: string) {
   try {
     const bundle = validateInvestigationArtifacts(parsedResponse.data);
     if (trustedHeadSha && [...bundle.invariants, ...bundle.scenarios, ...bundle.experimentResults].some((artifact) => artifact.testedSha !== trustedHeadSha)) return undefined;
+    if (baselineSha && bundle.experimentResults.some((result) => result.baselineSha !== baselineSha)) return undefined;
     return bundle;
   } catch {
     return undefined;
@@ -662,6 +698,11 @@ export function hasSubagentToolPolicyViolation(events: TrueForgeEventItem[]) {
   return policy.warning || policy.hard;
 }
 
+export function hasHardSubagentToolPolicyViolation(events: TrueForgeEventItem[]) {
+  const projected = events.map((item, index) => toHarnessEvent("controller", item, index + 1));
+  return classifySubagentToolUse(projected, findPullRequestHeadSha(projected), primaryApprovedChangedFiles(projected)).hard;
+}
+
 export function hasIncompletePrimaryGitHubReads(items: TrueForgeEventItem[]) {
   const events = items.map((item, index) => toHarnessEvent("controller", item, index + 1));
   const calls = primaryGithubToolCalls(events);
@@ -787,8 +828,8 @@ function isRepositoryPath(value: unknown): value is string {
     && !value.split("/").includes("..");
 }
 
-function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string, requireExecutableScenario = false): InvestigationArtifact[] {
-  if (type !== "ExperimentResult" && type !== "InvariantCandidate" && type !== "RepositoryCapabilityMap" && type !== "ScenarioPlan") return [];
+function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string, requireExecutableScenario = false, baselineSha?: string): InvestigationArtifact[] {
+  if (type !== "ExperimentResult" && type !== "InvariantCandidate" && type !== "PatchProposal" && type !== "RepositoryCapabilityMap" && type !== "ScenarioPlan") return [];
   const values = Array.isArray(value) ? value : [value];
   return values.flatMap((candidate) => {
     if (type === "RepositoryCapabilityMap" && typeof candidate === "string") candidate = parseJson(candidate);
@@ -801,9 +842,10 @@ function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string, re
       const executable = executableScenarioPlanSchema.safeParse(normalized).success;
       if (!valid || (requireExecutableScenario && !executable)) return [];
     }
-    if (type === "ExperimentResult" && !experimentResultSchema.safeParse(candidate).success) return [];
+    if (type === "ExperimentResult" && (!experimentResultSchema.safeParse(candidate).success || (baselineSha && normalized.baselineSha !== baselineSha))) return [];
     if (type === "RepositoryCapabilityMap" && !repositoryCapabilityMapSchema.safeParse(normalized).success) return [];
-    if (trustedHeadSha && normalized.testedSha !== trustedHeadSha) return [];
+    if (type === "PatchProposal" && !patchProposalSchema.safeParse(normalized).success) return [];
+    if (trustedHeadSha && (type === "PatchProposal" ? normalized.expectedHeadSha !== trustedHeadSha : normalized.testedSha !== trustedHeadSha)) return [];
     return [{ data: normalized, type }];
   });
 }
@@ -899,13 +941,42 @@ export function createInvestigationService(gateway: InvestigationGateway) {
   const records = new Map<string, InvestigationRecord>();
   const idempotency = new Map<string, { pullRequestUrl: string; result: LaunchResult }>();
   const inFlight = new Map<string, { pullRequestUrl: string; promise: Promise<LaunchResult> }>();
+  const submittedApprovals = new Set<string>();
+  const approvingApprovals = new Set<string>();
 
   return {
+    async approve(sessionId: string, approvalId: string, decision: "allow" | "deny") {
+      const record = await resolveRecord(sessionId);
+      if (!record) throw new InvestigationNotFoundError();
+      const approvalKey = `${sessionId}:${approvalId}`;
+      if (submittedApprovals.has(approvalKey) || approvingApprovals.has(approvalKey)) throw new ApprovalAlreadySubmittedError();
+      const pending = (await gateway.listEvents(sessionId)).map((item) => item.event).reverse().find((event) => event.type === "tool.approval_required" && pendingToolCallIds(event).includes(approvalId));
+      if (!pending || typeof pending.threadId !== "string") throw new ApprovalNotFoundError();
+      if (!gateway.approve) throw new Error("approval resumer is unavailable");
+      approvingApprovals.add(approvalKey);
+      try {
+        await gateway.approve(sessionId, { decision, threadId: pending.threadId, toolCallId: approvalId });
+        submittedApprovals.add(approvalKey);
+      } finally {
+        approvingApprovals.delete(approvalKey);
+      }
+      return get(sessionId);
+    },
     async cancel(sessionId: string) {
       const record = await resolveRecord(sessionId);
       if (!record) throw new InvestigationNotFoundError();
       await gateway.cancel(sessionId);
       return get(sessionId);
+    },
+    async retry(sessionId: string) {
+      const record = await resolveRecord(sessionId);
+      if (!record) throw new InvestigationNotFoundError();
+      const snapshot = projectInvestigation(sessionId, record.pullRequestUrl, await gateway.listEvents(sessionId));
+      if (snapshot.status !== "UNCERTAIN") throw new InvestigationRetryNotAllowedError();
+      if (!gateway.retry) throw new Error("investigation retry is unavailable");
+      const result = await gateway.retry(sessionId);
+      records.set(sessionId, { pullRequestUrl: record.pullRequestUrl, turnId: result.turnId });
+      return { sessionId, turnId: result.turnId, status: "QUEUED" as const };
     },
     async create(pullRequestUrl: string, key?: string) {
       const normalizedPullRequestUrl = normalizePullRequestUrl(pullRequestUrl);
@@ -963,6 +1034,12 @@ export function createInvestigationService(gateway: InvestigationGateway) {
     if (!record) throw new InvestigationNotFoundError();
     return projectInvestigation(sessionId, record.pullRequestUrl, await gateway.listEvents(sessionId));
   }
+}
+
+function pendingToolCallIds(event: Record<string, unknown>) {
+  if (typeof event.toolCallId === "string") return [event.toolCallId];
+  const calls = Array.isArray(event.toolCalls) ? event.toolCalls : [];
+  return calls.flatMap((call) => isRecord(call) && typeof call.id === "string" ? [call.id] : []);
 }
 
 function requestFingerprint(key: string) {

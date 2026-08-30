@@ -1,6 +1,6 @@
 import { buildApp } from "./app.js";
 import { createInvestigationService } from "./investigation.js";
-import { createTrueForgeInvestigationLauncher } from "./trueforge-investigation.js";
+import { createTrueForgeApprovalResumer, createTrueForgeInvestigationLauncher, createTrueForgeInvestigationRetrier } from "./trueforge-investigation.js";
 import { createTrueForgeClient, createTrueForgeReadinessProbe } from "./trueforge.js";
 
 const trueforgeBaseUrl = process.env.TRUEFORGE_BASE_URL ?? "http://127.0.0.1:8790";
@@ -12,7 +12,9 @@ const launcher = createTrueForgeInvestigationLauncher({
   sessions: trueforge.sessions,
   listEvents,
 });
+const retrier = createTrueForgeInvestigationRetrier({ createTurn: trueforge.sessions.createTurn.bind(trueforge.sessions), listEvents });
 const investigations = createInvestigationService({
+  approve: createTrueForgeApprovalResumer(trueforge.sessions),
   cancel: (sessionId) => trueforge.sessions.cancel(sessionId),
   findByRequestFingerprint: async (fingerprint) => {
     let page = await trueforge.sessions.list();
@@ -34,6 +36,7 @@ const investigations = createInvestigationService({
   },
   launch: launcher,
   listEvents,
+  retry: retrier,
 });
 const app = buildApp({
   investigationService: investigations,

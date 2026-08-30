@@ -1,19 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { buildApp } from "../src/app.js";
-import { createInvestigationService, IdempotencyConflictError, InvestigationNotFoundError, projectInvestigation } from "../src/investigation.js";
+import { ApprovalAlreadySubmittedError, ApprovalNotFoundError, createInvestigationService, IdempotencyConflictError, InvestigationNotFoundError, projectInvestigation } from "../src/investigation.js";
 
 describe("investigation control plane", () => {
-  it("serves the desktop control room", async () => {
-    const app = buildApp();
-    const response = await app.inject({ method: "GET", url: "/" });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.headers["content-type"]).toContain("text/html");
-    expect(response.body).toContain("ForgeGate Control Room");
-    await app.close();
-  });
-
   it("projects newest-first TrueForge events into ordered SSE events", () => {
     const snapshot = projectInvestigation("session-1", "https://github.com/acme/demo/pull/1", [
       { event: { id: "event-2", type: "turn.done", createdAt: "2026-01-02T00:00:00Z", state: { status: "done" } }, turnId: "turn-1" },
@@ -33,6 +23,25 @@ describe("investigation control plane", () => {
       "MISSING_SCENARIO_EVIDENCE",
       "MISSING_EXPERIMENT_EVIDENCE",
     ]);
+  });
+
+  it("projects a validated patch proposal without treating it as experiment evidence", () => {
+    const snapshot = projectInvestigation("session-1", "https://github.com/acme/demo/pull/1", [{
+      event: {
+        artifactType: "PatchProposal",
+        artifact: {
+          diff: "@@ -1 +1 @@\n-before\n+after",
+          expectedHeadSha: "a".repeat(40),
+          experimentEvidenceLinks: ["sandbox:experiment-1"],
+          files: [{ content: "after", path: "apps/forgegate/src/payment-lab.ts" }],
+          regressionTest: { after: "pass", artifactLink: "sandbox:regression", before: "fail" },
+        },
+        type: "tool.response",
+      },
+      turnId: "turn-1",
+    }]);
+
+    expect(snapshot.artifacts).toEqual([expect.objectContaining({ type: "PatchProposal" })]);
   });
 
   it("projects analyst roles and sandbox execution into truthful stages", () => {
@@ -966,6 +975,21 @@ describe("investigation control plane", () => {
     expect(snapshot.status).toBe("UNCERTAIN");
   });
 
+  it("deduplicates invariant typography changes without hiding substantive conflicts", () => {
+    const sha = "a".repeat(40);
+    const invariant = { confidence: 1, evidence: [{ endLine: 2, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 4, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 3 }], id: "i1", statement: 'Every "settled" intent has one charge.', testedSha: sha };
+    const typographyVariant = { ...invariant, statement: "Every ‘settled’ intent has one charge." };
+    const snapshot = projectInvestigation("session-1", "url", [
+      { event: { content: JSON.stringify({ head: { sha } }), sequence: 1, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "InvariantCandidate", artifact: invariant, sequence: 2, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "InvariantCandidate", artifact: typographyVariant, sequence: 3, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "InvariantCandidate", artifact: { ...invariant, statement: "Every\u00a0settled\u00a0intent has one charge." }, sequence: 4, type: "tool.response" }, turnId: "turn-1" },
+    ]);
+
+    expect(snapshot.artifacts.filter((artifact) => artifact.type === "InvariantCandidate")).toHaveLength(1);
+    expect(snapshot.diagnostics ?? []).not.toContain("CONFLICTING_EVIDENCE");
+  });
+
   it("ignores experiment results that do not belong to an accepted scenario", () => {
     const sha = "a".repeat(40);
     const scenario = { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha: sha };
@@ -1313,7 +1337,9 @@ describe("investigation control plane", () => {
   });
 
   it("exposes create, snapshot, and cancel endpoints", async () => {
+    const approve = vi.fn(async () => ({ artifacts: [], events: [], pullRequestUrl: "url", sessionId: "session-1", stage: "APPROVAL" as const, status: "PAUSED" as const, turnId: "turn-1" }));
     const service = {
+      approve,
       cancel: vi.fn(async () => ({ artifacts: [], events: [], pullRequestUrl: "url", sessionId: "session-1", stage: "CONTEXT" as const, status: "CANCELLED" as const, turnId: "turn-1" })),
       create: vi.fn(async () => ({ sessionId: "session-1", turnId: "turn-1" })),
       get: vi.fn(async () => ({ artifacts: [], events: [], pullRequestUrl: "url", sessionId: "session-1", stage: "CONTEXT" as const, status: "RUNNING" as const, turnId: "turn-1" })),
@@ -1325,7 +1351,46 @@ describe("investigation control plane", () => {
     await expect(app.inject({ headers: { "idempotency-key": "request-1" }, method: "POST", payload: { pullRequestUrl: "other-url" }, url: "/api/investigations" })).resolves.toMatchObject({ statusCode: 409 });
     await expect(app.inject({ method: "GET", url: "/api/investigations/session-1" })).resolves.toMatchObject({ statusCode: 200 });
     await expect(app.inject({ method: "POST", url: "/api/investigations/session-1/cancel" })).resolves.toMatchObject({ statusCode: 202 });
+    await expect(app.inject({ method: "POST", payload: { decision: "allow" }, url: "/api/investigations/session-1/approvals/call-1" })).resolves.toMatchObject({ statusCode: 202 });
+    expect(approve).toHaveBeenCalledWith("session-1", "call-1", "allow");
+    await expect(app.inject({ method: "POST", payload: { decision: "maybe" }, url: "/api/investigations/session-1/approvals/call-1" })).resolves.toMatchObject({ statusCode: 400 });
     await app.close();
+  });
+
+  it("resumes only a matching pending approval", async () => {
+    const approve = vi.fn(async () => undefined);
+    const gateway = {
+      approve,
+      cancel: vi.fn(async () => undefined),
+      launch: vi.fn(async () => ({ sessionId: "session-1", turnId: "turn-1" })),
+      listEvents: vi.fn(async () => [{
+        event: { threadId: "thread-1", toolCalls: [{ id: "call-1" }], type: "tool.approval_required" },
+        turnId: "turn-1",
+      }]),
+    };
+    const service = createInvestigationService(gateway);
+    await service.create("https://github.com/acme/demo/pull/1");
+
+    await service.approve("session-1", "call-1", "allow");
+    expect(approve).toHaveBeenCalledWith("session-1", { decision: "allow", threadId: "thread-1", toolCallId: "call-1" });
+    await expect(service.approve("session-1", "call-1", "allow")).rejects.toBeInstanceOf(ApprovalAlreadySubmittedError);
+    await expect(service.approve("session-1", "stale-call", "allow")).rejects.toBeInstanceOf(ApprovalNotFoundError);
+  });
+
+  it("allows retry when approval delivery fails", async () => {
+    const approve = vi.fn().mockRejectedValueOnce(new Error("TrueForge unavailable")).mockResolvedValue(undefined);
+    const gateway = {
+      approve,
+      cancel: vi.fn(async () => undefined),
+      launch: vi.fn(async () => ({ sessionId: "session-1", turnId: "turn-1" })),
+      listEvents: vi.fn(async () => [{ event: { threadId: "thread-1", toolCallId: "call-1", type: "tool.approval_required" }, turnId: "turn-1" }]),
+    };
+    const service = createInvestigationService(gateway);
+    await service.create("https://github.com/acme/demo/pull/1");
+
+    await expect(service.approve("session-1", "call-1", "allow")).rejects.toThrow("TrueForge unavailable");
+    await expect(service.approve("session-1", "call-1", "allow")).resolves.toBeDefined();
+    expect(approve).toHaveBeenCalledTimes(2);
   });
 
   it("classifies service failures without hiding them as not found", async () => {

@@ -1,9 +1,39 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { hasSubagentToolPolicyViolation } from "../src/investigation.js";
-import { createInvestigationPhaseController, createTrueForgeInvestigationLauncher } from "../src/trueforge-investigation.js";
+import { createInvestigationPhaseController, createTrueForgeApprovalResumer, createTrueForgeInvestigationLauncher, createTrueForgeInvestigationRetrier } from "../src/trueforge-investigation.js";
 
 describe("createTrueForgeInvestigationLauncher", () => {
+  it("resumes a native approval with the exact tool call context", async () => {
+    const createTurn = vi.fn(async (sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void sessionId;
+      void request;
+      return { data: { id: "turn-2" } };
+    });
+    const resume = createTrueForgeApprovalResumer({ createTurn });
+
+    await resume("session-1", { decision: "allow", threadId: "thread-1", toolCallId: "call-1" });
+
+    expect(createTurn).toHaveBeenCalledWith("session-1", {
+      input: [{ approval: { status: "allow" }, threadId: "thread-1", toolCallId: "call-1", type: "user.tool_approval" }],
+    });
+  });
+
+  it("retries the next incomplete phase without limiting recovery to experiments", async () => {
+    const createTurn = vi.fn(async (sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void sessionId;
+      void request;
+      return { data: { id: "turn-2" } };
+    });
+    const retry = createTrueForgeInvestigationRetrier({
+      createTurn,
+      listEvents: async () => [{ event: { state: { status: "cancelled" }, type: "turn.done" }, turnId: "turn-2" }],
+    });
+
+    await expect(retry("session-1")).resolves.toEqual({ turnId: "turn-2" });
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("required GitHub reads, analyst evidence, scenario generation, scenario experiments, or decision reconciliation");
+  });
+
   it("creates an agent-backed session and instructs two visible analysts", async () => {
     const sessions = {
       create: vi.fn(async () => ({ data: { id: "session-1" } })),
@@ -24,7 +54,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
       }),
     ).resolves.toEqual({ sessionId: "session-1", turnId: "turn-1" });
     expect(sessions.create).toHaveBeenCalledWith({
-      agent: { spec: expect.objectContaining({ model: { name: "ollama-local/qwen35-4b", params: { max_tokens: 4096 } } }) },
+      agent: { spec: expect.objectContaining({ model: { name: "ollama-local/qwen35-4b", params: { max_tokens: 4096, temperature: 0 } } }) },
     });
     expect(sessions.createTurn).toHaveBeenCalledWith(
       "session-1",
@@ -46,6 +76,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Evidence reference sha must equal the exact PR head commit SHA");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("never count, transform, pad, truncate, or retry get_file with an alternate SHA");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("The final decision response must include invariants, scenarios, experimentResults, and decision");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("compact raw JSON on one line");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Set experimentResult to null");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Subagents receive the repository, PR URL, exact head SHA");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("derive the approved path list from its exact returned filenames");
@@ -67,12 +98,15 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("build a repository capability map from exact-SHA evidence");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("pass the exact validated invariant JSON and repository capability map");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Execute every accepted ScenarioPlan exactly once using a preflighted temporary runner generated from that plan");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Keep a checklist of accepted ScenarioPlan IDs");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("without injected faults");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Reuse that exact baseline measurement set as expected in every ExperimentResult");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("You have no tools. Reason only from the supplied invariant JSON and repository capability map.");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Every accepted invariant must have at least one ScenarioPlan");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("every scenario must target a behavior changed by the PR");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("combine the complete interaction in one ScenarioPlan");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("emit one PatchProposal artifact");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("commit_files is the only allowed mutation");
   });
 
   it("rejects a pull request URL outside the configured repository", async () => {
@@ -134,6 +168,27 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(createTurn).not.toHaveBeenCalled();
   });
 
+  it("recovers one terminal GitHub-read failure, then leaves downstream phases untouched", async () => {
+    let events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { toolCalls: [{ id: "pr-1", function: { arguments: JSON.stringify({ owner: "owner", repo: "repo", pull_number: 1 }), name: "get_pull_request" } }], type: "model.message" }, turnId: "turn-1" },
+      { event: { content: JSON.stringify({ error: "GitHub unavailable" }), toolCallId: "pr-1", type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { status: "error", message: "GitHub unavailable" }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async (sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void sessionId;
+      void request;
+      events = [{ event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-2" }];
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("one automatic recovery turn");
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("leave the investigation UNCERTAIN");
+  });
+
   it("does not continue after an explicit UNCERTAIN decision", async () => {
     const createTurn = vi.fn(async () => ({ data: { id: "unexpected" } }));
     const listEvents = vi.fn(async () => [{ event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" }]);
@@ -156,6 +211,25 @@ describe("createTrueForgeInvestigationLauncher", () => {
     await controller.continue("session-1", "turn-1");
 
     expect(createTurn).not.toHaveBeenCalled();
+  });
+
+  it("does not stop orchestration for a non-mutating analyst warning", async () => {
+    const createTurn = vi.fn(async (sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void sessionId;
+      void request;
+      return { data: { id: "turn-2" } };
+    });
+    const listEvents = vi.fn(async () => [
+      { event: { threadId: "analyst-1", title: "failure-mode-analyst", type: "thread.created" }, turnId: "turn-1" },
+      { event: { threadId: "analyst-1", toolCalls: [{ id: "list-1", function: { arguments: "{}", name: "list_tools" } }], type: "model.message" }, turnId: "turn-1" },
+      { event: { threadId: "analyst-1", content: "forgegate-github: get_file", toolCallId: "list-1", type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ]);
+    const controller = createInvestigationPhaseController({ createTurn, listEvents, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalled();
   });
 
   it("continues an UNCERTAIN turn when partial evidence can still be completed", async () => {
@@ -195,6 +269,54 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Set experimentResult to null");
   });
 
+  it("recognizes an invalid failure-mode output when raw thread events have no stage", async () => {
+    const createTurn = vi.fn(async (_sessionId: string, _request: { input: { content: string; type: "user.message" }[] }) => {
+      void _sessionId;
+      void _request;
+      return { data: { id: "turn-2" } };
+    });
+    const sha = "a".repeat(40);
+    const events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { threadId: "failure-1", title: "failure-mode-analyst", type: "thread.created" }, turnId: "turn-1" },
+      { event: { threadId: "failure-1", state: { output: { content: "Here is a Markdown explanation instead of JSON." } }, type: "thread.done" }, turnId: "turn-1" },
+      { event: { artifactType: "InvariantCandidate", artifact: { confidence: 1, evidence: [{ endLine: 1, path: "src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "src/payment-lab.ts", sha, startLine: 2 }], id: "i1", statement: "one charge", testedSha: sha }, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "RepositoryCapabilityMap", artifact: { operations: [{ entrypoint: "runScenarioFixture", inputs: {}, supportedFaults: ["timeout-after-charge"] }], testedSha: sha }, type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Return ONLY a JSON array");
+  });
+
+  it("does not recover an old invalid analyst output after accepting a scenario", async () => {
+    const sha = "a".repeat(40);
+    const invariant = { confidence: 1, evidence: [{ endLine: 1, path: "src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "src/payment-lab.ts", sha, startLine: 2 }], id: "i1", statement: "one charge", testedSha: sha };
+    const scenario = { expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["runScenarioFixture"], scenarioId: "s1", seed: 1, testedSha: sha };
+    const events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { threadId: "failure-1", title: "failure-mode-analyst", type: "thread.created" }, turnId: "turn-1" },
+      { event: { threadId: "failure-1", stage: "HYPOTHESES", state: { output: { content: "stale Markdown" } }, type: "thread.done" }, turnId: "turn-1" },
+      { event: { artifactType: "InvariantCandidate", artifact: invariant, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "RepositoryCapabilityMap", artifact: { operations: [{ entrypoint: "runScenarioFixture", inputs: {}, supportedFaults: ["timeout"] }], testedSha: sha }, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ScenarioPlan", artifact: scenario, type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { status: "done" }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async (sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void sessionId;
+      void request;
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Phase EXPERIMENT");
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).not.toContain("Return ONLY a JSON array");
+  });
+
   it("does not select DECISION for an inconsistent complete artifact set", async () => {
     const sha = "a".repeat(40);
     const artifact = (artifactType: string, value: Record<string, unknown>) => ({ event: { artifactType, artifact: value, type: "tool.response" }, turnId: "turn-1" });
@@ -214,7 +336,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
     await controller.continue("session-1", "turn-1");
 
     expect(createTurn).toHaveBeenCalledOnce();
-    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Evidence consistency failed");
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Phase EXPERIMENT");
     expect(createTurn.mock.calls[0]?.[1].input[0]?.content).not.toContain("Phase DECISION");
   });
 
@@ -515,6 +637,27 @@ describe("createTrueForgeInvestigationLauncher", () => {
     ];
     const createTurn = vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
       void _sessionId;
+      events = [{ event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-2" }];
+      expect(request.input[0]?.content).toContain("exact full 40-character PR head commit SHA");
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+  });
+
+  it("recovers an invariant analyst read outside the approved SHA and path", async () => {
+    let events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { content: JSON.stringify({ head: { sha: "a".repeat(40) } }), type: "tool.response" }, turnId: "turn-1" },
+      { event: { content: JSON.stringify({ files: [{ filename: "src/payment-lab.ts" }] }), type: "tool.response" }, turnId: "turn-1" },
+      { event: { threadId: "analyst-1", title: "invariant-analyst", type: "thread.created" }, turnId: "turn-1" },
+      { event: { threadId: "analyst-1", toolCalls: [{ id: "read-1", function: { arguments: JSON.stringify({ path: "README.md", ref: "HEAD" }), name: "get_file" } }], type: "model.message" }, turnId: "turn-1" },
+      { event: { threadId: "analyst-1", content: JSON.stringify({ error: [{ type: "text", text: "GitHub file read failed." }] }), toolCallId: "read-1", type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
       events = [{ event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-2" }];
       expect(request.input[0]?.content).toContain("exact full 40-character PR head commit SHA");
       return { data: { id: "turn-2" } };

@@ -1,12 +1,14 @@
 import { createForgeGateAgentSpec, executableScenarioPlanSchema, normalizeScenarioPlan, validateExperimentPreflight, validateInvestigationArtifacts } from "./agent-spec.js";
-import { hasIncompletePrimaryGitHubReads, hasSubagentToolPolicyViolation, projectInvestigation } from "./investigation.js";
+import { hasHardSubagentToolPolicyViolation, hasIncompletePrimaryGitHubReads, projectInvestigation } from "./investigation.js";
 
 type TrueForgeSessions = {
   create: (request: { agent: { spec: ReturnType<typeof createForgeGateAgentSpec> } }) => Promise<{ data: { id: string } }>;
-  createTurn: (
+  createTurn: {
+    bivarianceHack(
     sessionId: string,
-    request: { input: { content: string; type: "user.message" }[] },
-  ) => Promise<{ data: { id: string } }>;
+    request: { input: ({ content: string; type: "user.message" } | { approval: { status: "allow" | "deny" }; threadId: string; toolCallId: string; type: "user.tool_approval" })[] },
+    ): Promise<{ data: { id: string } }>;
+  }["bivarianceHack"];
 };
 
 type InvestigationEvent = { event: Record<string, unknown>; turnId: string };
@@ -19,18 +21,17 @@ type PhaseControllerOptions = {
 
 const continuationPrompts = [
   "Continue with Phase INVARIANTS. Spawn the invariant-analyst now, wait for its completed output, validate every InvariantCandidate against the ForgeGate schema, and preserve each accepted artifact.",
-  "Continue with Phase HYPOTHESES. Pass the validated invariant artifacts to the failure-mode-analyst, wait for its completed output, validate every ScenarioPlan, and preserve each accepted artifact. Return raw JSON only: a JSON array of ScenarioPlan objects, with no Markdown, table, prose, explanation, or code fences. Each object must contain only scenarioId, testedSha, seed, invariantId, injectedFaults (string[]), ordering (string[]), expectedOutcome (string), and execution { entrypoint, inputs, assertions }. Do not use mode, repetitions, execution.parameters, fault objects, or other aliases. ScenarioPlan ordering must be a non-empty string[]; do not return a single string. ScenarioPlan seed must be a non-negative integer; do not return a string seed. Every scenarioId must be unique; never return two definitions for the same scenarioId.",
-  "Continue with Phase EXPERIMENT and EVIDENCE. Resolve master to its immutable SHA and generate one temporary scenario runner from each accepted ScenarioPlan. Before each experiment, verify execution.entrypoint and inputs against the checked-out repository, compile or type-check the runner, run a bounded preflight, and require structured measurements before the full run. First run a scenario-independent baseline on master without injected faults, then run the same preflighted runner on the PR SHA with the same scenarioId and seed. Use the successful baseline preflight measurements as the sole source for ExperimentResult.expected; copy that exact measurement set into every result and use PR-head values as observed. A runner/import/setup/preflight failure is an untestable scenario, not a product failure; repair once, then return UNCERTAIN without an ExperimentResult. Return one schema-valid generic ExperimentResult per successfully executed scenario with baselineSha, scenarioId, repetitions, verdict, and concrete sandbox artifact links.",
-  "Continue with Phase DECISION. Reconcile the persisted InvariantCandidate, ScenarioPlan, and ExperimentResult artifacts. Return one complete final JSON object containing the full invariants array, full scenarios array, full experimentResults array, and decision; persisted artifacts cannot substitute for omitted fields. READY is allowed only when all scenarios have passing results and all artifacts are valid and consistent.",
+  "Continue with Phase HYPOTHESES. Pass the validated invariant artifacts to the failure-mode-analyst, wait for its completed output, validate every ScenarioPlan, and preserve each accepted artifact. Return compact raw JSON only (one line): a JSON array of ScenarioPlan objects, with no Markdown, table, prose, explanation, reasoning, or code fences. Each object must contain only scenarioId, testedSha, seed, invariantId, injectedFaults (string[]), ordering (string[]), expectedOutcome (string), and execution { entrypoint, inputs, assertions }. Do not use mode, repetitions, execution.parameters, fault objects, or other aliases. ScenarioPlan ordering must be a non-empty string[]; do not return a single string. ScenarioPlan seed must be a non-negative integer; do not return a string seed. Every scenarioId must be unique; never return two definitions for the same scenarioId.",
+  "Continue with Phase EXPERIMENT and EVIDENCE. Resolve master to its immutable SHA and generate one temporary scenario runner from each accepted ScenarioPlan. Maintain a checklist of accepted scenario IDs; execute one missing ID at a time, read and validate its ExperimentResult immediately, then continue until every accepted ID has exactly one result. Never emit a terminal decision after a partial result set. Before each experiment, verify execution.entrypoint and inputs against the checked-out repository, compile or type-check the runner, run a bounded preflight, and require structured measurements before the full run. First run a scenario-independent baseline on master without injected faults, then run the same preflighted runner on the PR SHA with the same scenarioId and seed. Use the successful baseline preflight measurements as the sole source for ExperimentResult.expected; copy that exact measurement set into every result and use PR-head values as observed. A runner/import/setup/preflight failure is an untestable scenario, not a product failure; repair once, then return UNCERTAIN without an ExperimentResult. Return one schema-valid generic ExperimentResult per successfully executed scenario with baselineSha, scenarioId, repetitions, verdict, and concrete sandbox artifact links.",
+  "Continue with Phase DECISION. Reconcile the persisted InvariantCandidate, ScenarioPlan, and ExperimentResult artifacts. Return compact raw JSON only (one line, no explanation or reasoning): one complete final JSON object containing the full invariants array, full scenarios array, full experimentResults array, and decision; persisted artifacts cannot substitute for omitted fields. READY is allowed only when all scenarios have passing results and all artifacts are valid and consistent.",
 ] as const;
 const mcpRecoveryPrompt = "The previous MCP call used an invalid server or tool name. Do not call list_tools, get_tool_info, get_pr, list_changed_files, or changed_files. Use only forgegate-github tools named get_pull_request, get_pull_request_files, get_file, get_checks, get_qodo_reviews, and get_review_comments. Retry the required read now, starting with get_pull_request.";
-const githubReadRecoveryPrompt = "Required primary-agent GitHub reads are incomplete. Continue the same investigation and call every missing read through forgegate-github before generating evidence: get_pull_request, get_pull_request_files, get_file for the required changed files at the exact 40-character PR head SHA, get_checks, get_qodo_reviews, and get_review_comments. Do not finalize or run experiments until these reads have successful auditable tool responses.";
+const githubReadRecoveryPrompt = "Required primary-agent GitHub reads are incomplete. This is the one automatic recovery turn, not a final turn. Continue the same investigation and call every missing read through forgegate-github before generating evidence: get_pull_request, get_pull_request_files, get_file for the required changed files at the exact 40-character PR head SHA, get_checks, get_qodo_reviews, and get_review_comments. Do not return READY, BLOCKED, or UNCERTAIN yet; do not finalize or run experiments until these reads have successful auditable tool responses. If any required read is still incomplete after this turn, stop and leave the investigation UNCERTAIN for the user's retry action; do not proceed to analysts, sandbox execution, or decision reconciliation.";
 const subagentRefRecoveryPrompt = "The invariant analyst used an invalid get_file ref. Retry the same allowed get_file reads now using the exact full 40-character PR head commit SHA from the primary agent context, not PR_HEAD, a branch name, or any placeholder. Do not call any other tool.";
 const sandboxRecoveryPrompt = "The previous sandbox command failed with a transient startup or process-bridge error. Retry the same sandbox command once now, then continue the investigation. Do not mark the investigation UNCERTAIN unless the retry also fails.";
 const scenarioRecoveryPrompt = "A scenario runner or preflight failed. Do not treat this as a product failure and do not emit an ExperimentResult from it. Repair the runner using only repository capabilities and exact-SHA evidence, then compile or type-check it and run a bounded preflight that emits structured measurements. If the scenario cannot be expressed, return UNCERTAIN without an ExperimentResult.";
 const invariantEvidenceRecoveryPrompt = "The invariant analyst output was rejected because it was not raw schema-valid JSON evidence. Retry the invariant analyst now and return a raw JSON array only, never Markdown, prose, or code fences. Every evidence.sha must be the exact PR commit SHA already returned by get_pull_request and stored as testedSha; never copy the sha field from get_file, which is a blob SHA.";
-const scenarioFormatRecoveryInstruction = "The failure-mode analyst response was rejected because one or more ScenarioPlan objects were not schema-valid or executable. Retry it only after supplying the validated invariant JSON and repository capability map. The failure-mode analyst must return a raw JSON array of schema-valid ScenarioPlan objects, never Markdown, a table, prose, or code fences; each object must contain only scenarioId, testedSha, seed, invariantId, injectedFaults (string[]), ordering (string[]), expectedOutcome (string), and execution { entrypoint, inputs, assertions }. Do not use mode, repetitions, execution.parameters, fault objects, or other aliases. Every scenario must target a behavior changed by the PR and include at least one supported injected fault. If the changed behavior depends on an interaction such as timeout followed by retry, combine the complete interaction in one ScenarioPlan; do not substitute a baseline/no-fault or isolated scenario that cannot exercise the change. Return [] only when no executable PR-relevant fault scenario can be derived.";
-const decisionRepairInstruction = "Final response rejected: the evidence exists, but the decision bundle is incomplete. Return one complete JSON object containing the full invariants, scenarios, and experimentResults arrays plus decision. Set experimentResult to null; use experimentResults as the only result representation. Copy the exact persisted evidence below; do not summarize, omit, or alter any array. Do not emit another partial BLOCKED or READY response.";
+const decisionRepairInstruction = "Final response rejected: the evidence exists, but the decision bundle is incomplete. Return compact raw JSON on one line, with no reasoning or prose: one complete JSON object containing the full invariants, scenarios, and experimentResults arrays plus decision. Set experimentResult to null; use experimentResults as the only result representation. Copy the exact persisted evidence below; do not summarize, omit, or alter any array. Do not emit another partial BLOCKED or READY response.";
 const conciseScenarioFormatInstruction = "Return ONLY a JSON array. Each item must be a ScenarioPlan with scenarioId, testedSha, integer seed, invariantId, injectedFaults (string[]), non-empty ordering (string[]), expectedOutcome (string), and execution { entrypoint, inputs, assertions }. No Markdown, prose, code fences, aliases, or extra fields. Use the validated invariant JSON and repository capability map. Include at least one supported injected fault, use only capability-map operations, and use unique scenarioId values. Return [] only when no executable PR-relevant scenario exists.";
 const subagentCreationRecoveryPrompt = "Retry creating the failure-mode-analyst once. Use create_sub_agent with name as a string and input as one string. All artifact id, scenarioId, invariantId, and testedSha values inside that input are strings; do not add a numeric id field or emit an object where a string is required. Preserve the no-tools boundary and exact raw JSON ScenarioPlan array contract.";
 
@@ -78,6 +79,9 @@ export function createTrueForgeInvestigationLauncher({
             "Use cwd / for sandbox commands; /workspace does not exist in the Daytona image. Clone into /agent-harness or another path under /.",
             "Inspect the repository package metadata, install dependencies with its documented package manager, build it with its documented command, and generate a temporary scenario runner in the sandbox. Never assume a ForgeGate or product-specific module path.",
             "Before every experiment, verify execution.entrypoint and inputs against the checked-out repository, compile or type-check the temporary runner, run a bounded preflight, and require structured measurements before the full run. A runner/import/setup/preflight failure is an untestable scenario, not a product failure; repair once, then return UNCERTAIN without an ExperimentResult.",
+            "Keep a checklist of accepted ScenarioPlan IDs. After each experiment command, read and validate that scenario's result, mark only that ID complete, and execute the next missing ID. Do not emit READY, BLOCKED, or final UNCERTAIN while any accepted scenario ID lacks exactly one ExperimentResult.",
+            "When a valid experiment proves a defect, generate a failing regression test and the smallest repair in the sandbox, rerun the regression and adversarial scenario, and emit one PatchProposal artifact containing the exact PR head SHA, bounded files, exact diff, regression before=fail/after=pass proof, and concrete experiment evidence links.",
+            "Do not emit a PatchProposal unless the regression failed before the patch and passed after it and the repaired experiment passed. PatchProposal files must stay within the configured GitHub mutation allowlist; do not commit or push in this investigation turn.",
             "For every sandbox exec call, set intent with an explicit phase prefix: runner:, compile:, preflight:, or experiment:. Only runner:, compile:, and preflight: failures may trigger scenario recovery; experiment: output must be parsed as experiment evidence.",
             "The preflight runner must emit one raw JSON object with artifactLink, phase=preflight, status=pass, the mapped entrypoint, and non-empty numeric measurements; preserve that successful tool response as auditable evidence before running the full experiment.",
             "Every scenario preflight must also include the exact scenarioId and seed from its ScenarioPlan; its entrypoint must equal execution.entrypoint. Baseline preflight may omit scenarioId and seed because it is scenario-independent.",
@@ -96,7 +100,7 @@ export function createTrueForgeInvestigationLauncher({
             "After both analysts finish, deduplicate and bound the ScenarioPlans, then run every accepted unique ScenarioPlan in the sandbox with the generated oracle and record one generic ExperimentResult per scenario.",
             "Use concrete sandbox artifact identifiers as ExperimentResult artifact links; never put an explanation or sentence in artifactLinks.",
             "Resolve master to its immutable SHA and run one scenario-independent baseline without injected faults before PR checkout. Reuse that exact baseline measurement set as expected in every ExperimentResult; run each accepted scenario on the PR SHA with its unchanged scenarioId and seed, use those values as observed, and mark verdict fail when the observed values violate an accepted invariant.",
-            "The final response must be a JSON object with a decision field. The final decision response must include invariants, scenarios, experimentResults, and decision; persisted artifacts cannot substitute for omitted fields. For READY or BLOCKED include complete consistent evidence; for UNCERTAIN include only evidence actually obtained and omit unavailable fields. Never invent missing artifacts.",
+            "The final response must be compact raw JSON on one line: a JSON object with a decision field. Do not output reasoning, Markdown, prose, explanations, or code fences. The final decision response must include invariants, scenarios, experimentResults, and decision; persisted artifacts cannot substitute for omitted fields. For READY or BLOCKED include complete consistent evidence; for UNCERTAIN include only evidence actually obtained and omit unavailable fields. Never invent missing artifacts.",
             "Every accepted invariant must have at least one ScenarioPlan; if any invariant has no scenario, return UNCERTAIN.",
             "Set experimentResult to null and use experimentResults as the only result representation; never return a singular experimentResult.",
             "Completion predicate: do not emit a final response until all required reads, two analyst outputs, baseline, adversarial experiment, schema validation, and decision are present; after every tool response issue the next required tool call.",
@@ -104,7 +108,7 @@ export function createTrueForgeInvestigationLauncher({
             "Artifact contract: evidence objects use sha (not testedSha); ScenarioPlan injectedFaults is string[] and expectedOutcome is a string; return raw JSON only, never Markdown, tables, prose, explanations, or code fences. Every scenarioId must be unique. Once a scenarioId is emitted, reuse its exact executable fields and do not emit a revised copy; if continuing, omit already-emitted scenarioIds and return only new scenarios. Wording-only expectedOutcome enrichment is ignored by deduplication, but changed faults, ordering, seed, invariant, or execution fields are rejected as conflicts.",
             "ScenarioPlan ordering is also a non-empty string[]; validate the complete ScenarioPlan against the ForgeGate schema before preserving it.",
             "ScenarioPlan seed is a non-negative integer; never use a string such as seed-001.",
-            "Reconcile only evidence at the exact PR SHA. Do not write or request approval in this turn.",
+            "Reconcile only evidence at the exact PR SHA. Do not comment, trigger Qodo, merge, deploy, or perform any other mutation. After a validated PatchProposal and repaired passing evidence, commit_files is the only allowed mutation and must remain paused for TrueForge native approval.",
           ].join("\n"),
           type: "user.message",
         },
@@ -134,13 +138,19 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
     let decisionRepairAttempted = false;
     let evidenceRecoveryAttempted = false;
     let capabilityMapRecoveryAttempted = false;
-    let githubReadRecoveryAttempted = false;
+    let githubReadRecoveryAttempts = 0;
     let scenarioCoverageRecoveryAttempted = false;
     let subagentCreationRecoveryAttempted = false;
     for (let promptIndex = 0; promptIndex < continuationPrompts.length;) {
       const completed = await waitForTurn(sessionId, turnId);
       if (!completed) return;
+      const events = await listEvents(sessionId);
       if (isTerminalTurn(completed.event)) {
+        if (hasIncompletePrimaryGitHubReads(events) && githubReadRecoveryAttempts < 1) {
+          githubReadRecoveryAttempts += 1;
+          turnId = (await createTurn(sessionId, { input: [{ content: githubReadRecoveryPrompt, type: "user.message" }] })).data.id;
+          continue;
+        }
         if (!subagentCreationRecoveryAttempted && isSubagentCreationError(completed.event)) {
           subagentCreationRecoveryAttempted = true;
           turnId = (await createTurn(sessionId, { input: [{ content: subagentCreationRecoveryPrompt, type: "user.message" }] })).data.id;
@@ -148,23 +158,23 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
         }
         return;
       }
-      const events = await listEvents(sessionId);
       if (hasIncompletePrimaryGitHubReads(events)) {
-        if (githubReadRecoveryAttempted) return;
-        githubReadRecoveryAttempted = true;
+        if (githubReadRecoveryAttempts >= 1) return;
+        githubReadRecoveryAttempts += 1;
         turnId = (await createTurn(sessionId, { input: [{ content: githubReadRecoveryPrompt, type: "user.message" }] })).data.id;
         continue;
       }
       const invalidSubagentRef = findInvalidSubagentRef(events);
-      if (invalidSubagentRef) {
+      const invalidSubagentRead = invalidSubagentRef ?? findInvalidSubagentRead(events);
+      if (invalidSubagentRead) {
         if (subagentRefRecoveryAttempted) return;
         subagentRefRecoveryAttempted = true;
         turnId = (await createTurn(sessionId, { input: [{ content: subagentRefRecoveryPrompt, type: "user.message" }] })).data.id;
         continue;
       }
-      if (hasSubagentToolPolicyViolation(events)) return;
+      if (hasHardSubagentToolPolicyViolation(events)) return;
       if (hasCompleteEvidence(events)) return;
-      if (findInvalidInvariantOutput(events)) {
+      if (findInvalidInvariantOutput(events) && !hasAcceptedArtifact(events, "InvariantCandidate")) {
         if (invariantEvidenceRecoveryAttempted) return;
         invariantEvidenceRecoveryAttempted = true;
         turnId = (await createTurn(sessionId, { input: [{ content: invariantEvidenceRecoveryPrompt, type: "user.message" }] })).data.id;
@@ -176,7 +186,7 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
         turnId = (await createTurn(sessionId, { input: [{ content: capabilityMapPrompt(events), type: "user.message" }] })).data.id;
         continue;
       }
-      if (findInvalidScenarioOutput(events)) {
+      if (findInvalidScenarioOutput(events) && !hasAcceptedArtifact(events, "ScenarioPlan")) {
         if (scenarioFormatRecoveryAttempted) return;
         scenarioFormatRecoveryAttempted = true;
         turnId = (await createTurn(sessionId, { input: [{ content: `${nextRequiredPrompt(events)}\n${conciseScenarioFormatInstruction}`, type: "user.message" }] })).data.id;
@@ -190,7 +200,6 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
         continue;
       }
       const transientSandboxFailures = findTransientSandboxFailures(events, turnId);
-      if (transientSandboxFailures.length > 1) return;
       const transientSandboxFailure = transientSandboxFailures[0];
       if (transientSandboxFailure && !sandboxRecoveryAttempted) {
         if (isSubagentThread(transientSandboxFailure.event.threadId)) return;
@@ -211,7 +220,7 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
         turnId = (await createTurn(sessionId, { input: [{ content: inconsistentEvidencePrompt, type: "user.message" }] })).data.id;
         continue;
       }
-      if (hasIncompleteExperiments(events) && experimentRecoveryAttempts < 3) {
+      if (hasIncompleteExperiments(events) && experimentRecoveryAttempts < 1) {
         experimentRecoveryAttempts += 1;
         turnId = (await createTurn(sessionId, { input: [{ content: incompleteExperimentPrompt(events), type: "user.message" }] })).data.id;
         continue;
@@ -260,6 +269,23 @@ function isTerminalTurn(event: Record<string, unknown>) {
   return status === "cancelled" || status === "error" || status === "blocked";
 }
 
+export function createTrueForgeApprovalResumer(sessions: Pick<TrueForgeSessions, "createTurn">) {
+  return async (sessionId: string, input: { decision: "allow" | "deny"; threadId: string; toolCallId: string }) => sessions.createTurn(sessionId, {
+    input: [{ approval: { status: input.decision }, threadId: input.threadId, toolCallId: input.toolCallId, type: "user.tool_approval" }],
+  });
+}
+
+export function createTrueForgeInvestigationRetrier({ createTurn, listEvents, onControllerError }: { createTurn: TrueForgeSessions["createTurn"]; listEvents: (sessionId: string) => Promise<InvestigationEvent[]>; onControllerError?: (error: unknown) => void }) {
+  const controller = createInvestigationPhaseController({ createTurn, listEvents });
+  return async (sessionId: string) => {
+    const turn = await createTurn(sessionId, {
+      input: [{ content: "User requested a bounded retry. Continue this same investigation from persisted evidence at the next incomplete phase: required GitHub reads, analyst evidence, scenario generation, scenario experiments, or decision reconciliation. Keep status UNCERTAIN until the missing phase is completed. Do not redefine accepted artifacts; preserve valid evidence, execute only missing accepted scenarios, and return one complete compact JSON decision bundle when eligible.", type: "user.message" }],
+    });
+    void controller.continue(sessionId, turn.data.id).catch(onControllerError ?? ((error: unknown) => console.error("ForgeGate retry controller failed", error)));
+    return { turnId: turn.data.id };
+  };
+}
+
 function isSubagentCreationError(event: Record<string, unknown>) {
   const state = event.state;
   if (!isRecord(state) || state.status !== "error" || typeof state.message !== "string") return false;
@@ -277,6 +303,10 @@ function hasExplicitUncertainDecision(events: InvestigationEvent[]) {
 
 function hasAnyEvidence(events: InvestigationEvent[]) {
   return projectInvestigation("controller", "", events).artifacts.length > 0;
+}
+
+function hasAcceptedArtifact(events: InvestigationEvent[], type: "InvariantCandidate" | "ScenarioPlan") {
+  return projectInvestigation("controller", "", events).artifacts.some((artifact) => artifact.type === type);
 }
 
 function hasMismatchedPreflight(events: InvestigationEvent[]) {
@@ -437,10 +467,61 @@ function findInvalidSubagentRef(events: InvestigationEvent[]) {
   return events.find(({ event }) => isSubagentThread(event.threadId) && event.type === "tool.response" && typeof event.content === "string" && /ref must be a full commit SHA/i.test(event.content));
 }
 
+function findInvalidSubagentRead(events: InvestigationEvent[]) {
+  const stages = analystStages(events);
+  const trustedHeadSha = findHeadShaFromRawEvents(events);
+  const approvedPaths = approvedPathsFromRawEvents(events);
+  for (const { event } of events) {
+    if (event.type !== "model.message" || !isSubagentThread(event.threadId) || stages.get(typeof event.threadId === "string" ? event.threadId : "") !== "INVARIANTS") continue;
+    const toolCalls = Array.isArray(event.toolCalls) ? event.toolCalls : [];
+    for (const call of toolCalls) {
+      if (!isRecord(call) || !isRecord(call.function)) continue;
+      const args = typeof call.function.arguments === "string" ? parseJson(call.function.arguments) : call.function.arguments;
+      const toolName = call.function.name === "call_tool" && isRecord(args) ? args.tool_name : call.function.name;
+      const input = call.function.name === "call_tool" && isRecord(args) && isRecord(args.input) ? args.input : args;
+      if (toolName === "get_file" && isRecord(input) && !isAllowedRawSubagentRead(input, trustedHeadSha, approvedPaths)) return { event };
+    }
+  }
+  return undefined;
+}
+
+function isAllowedRawSubagentRead(input: Record<string, unknown>, trustedHeadSha: string | undefined, approvedPaths: Set<string>) {
+  return Boolean(trustedHeadSha && input.ref === trustedHeadSha && isSafeRepositoryPath(input.path) && approvedPaths.has(input.path));
+}
+
+function findHeadShaFromRawEvents(events: InvestigationEvent[]) {
+  for (const { event } of events) {
+    if (event.type !== "tool.response" || typeof event.content !== "string") continue;
+    const parsed = parseJson(event.content);
+    if (isRecord(parsed) && isRecord(parsed.head) && typeof parsed.head.sha === "string" && /^[a-f0-9]{40}$/.test(parsed.head.sha)) return parsed.head.sha;
+  }
+  return undefined;
+}
+
+function approvedPathsFromRawEvents(events: InvestigationEvent[]) {
+  const paths = new Set<string>();
+  for (const { event } of events) {
+    if (event.type !== "tool.response" || typeof event.content !== "string") continue;
+    const parsed = parseJson(event.content);
+    if (!isRecord(parsed) || !Array.isArray(parsed.files)) continue;
+    for (const file of parsed.files) {
+      if (!isRecord(file)) continue;
+      const path = file.filename ?? file.path;
+      if (isSafeRepositoryPath(path)) paths.add(path);
+    }
+  }
+  return paths;
+}
+
+function isSafeRepositoryPath(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && !value.startsWith("/") && !/^[A-Za-z]:/.test(value) && !value.split("/").includes("..");
+}
+
 function findInvalidInvariantOutput(events: InvestigationEvent[]) {
+  const stages = analystStages(events);
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const { event } = events[index]!;
-    if (event.type !== "thread.done" || event.stage !== "INVARIANTS" || !isSubagentThread(event.threadId)) continue;
+    if (event.type !== "thread.done" || (event.stage ?? stages.get(typeof event.threadId === "string" ? event.threadId : "")) !== "INVARIANTS" || !isSubagentThread(event.threadId)) continue;
     const state = isRecord(event.state) && isRecord(event.state.output) ? event.state.output : undefined;
     const content = state?.content;
     if (typeof content !== "string") continue;
@@ -456,9 +537,10 @@ function findInvalidInvariantOutput(events: InvestigationEvent[]) {
 }
 
 function findInvalidScenarioOutput(events: InvestigationEvent[]) {
+  const stages = analystStages(events);
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const { event } = events[index]!;
-    if (event.type !== "thread.done" || event.stage !== "HYPOTHESES" || !isSubagentThread(event.threadId)) continue;
+    if (event.type !== "thread.done" || (event.stage ?? stages.get(typeof event.threadId === "string" ? event.threadId : "")) !== "HYPOTHESES" || !isSubagentThread(event.threadId)) continue;
     const state = isRecord(event.state) && isRecord(event.state.output) ? event.state.output : undefined;
     const content = state?.content;
     if (typeof content !== "string") continue;
@@ -466,6 +548,16 @@ function findInvalidScenarioOutput(events: InvestigationEvent[]) {
     return !Array.isArray(parsed) || parsed.some((candidate) => !executableScenarioPlanSchema.safeParse(normalizeScenarioPlan(candidate)).success);
   }
   return false;
+}
+
+function analystStages(events: InvestigationEvent[]) {
+  const stages = new Map<string, "INVARIANTS" | "HYPOTHESES">();
+  for (const { event } of events) {
+    if (event.type !== "thread.created" || typeof event.threadId !== "string") continue;
+    if (typeof event.title === "string" && event.title.startsWith("invariant-analyst")) stages.set(event.threadId, "INVARIANTS");
+    if (typeof event.title === "string" && event.title.startsWith("failure-mode-analyst")) stages.set(event.threadId, "HYPOTHESES");
+  }
+  return stages;
 }
 
 function findTransientSandboxFailures(events: InvestigationEvent[], turnId: string) {

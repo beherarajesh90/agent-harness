@@ -1,13 +1,15 @@
 import Fastify, { type FastifyReply } from "fastify";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { IdempotencyConflictError, InvestigationNotFoundError } from "./investigation.js";
+import { ApprovalAlreadySubmittedError, ApprovalNotFoundError, IdempotencyConflictError, InvestigationNotFoundError, InvestigationRetryNotAllowedError } from "./investigation.js";
 import type { InvestigationSnapshot } from "./investigation.js";
 
 type InvestigationService = {
+  approve?: (sessionId: string, approvalId: string, decision: "allow" | "deny") => Promise<InvestigationSnapshot>;
   cancel: (sessionId: string) => Promise<InvestigationSnapshot>;
   create: (pullRequestUrl: string, idempotencyKey?: string) => Promise<{ sessionId: string; turnId: string }>;
   get: (sessionId: string) => Promise<InvestigationSnapshot>;
+  retry?: (sessionId: string) => Promise<{ sessionId: string; turnId: string; status: "QUEUED" }>;
 };
 
 export function buildApp({
@@ -68,6 +70,18 @@ export function buildApp({
     }
   });
 
+  app.post<{ Params: { sessionId: string } }>("/api/investigations/:sessionId/retry", async (request, reply) => {
+    if (!investigationService) return reply.code(503).send({ code: "UNAVAILABLE", message: "investigation service unavailable" });
+    try {
+      if (!investigationService.retry) return reply.code(503).send({ code: "UNAVAILABLE", message: "retry service unavailable" });
+      return reply.code(202).send(await investigationService.retry(request.params.sessionId));
+    } catch (error) {
+      if (error instanceof InvestigationNotFoundError) return reply.code(404).send({ code: "NOT_FOUND", message: error.message });
+      if (error instanceof InvestigationRetryNotAllowedError) return reply.code(409).send({ code: "RETRY_NOT_ALLOWED", message: error.message });
+      return sendServiceFailure(reply, error, "INVESTIGATION_RETRY_FAILED", "investigation could not be retried");
+    }
+  });
+
   app.post<{ Params: { sessionId: string } }>("/api/investigations/:sessionId/cancel", async (request, reply) => {
     if (!investigationService) return reply.code(503).send({ code: "UNAVAILABLE", message: "investigation service unavailable" });
     try {
@@ -78,6 +92,22 @@ export function buildApp({
         return reply.code(404).send({ code: "NOT_FOUND", message: error.message });
       }
       return sendServiceFailure(reply, error, "INVESTIGATION_CANCEL_FAILED", "investigation could not be cancelled");
+    }
+  });
+
+  app.post<{ Params: { sessionId: string; approvalId: string }; Body: { decision?: string } }>("/api/investigations/:sessionId/approvals/:approvalId", async (request, reply) => {
+    if (!investigationService) return reply.code(503).send({ code: "UNAVAILABLE", message: "investigation service unavailable" });
+    if (request.body?.decision !== "allow" && request.body?.decision !== "deny") return reply.code(400).send({ code: "INVALID_APPROVAL", message: "decision must be allow or deny" });
+    try {
+      const approve = investigationService.approve;
+      if (!approve) return reply.code(503).send({ code: "UNAVAILABLE", message: "approval service unavailable" });
+      const snapshot = await approve(request.params.sessionId, request.params.approvalId, request.body.decision);
+      return reply.code(202).send({ approvalId: request.params.approvalId, sessionId: snapshot.sessionId, status: snapshot.status });
+    } catch (error) {
+      if (error instanceof InvestigationNotFoundError) return reply.code(404).send({ code: "NOT_FOUND", message: error.message });
+      if (error instanceof ApprovalNotFoundError) return reply.code(409).send({ code: "APPROVAL_NOT_PENDING", message: error.message });
+      if (error instanceof ApprovalAlreadySubmittedError) return reply.code(409).send({ code: "APPROVAL_ALREADY_SUBMITTED", message: error.message });
+      return sendServiceFailure(reply, error, "APPROVAL_FAILED", "approval could not be submitted");
     }
   });
 

@@ -756,7 +756,7 @@ The model has no direct GitHub, host-shell, database, provider-key, or sandbox-k
 - Invalidate evidence when PR head changes.
 - Permit one Qodo-driven repair round; unresolved actionable findings prevent `READY`.
 - Stop at TrueForge's configured iteration limit.
-- Model/read transient errors: two retries. Selected-sandbox provisioning: one fresh-sandbox retry. Malformed structured output: one schema-feedback correction.
+- Recoverable model/read/analyst/scenario/evidence failures get one automatic retry. Required GitHub reads and all downstream phases stop before the next phase when that retry is exhausted, leave the investigation UNCERTAIN, and expose the user retry action. Safety-policy violations, ambiguous writes, and unrelated terminal failures stop immediately. Selected-sandbox provisioning: one fresh-sandbox retry. Malformed structured output: one schema-feedback correction.
 - Do not blindly retry ambiguous GitHub writes; read branch state first.
 - Test/invariant failures are evidence, not infrastructure retries.
 - Approval denial executes zero writes.
@@ -1511,12 +1511,12 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [ ] Produce `PatchProposal` with expected SHA, files, diff, regression result, and experiment evidence.
 - [ ] Re-run regression test and adversarial scenario against the proposal.
 - [ ] Verify repaired scenario produces 1000 intents, 1000 charges, and 1000 ledger entries.
-- [ ] Implement `commit_files` policy guard.
-- [ ] Enforce repository, `forgegate/demo-` branch, exact payment-lab source/test allowlist, 10-file, and 250 KB limits.
-- [ ] Enforce expected-head-SHA check immediately before write.
-- [ ] Reject force-push, merge, workflow modification, branch deletion, and PR closure.
+- [x] Implement `commit_files` policy guard.
+- [x] Enforce repository, `forgegate/demo-` branch, exact payment-lab source/test allowlist, 10-file, and 250 KB limits.
+- [x] Enforce expected-head-SHA check immediately before write.
+- [x] Reject force-push, merge, workflow modification, branch deletion, and PR closure.
 - [ ] Render exact diff, SHA, changed files, and risk before approval.
-- [ ] Implement approval API and TrueForge resume with matching tool-call ID.
+- [x] Implement approval API and TrueForge resume with matching tool-call ID.
 - [ ] Verify deny creates zero writes.
 - [ ] Verify allow creates exactly one bounded commit on the existing PR branch.
 - [ ] Verify stale SHA fails closed.

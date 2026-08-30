@@ -7,7 +7,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createGitHubMcpServer } from "../src/github-mcp.js";
 import { createGitHubMcpHttpServer } from "../src/github-mcp-http.js";
-import { createGitHubApprovalStore } from "../src/github-approval.js";
 import { asMcpTransport } from "../src/mcp-transport.js";
 
 describe("GitHub MCP server", () => {
@@ -28,10 +27,8 @@ describe("GitHub MCP server", () => {
     const getChecks = vi.fn(async (ref: string) => ({ check_runs: [{ ref }] }));
     const getQodoReviews = vi.fn(async (pullNumber: number) => ({ complete: true, reviews: [{ pullNumber, reviewer: "qodo" }], truncated: false }));
     const getReviewComments = vi.fn(async (pullNumber: number) => ({ complete: true, comments: [{ body: "review", pullNumber }], truncated: false }));
-    const approvalStore = createGitHubApprovalStore();
     const server = createGitHubMcpHttpServer(
       { getChecks, getFile, getPullRequest, getPullRequestFiles, getQodoReviews, getReviewComments, commitFiles: vi.fn(), repository: "beherarajesh90/agent-harness" },
-      { approvalSecret: "test-secret", approvalStore },
     );
 
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -88,27 +85,7 @@ describe("GitHub MCP server", () => {
       content: [{ text: JSON.stringify({ complete: true, comments: [{ body: "review", pullNumber: 42 }], truncated: false }), type: "text" }],
     });
 
-    const payload = {
-      branch: "forgegate/demo-payment-retry",
-      expectedHeadSha: "a".repeat(40),
-      files: [{ content: "fix", path: "apps/forgegate/src/payment-lab.ts" }],
-      message: "fix: enforce payment idempotency",
-      repository: "beherarajesh90/agent-harness",
-    };
-    await expect(
-      fetch(`http://127.0.0.1:${address.port}/approval-capabilities`, {
-        body: JSON.stringify(payload),
-        headers: { "content-type": "application/json", "x-forgegate-approval-secret": "wrong" },
-        method: "POST",
-      }),
-    ).resolves.toMatchObject({ status: 401 });
-    const approvalResponse = await fetch(`http://127.0.0.1:${address.port}/approval-capabilities`, {
-      body: JSON.stringify(payload),
-      headers: { "content-type": "application/json", "x-forgegate-approval-secret": "test-secret" },
-      method: "POST",
-    });
-    expect(approvalResponse.status).toBe(201);
-    await expect(approvalResponse.json()).resolves.toEqual({ approvalToken: expect.any(String) });
+    await expect(fetch(`http://127.0.0.1:${address.port}/approval-capabilities`)).resolves.toMatchObject({ status: 404 });
 
     await client.close();
     await new Promise<void>((resolve, reject) =>
@@ -130,10 +107,8 @@ describe("GitHub MCP server", () => {
       commitSha: "b".repeat(40),
       url: "https://github.com/beherarajesh90/agent-harness/commit/" + "b".repeat(40),
     }));
-    const approvalStore = createGitHubApprovalStore();
     const server = createGitHubMcpServer({
       commitFiles,
-      consumeApproval: approvalStore.consume,
       getChecks,
       getFile,
       getPullRequest,
@@ -215,17 +190,13 @@ describe("GitHub MCP server", () => {
       message: "fix: enforce payment idempotency",
       repository: "beherarajesh90/agent-harness",
     };
-    const approvalToken = approvalStore.issue(commitPayload);
-
     await expect(
       client.callTool({
         arguments: {
-          approval_token: approvalToken,
           branch: commitPayload.branch,
           expected_head_sha: commitPayload.expectedHeadSha,
           files: commitPayload.files,
           message: commitPayload.message,
-          repository: commitPayload.repository,
         },
         name: "commit_files",
       }),
@@ -245,17 +216,25 @@ describe("GitHub MCP server", () => {
     await expect(
       client.callTool({
         arguments: {
-          approval_token: approvalToken,
           branch: commitPayload.branch,
           expected_head_sha: commitPayload.expectedHeadSha,
           files: commitPayload.files,
           message: commitPayload.message,
-          repository: commitPayload.repository,
         },
         name: "commit_files",
       }),
-    ).resolves.toMatchObject({ isError: true });
-    expect(commitFiles).toHaveBeenCalledOnce();
+    ).resolves.toMatchObject({
+      content: [
+        {
+          text: JSON.stringify({
+            commitSha: "b".repeat(40),
+            url: "https://github.com/beherarajesh90/agent-harness/commit/" + "b".repeat(40),
+          }),
+          type: "text",
+        },
+      ],
+    });
+    expect(commitFiles).toHaveBeenCalledTimes(2);
     expect(getPullRequest).toHaveBeenCalledWith(42);
 
     await client.close();
