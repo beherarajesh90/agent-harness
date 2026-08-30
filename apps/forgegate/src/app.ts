@@ -1,4 +1,6 @@
 import Fastify, { type FastifyReply } from "fastify";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { IdempotencyConflictError, InvestigationNotFoundError } from "./investigation.js";
 import type { InvestigationSnapshot } from "./investigation.js";
 
@@ -16,6 +18,16 @@ export function buildApp({
   investigationService?: InvestigationService;
 } = {}) {
   const app = Fastify();
+
+  app.get("/", async (_request, reply) => {
+    try {
+      const path = resolve(process.cwd(), "apps/forgegate/public/index.html");
+      const fallback = resolve(process.cwd(), "public/index.html");
+      return reply.type("text/html").send(await readFile(path, "utf8").catch(() => readFile(fallback, "utf8")));
+    } catch {
+      return reply.code(404).send({ code: "UI_NOT_BUILT", message: "Control Room is unavailable" });
+    }
+  });
 
   app.get("/health/live", () => ({ status: "ok" }));
   app.get("/health/ready", async (_request, reply) => {

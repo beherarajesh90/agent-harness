@@ -31,7 +31,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
       expect.objectContaining({
         input: [
           expect.objectContaining({
-            content: expect.stringMatching(/Do not finish after setup[\s\S]*do not use raw GitHub curl responses[\s\S]*read payment-lab source[\s\S]*experimentResult[\s\S]*Completion predicate/),
+            content: expect.stringMatching(/Do not finish after setup[\s\S]*do not use raw GitHub curl responses[\s\S]*approved repository evidence[\s\S]*experimentResult[\s\S]*Completion predicate/),
             type: "user.message",
           }),
         ],
@@ -39,25 +39,40 @@ describe("createTrueForgeInvestigationLauncher", () => {
     );
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("ScenarioPlan ordering is also a non-empty string[]");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("ScenarioPlan seed is a non-negative integer");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("When creating failure-mode-analyst, include this exact output contract");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("return only a raw JSON array");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("execution with entrypoint, inputs, and assertions");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Use cwd / for sandbox commands; /workspace does not exist");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Evidence reference sha must equal the exact PR head commit SHA");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("never count, transform, pad, truncate, or retry get_file with an alternate SHA");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("The final decision response must include invariants, scenarios, experimentResults, and decision");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Set experimentResult to null");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Subagents receive the repository, PR URL, exact head SHA");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("derive the approved path list from its exact returned filenames");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("must fetch only approved evidence through read-only MCP calls");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("invariant-analyst delegated input must explicitly allow only forgegate-github get_file");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("invariant-analyst delegated input must allow bounded read-only forgegate-github tools");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("failure-mode-analyst delegated input must state exactly");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).not.toContain("Pass bounded literal excerpts");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Subagents may use only bounded read-only forgegate-github MCP tools");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("The invariant analyst may use bounded sandbox exec");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Create failure-mode-analyst only after invariant-analyst thread.done");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("include the exact validated invariant JSON in its input");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Never run grep -R, find, or any recursive repository scan");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("timeout-after-charge, fail-before-charge, and unsafe-retry");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("runPaymentExperiment exactly once per accepted ScenarioPlan");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("using scenario: { scenarioId, seed, injectedFaults } copied from that plan");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("You have no tools. Reason only from the supplied invariant JSON.");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("pass the exact validated invariant JSON and repository capability map in its input");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Do not create the subagent if this boundary is absent");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Each ScenarioPlan must include execution.entrypoint, execution.inputs, and one or more execution.assertions");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("compile or type-check the temporary runner");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("A runner/import/setup/preflight failure is an untestable scenario, not a product failure");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("phase=preflight, status=pass");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("sole source for ExperimentResult.expected");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("concrete preflightArtifactLink");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Never run recursive repository scans");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("build a repository capability map from exact-SHA evidence");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("pass the exact validated invariant JSON and repository capability map");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Execute every accepted ScenarioPlan exactly once using a preflighted temporary runner generated from that plan");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("without injected faults");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Reuse that exact baseline measurement set as expected in every ExperimentResult");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("You have no tools. Reason only from the supplied invariant JSON and repository capability map.");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Every accepted invariant must have at least one ScenarioPlan");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("pnpm exec tsx");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("every scenario must target a behavior changed by the PR");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("combine the complete interaction in one ScenarioPlan");
   });
 
   it("rejects a pull request URL outside the configured repository", async () => {
@@ -133,7 +148,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
     const createTurn = vi.fn(async () => ({ data: { id: "unexpected" } }));
     const listEvents = vi.fn(async () => [
       { event: { threadId: "analyst-1", title: "invariant-analyst", type: "thread.created" }, turnId: "turn-1" },
-      { event: { threadId: "analyst-1", toolCalls: [{ id: "exec-1", function: { arguments: JSON.stringify({ command: "nl -ba file" }), name: "exec" } }], type: "model.message" }, turnId: "turn-1" },
+      { event: { threadId: "analyst-1", toolCalls: [{ id: "exec-1", function: { arguments: JSON.stringify({ command: "curl -s https://example.com" }), name: "exec" } }], type: "model.message" }, turnId: "turn-1" },
       { event: { state: { output: { content: JSON.stringify({ decision: "BLOCKED" }) } }, type: "turn.done" }, turnId: "turn-1" },
     ]);
     const controller = createInvestigationPhaseController({ createTurn, listEvents, pollIntervalMs: 0, maxPolls: 1 });
@@ -203,16 +218,131 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(createTurn.mock.calls[0]?.[1].input[0]?.content).not.toContain("Phase DECISION");
   });
 
-  it("continues to hypotheses when incomplete final output already contains invariants", async () => {
+  it("hands exact invariant and capability-map JSON to the failure-mode analyst phase", async () => {
+    const sha = "a".repeat(40);
+    const invariant = { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha };
+    const map = { operations: [{ entrypoint: "processPayment", inputs: { amount: 500 }, supportedFaults: ["timeout-after-charge"] }], testedSha: sha };
     let events: { event: Record<string, unknown>; turnId: string }[] = [
-      { event: { artifactType: "InvariantCandidate", artifact: { confidence: 1, evidence: [{ endLine: 1, path: "apps/forgegate/src/payment-lab.ts", sha: "a".repeat(40), startLine: 1 }, { endLine: 2, path: "apps/forgegate/test/payment-lab.test.ts", sha: "a".repeat(40), startLine: 1 }], id: "i1", statement: "one charge", testedSha: "a".repeat(40) }, type: "tool.response" }, turnId: "turn-1" },
+      { event: { content: JSON.stringify({ head: { sha } }), type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "InvariantCandidate", artifact: invariant, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "RepositoryCapabilityMap", artifact: map, type: "tool.response" }, turnId: "turn-1" },
       { event: { state: { output: { content: JSON.stringify({ decision: "BLOCKED", invariants: [] }) } }, type: "turn.done" }, turnId: "turn-1" },
     ];
     const createTurn = vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
       void _sessionId;
       events = [{ event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-2" }];
       expect(request.input[0]?.content).toContain("Phase HYPOTHESES");
-      expect(request.input[0]?.content).toContain('Accepted invariant IDs (JSON data): <invariant-ids>["i1"]</invariant-ids>');
+      expect(request.input[0]?.content).toContain(`<invariant-candidates>${JSON.stringify([invariant])}</invariant-candidates>`);
+      expect(request.input[0]?.content).toContain(`<repository-capability-map>${JSON.stringify(map)}</repository-capability-map>`);
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+  });
+
+  it("collects a capability map before retrying scenario analysis", async () => {
+    const sha = "a".repeat(40);
+    const events = [
+      { event: { content: JSON.stringify({ head: { sha } }), type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "InvariantCandidate", artifact: { confidence: 1, evidence: [{ endLine: 1, path: "src/payment.ts", sha, startLine: 1 }, { endLine: 2, path: "test/payment.test.ts", sha, startLine: 1 }], id: "i1", statement: "one charge", testedSha: sha }, type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async (_sessionId: string, _request: { input: { content: string; type: "user.message" }[] }) => {
+      void _sessionId;
+      void _request;
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Do not create the analyst yet");
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("capabilityMap containing a JSON-encoded object");
+  });
+
+  it("repairs invariant evidence that uses a file blob SHA", async () => {
+    const testedSha = "a".repeat(40);
+    const invariant = {
+      confidence: 1,
+      evidence: [
+        { endLine: 2, path: "src/payment-lab.ts", sha: "b".repeat(40), startLine: 1 },
+        { endLine: 4, path: "src/payment-lab.ts", sha: "b".repeat(40), startLine: 3 },
+      ],
+      id: "i1",
+      statement: "one charge",
+      testedSha,
+    };
+    const events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { stage: "INVARIANTS", state: { output: { content: JSON.stringify([invariant]) } }, threadId: "analyst-1", type: "thread.done" }, turnId: "turn-1" },
+      { event: { state: { status: "done" }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void _sessionId;
+      expect(request.input[0]?.content).toContain("blob SHA");
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+  });
+
+  it("does not repeat blob-SHA recovery after a corrected invariant output", async () => {
+    const testedSha = "a".repeat(40);
+    const evidence = [
+      { endLine: 2, path: "src/payment-lab.ts", sha: testedSha, startLine: 1 },
+      { endLine: 4, path: "src/payment-lab.ts", sha: testedSha, startLine: 3 },
+    ];
+    const events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { stage: "INVARIANTS", state: { output: { content: JSON.stringify([{ confidence: 1, evidence: evidence.map((reference) => ({ ...reference, sha: "b".repeat(40) })), id: "i1", statement: "one charge", testedSha }]) } }, threadId: "analyst-1", type: "thread.done" }, turnId: "turn-1" },
+      { event: { stage: "INVARIANTS", state: { output: { content: JSON.stringify([{ confidence: 1, evidence, id: "i1", statement: "one charge", testedSha }]) } }, threadId: "analyst-2", type: "thread.done" }, turnId: "turn-1" },
+      { event: { state: { status: "done" }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void _sessionId;
+      expect(request.input[0]?.content).not.toContain("file blob SHA");
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+  });
+
+  it("retries a Markdown failure-mode analyst response as raw JSON", async () => {
+    const events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { stage: "HYPOTHESES", state: { output: { content: "| scenario | fault |\n|---|---|\n| s1 | timeout |" } }, threadId: "analyst-1", type: "thread.done" }, turnId: "turn-1" },
+      { event: { state: { status: "done" }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void _sessionId;
+      expect(request.input[0]?.content).toContain("ONLY a JSON array");
+      expect(request.input[0]?.content).toContain("validated invariant JSON");
+      expect(request.input[0]?.content).toContain("execution { entrypoint, inputs, assertions }");
+      expect(request.input[0]?.content).toContain("No Markdown, prose, code fences");
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+  });
+
+  it("retries a schema-invalid scenario array", async () => {
+    const events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { stage: "HYPOTHESES", state: { output: { content: JSON.stringify([{ expectedOutcome: "one charge", injectedFaults: [], invariantId: "i1", ordering: ["runScenarioFixture"], scenarioId: "s1", seed: 1, testedSha: "a".repeat(40) }]) } }, threadId: "analyst-1", type: "thread.done" }, turnId: "turn-1" },
+      { event: { state: { status: "done" }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void _sessionId;
+      expect(request.input[0]?.content).toContain("at least one supported injected fault");
       return { data: { id: "turn-2" } };
     });
     const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
@@ -234,6 +364,29 @@ describe("createTrueForgeInvestigationLauncher", () => {
     await controller.continue("session-1", "turn-2");
 
     expect(createTurn).not.toHaveBeenCalled();
+  });
+
+  it("continues experiment recovery before stopping repeated incomplete decisions", async () => {
+    const sha = "a".repeat(40);
+    const invariant = { confidence: 1, evidence: [{ endLine: 1, path: "src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "src/payment-lab.ts", sha, startLine: 2 }], id: "i1", statement: "one charge", testedSha: sha };
+    const scenario = { expectedOutcome: "duplicate charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha: sha };
+    const incomplete = JSON.stringify({ decision: "READY", experimentResults: [], invariants: [], scenarios: [] });
+    const events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { artifact: invariant, artifactType: "InvariantCandidate", type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifact: scenario, artifactType: "ScenarioPlan", type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: incomplete } }, type: "turn.done" }, turnId: "turn-1" },
+      { event: { state: { output: { content: incomplete } }, type: "turn.done" }, turnId: "turn-2" },
+    ];
+    const createTurn = vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void _sessionId;
+      expect(request.input[0]?.content).toContain("Missing scenario IDs: s1");
+      return { data: { id: "turn-3" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-2");
+
+    expect(createTurn).toHaveBeenCalledOnce();
   });
 
   it("repairs an incomplete decision after evidence is complete", async () => {
@@ -344,6 +497,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
   it("does not recover an invalid MCP call made by a subagent", async () => {
     const createTurn = vi.fn(async () => ({ data: { id: "unexpected" } }));
     const listEvents = vi.fn(async () => [
+      { event: { threadId: "subagent-1", toolCalls: [{ id: "invalid-1", function: { arguments: "{}", name: "list_tools" } }], type: "model.message" }, turnId: "turn-1" },
       { event: { content: JSON.stringify({ error: [{ type: "text", text: "Tool call failed: Tool 'list_tools' is not allowed" }] }), threadId: "subagent-1", type: "tool.response" }, turnId: "turn-1" },
       { event: { state: { status: "done" }, type: "turn.done" }, turnId: "turn-1" },
     ]);
@@ -375,7 +529,10 @@ describe("createTrueForgeInvestigationLauncher", () => {
   it("does not classify a rejected subagent placeholder ref as a hard violation", () => {
     const sha = "a".repeat(40);
     expect(hasSubagentToolPolicyViolation([
-      { event: { content: JSON.stringify({ head: { sha } }), type: "tool.response" }, turnId: "turn-1" },
+      { event: { toolCalls: [{ id: "files-1", function: { arguments: JSON.stringify({ mcp_server: "forgegate-github", tool_name: "get_pull_request_files", input: { pull_number: 1 } }), name: "call_tool" } }], type: "model.message" }, turnId: "turn-1" },
+      { event: { content: JSON.stringify({ success: true, files: [{ filename: "apps/forgegate/src/payment-lab.ts" }] }), toolCallId: "files-1", type: "tool.response" }, turnId: "turn-1" },
+      { event: { toolCalls: [{ id: "pr-1", function: { arguments: JSON.stringify({ mcp_server: "forgegate-github", tool_name: "get_pull_request", input: { pull_number: 1 } }), name: "call_tool" } }], type: "model.message" }, turnId: "turn-1" },
+      { event: { content: JSON.stringify({ success: true, head: { sha } }), toolCallId: "pr-1", type: "tool.response" }, turnId: "turn-1" },
       { event: { threadId: "analyst-1", title: "invariant-analyst", type: "thread.created" }, turnId: "turn-1" },
       { event: { threadId: "analyst-1", toolCalls: [{ id: "read-1", function: { arguments: JSON.stringify({ path: "apps/forgegate/src/payment-lab.ts", ref: "PR_HEAD" }), name: "get_file" } }], type: "model.message" }, turnId: "turn-1" },
       { event: { content: JSON.stringify({ error: [{ type: "text", text: "ref must be a full commit SHA at ref" }] }), threadId: "analyst-1", toolCallId: "read-1", type: "tool.response" }, turnId: "turn-1" },
@@ -411,6 +568,85 @@ describe("createTrueForgeInvestigationLauncher", () => {
     await controller.continue("session-1", "turn-1");
 
     expect(createTurn).not.toHaveBeenCalled();
+  });
+
+  it("does not recover an unrelated failed sandbox command as a scenario failure", async () => {
+    const createTurn = vi.fn(async (_sessionId: string, _request: { input: { content: string; type: "user.message" }[] }) => {
+      void _sessionId;
+      void _request;
+      return { data: { id: "unexpected" } };
+    });
+    const listEvents = vi.fn(async () => [
+      { event: { toolCalls: [{ id: "setup-1", function: { arguments: JSON.stringify({ command: "pnpm lint", cwd: "/", intent: "repository setup" }), name: "exec" } }], type: "model.message" }, turnId: "turn-1" },
+      { event: { content: JSON.stringify({ success: true, response: { exitCode: 1, result: "lint failed" } }), toolCallId: "setup-1", type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ]);
+    const controller = createInvestigationPhaseController({ createTurn, listEvents, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalled();
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).not.toContain("scenario runner or preflight failed");
+  });
+
+  it("repairs one failed scenario preflight without treating it as a product failure", async () => {
+    let events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { toolCalls: [{ id: "preflight-1", function: { arguments: JSON.stringify({ command: "node runner.js", cwd: "/", intent: "preflight: scenario runner" }), name: "exec" } }], type: "model.message" }, turnId: "turn-1" },
+      { event: { content: JSON.stringify({ success: true, response: { exitCode: 1, result: "unsupported payment fault: missing-provider-charge" } }), toolCallId: "preflight-1", type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      expect(request.input[0]?.content).toContain("scenario runner or preflight failed");
+      events = [{ event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-2" }];
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+  });
+
+  it("repairs an experiment whose expected measurements differ from its preflight", async () => {
+    let events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { toolCalls: [{ id: "preflight-2", function: { arguments: JSON.stringify({ command: "node preflight.js", cwd: "/", intent: "preflight: scenario runner" }), name: "exec" } }], type: "model.message" }, turnId: "turn-1" },
+      { event: { content: JSON.stringify({ success: true, response: { exitCode: 0, result: JSON.stringify({ artifactLink: "sandbox:preflight", entrypoint: "processPayment", measurements: { charges: 1 }, phase: "preflight", status: "pass" }) } }), toolCallId: "preflight-2", type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["sandbox:experiment"], baselineSha: "b".repeat(40), expected: { charges: 2 }, observed: { charges: 2 }, preflightArtifactLink: "sandbox:preflight", repetitions: 1, seed: 1, testedSha: "a".repeat(40), verdict: "pass" }, type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      expect(request.input[0]?.content).toContain("scenario runner or preflight failed");
+      events = [{ event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-2" }];
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+  });
+
+  it("rejects preflight evidence from a different scenario entrypoint", async () => {
+    const sha = "a".repeat(40);
+    const scenario = { execution: { assertions: ["charges === 1"], entrypoint: "runScenarioFixture", inputs: { seed: 1 } }, expectedOutcome: "one charge", injectedFaults: ["timeout"], invariantId: "i1", ordering: ["charge"], scenarioId: "s1", seed: 1, testedSha: sha };
+    const result = { artifactLinks: ["sandbox:experiment"], baselineSha: "b".repeat(40), expected: { charges: 1 }, observed: { charges: 2 }, preflightArtifactLink: "sandbox:preflight", repetitions: 1, scenarioId: "s1", seed: 1, testedSha: sha, verdict: "fail" as const };
+    const preflight = { artifactLink: "sandbox:preflight", entrypoint: "processPayment", measurements: { charges: 1 }, phase: "preflight", scenarioId: "s1", seed: 1, status: "pass" };
+    const events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { artifact: scenario, artifactType: "ScenarioPlan", type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifact: result, artifactType: "ExperimentResult", type: "tool.response" }, turnId: "turn-1" },
+      { event: { content: JSON.stringify({ success: true, response: { exitCode: 0, result: JSON.stringify(preflight) } }), type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void _sessionId;
+      expect(request.input[0]?.content).toContain("scenario runner or preflight failed");
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
   });
 
   it("surfaces phase controller failures through the launcher callback", async () => {
