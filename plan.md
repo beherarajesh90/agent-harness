@@ -756,7 +756,7 @@ The model has no direct GitHub, host-shell, database, provider-key, or sandbox-k
 - Invalidate evidence when PR head changes.
 - Permit one Qodo-driven repair round; unresolved actionable findings prevent `READY`.
 - Stop at TrueForge's configured iteration limit.
-- Model/read transient errors: two retries. Selected-sandbox provisioning: one fresh-sandbox retry. Malformed structured output: one schema-feedback correction.
+- Recoverable model/read/analyst/scenario/evidence failures get one automatic retry. Required GitHub reads and all downstream phases stop before the next phase when that retry is exhausted, leave the investigation UNCERTAIN, and expose the user retry action. Safety-policy violations, ambiguous writes, and unrelated terminal failures stop immediately. Selected-sandbox provisioning: one fresh-sandbox retry. Malformed structured output: one schema-feedback correction.
 - Do not blindly retry ambiguous GitHub writes; read branch state first.
 - Test/invariant failures are evidence, not infrastructure retries.
 - Approval denial executes zero writes.

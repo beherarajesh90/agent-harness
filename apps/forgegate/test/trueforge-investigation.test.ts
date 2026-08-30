@@ -5,7 +5,11 @@ import { createInvestigationPhaseController, createTrueForgeApprovalResumer, cre
 
 describe("createTrueForgeInvestigationLauncher", () => {
   it("resumes a native approval with the exact tool call context", async () => {
-    const createTurn = vi.fn(async (_sessionId: string, _request: { input: { content: string; type: "user.message" }[] }) => ({ data: { id: "turn-2" } }));
+    const createTurn = vi.fn(async (sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void sessionId;
+      void request;
+      return { data: { id: "turn-2" } };
+    });
     const resume = createTrueForgeApprovalResumer({ createTurn });
 
     await resume("session-1", { decision: "allow", threadId: "thread-1", toolCallId: "call-1" });
@@ -16,7 +20,11 @@ describe("createTrueForgeInvestigationLauncher", () => {
   });
 
   it("retries the next incomplete phase without limiting recovery to experiments", async () => {
-    const createTurn = vi.fn(async (_sessionId: string, _request: { input: { content: string; type: "user.message" }[] }) => ({ data: { id: "turn-2" } }));
+    const createTurn = vi.fn(async (sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void sessionId;
+      void request;
+      return { data: { id: "turn-2" } };
+    });
     const retry = createTrueForgeInvestigationRetrier({
       createTurn,
       listEvents: async () => [{ event: { state: { status: "cancelled" }, type: "turn.done" }, turnId: "turn-2" }],
@@ -160,6 +168,27 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(createTurn).not.toHaveBeenCalled();
   });
 
+  it("recovers one terminal GitHub-read failure, then leaves downstream phases untouched", async () => {
+    let events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { toolCalls: [{ id: "pr-1", function: { arguments: JSON.stringify({ owner: "owner", repo: "repo", pull_number: 1 }), name: "get_pull_request" } }], type: "model.message" }, turnId: "turn-1" },
+      { event: { content: JSON.stringify({ error: "GitHub unavailable" }), toolCallId: "pr-1", type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { status: "error", message: "GitHub unavailable" }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async (sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void sessionId;
+      void request;
+      events = [{ event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-2" }];
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("one automatic recovery turn");
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("leave the investigation UNCERTAIN");
+  });
+
   it("does not continue after an explicit UNCERTAIN decision", async () => {
     const createTurn = vi.fn(async () => ({ data: { id: "unexpected" } }));
     const listEvents = vi.fn(async () => [{ event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" }]);
@@ -185,7 +214,11 @@ describe("createTrueForgeInvestigationLauncher", () => {
   });
 
   it("does not stop orchestration for a non-mutating analyst warning", async () => {
-    const createTurn = vi.fn(async (_sessionId: string, _request: { input: { content: string; type: "user.message" }[] }) => ({ data: { id: "turn-2" } }));
+    const createTurn = vi.fn(async (sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void sessionId;
+      void request;
+      return { data: { id: "turn-2" } };
+    });
     const listEvents = vi.fn(async () => [
       { event: { threadId: "analyst-1", title: "failure-mode-analyst", type: "thread.created" }, turnId: "turn-1" },
       { event: { threadId: "analyst-1", toolCalls: [{ id: "list-1", function: { arguments: "{}", name: "list_tools" } }], type: "model.message" }, turnId: "turn-1" },
@@ -270,7 +303,11 @@ describe("createTrueForgeInvestigationLauncher", () => {
       { event: { artifactType: "ScenarioPlan", artifact: scenario, type: "tool.response" }, turnId: "turn-1" },
       { event: { state: { status: "done" }, type: "turn.done" }, turnId: "turn-1" },
     ];
-    const createTurn = vi.fn(async (_sessionId: string, _request: { input: { content: string; type: "user.message" }[] }) => ({ data: { id: "turn-2" } }));
+    const createTurn = vi.fn(async (sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void sessionId;
+      void request;
+      return { data: { id: "turn-2" } };
+    });
     const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
 
     await controller.continue("session-1", "turn-1");
