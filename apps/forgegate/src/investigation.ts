@@ -918,18 +918,24 @@ export function createInvestigationService(gateway: InvestigationGateway) {
   const idempotency = new Map<string, { pullRequestUrl: string; result: LaunchResult }>();
   const inFlight = new Map<string, { pullRequestUrl: string; promise: Promise<LaunchResult> }>();
   const submittedApprovals = new Set<string>();
+  const approvingApprovals = new Set<string>();
 
   return {
     async approve(sessionId: string, approvalId: string, decision: "allow" | "deny") {
       const record = await resolveRecord(sessionId);
       if (!record) throw new InvestigationNotFoundError();
       const approvalKey = `${sessionId}:${approvalId}`;
-      if (submittedApprovals.has(approvalKey)) throw new ApprovalAlreadySubmittedError();
+      if (submittedApprovals.has(approvalKey) || approvingApprovals.has(approvalKey)) throw new ApprovalAlreadySubmittedError();
       const pending = (await gateway.listEvents(sessionId)).map((item) => item.event).reverse().find((event) => event.type === "tool.approval_required" && pendingToolCallIds(event).includes(approvalId));
       if (!pending || typeof pending.threadId !== "string") throw new ApprovalNotFoundError();
       if (!gateway.approve) throw new Error("approval resumer is unavailable");
-      submittedApprovals.add(approvalKey);
-      await gateway.approve(sessionId, { decision, threadId: pending.threadId, toolCallId: approvalId });
+      approvingApprovals.add(approvalKey);
+      try {
+        await gateway.approve(sessionId, { decision, threadId: pending.threadId, toolCallId: approvalId });
+        submittedApprovals.add(approvalKey);
+      } finally {
+        approvingApprovals.delete(approvalKey);
+      }
       return get(sessionId);
     },
     async cancel(sessionId: string) {

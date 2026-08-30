@@ -1362,6 +1362,22 @@ describe("investigation control plane", () => {
     await expect(service.approve("session-1", "stale-call", "allow")).rejects.toBeInstanceOf(ApprovalNotFoundError);
   });
 
+  it("allows retry when approval delivery fails", async () => {
+    const approve = vi.fn().mockRejectedValueOnce(new Error("TrueForge unavailable")).mockResolvedValue(undefined);
+    const gateway = {
+      approve,
+      cancel: vi.fn(async () => undefined),
+      launch: vi.fn(async () => ({ sessionId: "session-1", turnId: "turn-1" })),
+      listEvents: vi.fn(async () => [{ event: { threadId: "thread-1", toolCallId: "call-1", type: "tool.approval_required" }, turnId: "turn-1" }]),
+    };
+    const service = createInvestigationService(gateway);
+    await service.create("https://github.com/acme/demo/pull/1");
+
+    await expect(service.approve("session-1", "call-1", "allow")).rejects.toThrow("TrueForge unavailable");
+    await expect(service.approve("session-1", "call-1", "allow")).resolves.toBeDefined();
+    expect(approve).toHaveBeenCalledTimes(2);
+  });
+
   it("classifies service failures without hiding them as not found", async () => {
     const snapshot = { artifacts: [], events: [], pullRequestUrl: "url", sessionId: "session-1", stage: "CONTEXT" as const, status: "RUNNING" as const, turnId: "turn-1" };
     const service = {
