@@ -1,4 +1,4 @@
-import { executableScenarioPlanSchema, experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, scenarioPlanSchema, validateInvestigationArtifacts } from "./agent-spec.js";
+import { executableScenarioPlanSchema, experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, normalizeScenarioPlan, repositoryCapabilityMapSchema, scenarioPlanSchema, validateInvestigationArtifacts } from "./agent-spec.js";
 import type { InvestigationDecision } from "./agent-spec.js";
 import { isDeepStrictEqual } from "node:util";
 
@@ -35,6 +35,7 @@ export type HarnessEvent = {
 export type InvestigationSnapshot = {
   artifacts: InvestigationArtifact[];
   decision?: InvestigationDecision;
+  diagnostics?: string[];
   events: HarnessEvent[];
   pullRequestUrl: string;
   sessionId: string;
@@ -46,7 +47,7 @@ export type InvestigationSnapshot = {
 
 export type InvestigationArtifact = {
   data: Record<string, unknown>;
-  type: "ExperimentResult" | "InvariantCandidate" | "ScenarioPlan";
+  type: "ExperimentResult" | "InvariantCandidate" | "RepositoryCapabilityMap" | "ScenarioPlan";
 };
 
 const requiredGitHubReadTools = ["get_pull_request", "get_pull_request_files", "get_checks", "get_qodo_reviews", "get_review_comments"] as const;
@@ -85,7 +86,7 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   }).sort((left, right) => left.sequence - right.sequence));
   const trustedHeadSha = findPullRequestHeadSha(events);
   const baselineSha = findBaselineSha(events);
-  const deduplicated = deduplicateArtifacts(events.flatMap((event) => artifactFromPayload(event.payload, trustedHeadSha, baselineSha)));
+  const deduplicated = deduplicateArtifacts(events.flatMap((event) => artifactFromPayload(event.payload, trustedHeadSha, baselineSha, event.stage)));
   const artifacts = retainAcceptedScenarioResults(deduplicated.artifacts);
   const accepted = deduplicateArtifacts(artifacts);
   const rejectedFinal = hasRejectedPrimaryFinal(events, trustedHeadSha);
@@ -93,7 +94,7 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const sandboxSucceeded = latestSandboxCommandSucceeded(events);
   const subagentToolPolicy = classifySubagentToolUse(events, trustedHeadSha);
   const subagentToolViolation = subagentToolPolicy.warning || subagentToolPolicy.hard;
-  const terminalBundle = readTerminalEvidenceBundle(events, trustedHeadSha);
+  const terminalBundle = readTerminalEvidenceBundle(events);
   const terminalArtifacts = terminalBundle?.artifacts.length ? terminalBundle.artifacts : artifacts;
   const terminalAccepted = deduplicateArtifacts(terminalArtifacts);
   const safeForDecision = githubReadsComplete && sandboxSucceeded && !subagentToolViolation && Boolean(trustedHeadSha);
@@ -106,16 +107,18 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const requiredArtifactTypes: InvestigationArtifact["type"][] = ["InvariantCandidate", "ScenarioPlan", "ExperimentResult"];
   const terminalArtifactTypes = new Set(terminalArtifacts.map((artifact) => artifact.type));
   const completeEvidence = !terminalAccepted.hasConflicts && (Boolean(terminalBundle) || !rejectedFinal) && githubReadsComplete && sandboxSucceeded && !subagentToolViolation && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => terminalArtifactTypes.has(type)) && hasConsistentEvidence(terminalArtifacts);
-  const reconciledFailure = (terminalBundle?.decision === "BLOCKED" || hasRejectedCompleteEvidenceFinal(events, trustedHeadSha)) && !terminalAccepted.hasConflicts && githubReadsComplete && sandboxSucceeded && !subagentToolViolation && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => terminalArtifactTypes.has(type)) && hasConsistentEvidence(terminalArtifacts) && hasFailedExperiment(terminalArtifacts);
+  const reconciledFailure = (terminalBundle?.decision === "BLOCKED" || hasRejectedCompleteEvidenceFinal(events, trustedHeadSha)) && !terminalAccepted.hasConflicts && githubReadsComplete && sandboxSucceeded && !subagentToolViolation && Boolean(trustedHeadSha) && hasValidatedFailedExperiment(terminalAccepted.artifacts);
   const evidenceDecision = terminal && completeEvidence && reportedDecision === "UNCERTAIN" && hasFailedExperiment(terminalArtifacts) ? "BLOCKED" : undefined;
   const decision = evidenceDecision ?? reportedDecision ?? (reconciledFailure ? "BLOCKED" : undefined);
   const subagentMcpFailure = hasSubagentMcpFailure(events);
   const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure || subagentToolViolation ? "UNCERTAIN" : terminal ? (completeEvidence || reconciledFailure) && decision ? decision : "UNCERTAIN" : "RUNNING";
   const warnings = subagentToolPolicy.hard ? ["SUBAGENT_HARD_TOOL_VIOLATION"] : subagentToolPolicy.warning ? ["SUBAGENT_TOOL_POLICY_VIOLATION"] : [];
+  const diagnostics = status === "UNCERTAIN" ? uncertaintyDiagnostics({ terminal, trustedHeadSha, githubReadsComplete, sandboxSucceeded, subagentMcpFailure, subagentToolViolation, rejectedFinal, terminalAccepted, terminalArtifacts, completeEvidence, terminalBundle }) : [];
 
   return {
     artifacts,
     ...(decision ? { decision } : {}),
+    ...(diagnostics.length ? { diagnostics } : {}),
     events,
     pullRequestUrl,
     sessionId,
@@ -126,7 +129,64 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   };
 }
 
-function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: string, baselineSha?: string): InvestigationArtifact[] {
+function uncertaintyDiagnostics({
+  completeEvidence,
+  githubReadsComplete,
+  rejectedFinal,
+  sandboxSucceeded,
+  subagentMcpFailure,
+  subagentToolViolation,
+  terminal,
+  terminalAccepted,
+  terminalArtifacts,
+  terminalBundle,
+  trustedHeadSha,
+}: {
+  completeEvidence: boolean;
+  githubReadsComplete: boolean;
+  rejectedFinal: boolean;
+  sandboxSucceeded: boolean;
+  subagentMcpFailure: boolean;
+  subagentToolViolation: boolean;
+  terminal: boolean;
+  terminalAccepted: ReturnType<typeof deduplicateArtifacts>;
+  terminalArtifacts: InvestigationArtifact[];
+  terminalBundle: ReturnType<typeof readTerminalEvidenceBundle>;
+  trustedHeadSha: string | undefined;
+}) {
+  const diagnostics: string[] = [];
+  if (subagentMcpFailure) diagnostics.push("SUBAGENT_MCP_FAILURE");
+  if (subagentToolViolation) diagnostics.push("SUBAGENT_TOOL_POLICY_VIOLATION");
+  if (!terminal) return diagnostics;
+  if (!githubReadsComplete) diagnostics.push("REQUIRED_GITHUB_READS_INCOMPLETE");
+  if (!sandboxSucceeded) diagnostics.push("SANDBOX_EXECUTION_INCOMPLETE");
+  if (!trustedHeadSha) diagnostics.push("PR_HEAD_SHA_UNAVAILABLE");
+  const types = new Set(terminalArtifacts.map((artifact) => artifact.type));
+  if (!types.has("InvariantCandidate")) diagnostics.push("MISSING_INVARIANT_EVIDENCE");
+  if (!types.has("ScenarioPlan")) diagnostics.push("MISSING_SCENARIO_EVIDENCE");
+  if (!types.has("ExperimentResult")) diagnostics.push("MISSING_EXPERIMENT_EVIDENCE");
+  const scenarios = terminalArtifacts.filter((artifact) => artifact.type === "ScenarioPlan").map((artifact) => artifact.data);
+  const results = terminalArtifacts.filter((artifact) => artifact.type === "ExperimentResult").map((artifact) => artifact.data);
+  if (scenarios.some((scenario) => !results.some((result) => scenarioMatchesResult(scenario, result)))) diagnostics.push("MISSING_EXPERIMENT_RESULT");
+  if (terminalAccepted.hasConflicts) diagnostics.push("CONFLICTING_EVIDENCE");
+  if (!completeEvidence && types.size === 3) diagnostics.push("INCONSISTENT_EVIDENCE");
+  if (rejectedFinal) diagnostics.push("REJECTED_FINAL_BUNDLE");
+  if (terminalBundle?.decision === "UNCERTAIN" && !rejectedFinal) diagnostics.push("MODEL_REPORTED_UNCERTAIN");
+  return [...new Set(diagnostics)];
+}
+
+function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: string, baselineSha?: string, stage?: Stage): InvestigationArtifact[] {
+  const capabilityMap = readArtifact("RepositoryCapabilityMap", payload.capabilityMap, trustedHeadSha);
+  if (capabilityMap.length > 0) return capabilityMap;
+  const output = isRecord(payload.state) && isRecord(payload.state.output) ? payload.state.output : undefined;
+  const content = typeof payload.content === "string" ? payload.content : output?.content;
+  if (typeof content === "string") {
+    const parsed = parseJson(content);
+    if (isRecord(parsed) && "capabilityMap" in parsed) {
+      const map = readArtifact("RepositoryCapabilityMap", parsed.capabilityMap, trustedHeadSha);
+      if (map.length > 0) return map;
+    }
+  }
   const bundle = readFinalBundle(payload, trustedHeadSha);
   if (bundle) {
     return [
@@ -138,8 +198,6 @@ function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: 
   const wrapped = readArtifact(payload.artifactType, payload.artifact, trustedHeadSha);
   if (wrapped.length > 0) return wrapped;
 
-  const output = isRecord(payload.state) && isRecord(payload.state.output) ? payload.state.output : undefined;
-  const content = typeof payload.content === "string" ? payload.content : output?.content;
   if (typeof content === "string") {
     const parsed = parseJson(content);
     if (isRecord(parsed) && ("invariants" in parsed || "scenarios" in parsed || "experimentResult" in parsed || "experimentResults" in parsed)) {
@@ -154,7 +212,11 @@ function artifactFromPayload(payload: Record<string, unknown>, trustedHeadSha?: 
     const sandboxResults = readSandboxExperimentResults(parsed, trustedHeadSha, baselineSha);
     if (sandboxResults.length > 0) return sandboxResults;
   }
-  const type = typeof payload.title === "string" && payload.title.startsWith("invariant-analyst") ? "InvariantCandidate" : typeof payload.title === "string" && payload.title.startsWith("failure-mode-analyst") ? "ScenarioPlan" : undefined;
+  const type = stage === "INVARIANTS" || (typeof payload.title === "string" && payload.title.startsWith("invariant-analyst"))
+    ? "InvariantCandidate"
+    : stage === "HYPOTHESES" || (typeof payload.title === "string" && payload.title.startsWith("failure-mode-analyst"))
+      ? "ScenarioPlan"
+      : undefined;
   return type && typeof content === "string" ? readArtifact(type, parseJson(content), trustedHeadSha, type === "ScenarioPlan") : [];
 }
 
@@ -172,8 +234,8 @@ function findBaselineSha(events: HarnessEvent[]) {
 function readSandboxExperimentResults(payload: unknown, testedSha?: string, baselineSha?: string): InvestigationArtifact[] {
   if (!isRecord(payload) || payload.success !== true || !isRecord(payload.response) || payload.response.exitCode !== 0 || typeof payload.response.result !== "string" || !baselineSha || !testedSha) return [];
   const parsed = parseJson(payload.response.result);
-  if (!Array.isArray(parsed)) return [];
-  return parsed.flatMap((candidate) => {
+  const candidates = Array.isArray(parsed) ? parsed : [parsed];
+  return candidates.flatMap((candidate) => {
     if (!isRecord(candidate)) return [];
     const result = {
       artifactLinks: candidate.artifactLinks,
@@ -201,11 +263,14 @@ function deduplicateArtifacts(artifacts: InvestigationArtifact[]) {
       ? `${artifact.type}:${data.id}:${data.testedSha}`
       : artifact.type === "ScenarioPlan"
         ? `${artifact.type}:${data.scenarioId ?? JSON.stringify(data)}`
+        : artifact.type === "RepositoryCapabilityMap"
+          ? `${artifact.type}:${data.testedSha}`
         : `${artifact.type}:${data.scenarioId ?? data.seed}:${data.testedSha}`;
     const existing = unique.get(identity);
     if (!existing) {
       unique.set(identity, artifact);
-    } else if (!isDeepStrictEqual(existing.data, data)) {
+    } else if (!isDeepStrictEqual(existing.data, data) && !(artifact.type === "ExperimentResult" && sameExperimentEvidence(existing.data, data))) {
+      if (artifact.type === "ScenarioPlan") continue;
       hasConflicts = true;
       const conflictNumber = (conflicts.get(identity) ?? 0) + 1;
       conflicts.set(identity, conflictNumber);
@@ -215,10 +280,24 @@ function deduplicateArtifacts(artifacts: InvestigationArtifact[]) {
   return { artifacts: [...unique.values()], hasConflicts };
 }
 
+function sameExperimentEvidence(left: Record<string, unknown>, right: Record<string, unknown>) {
+  const comparable = (value: Record<string, unknown>) => {
+    const evidence = { ...value };
+    delete evidence.artifactLinks;
+    delete evidence.preflightArtifactLink;
+    return evidence;
+  };
+  return isDeepStrictEqual(comparable(left), comparable(right));
+}
+
 function retainAcceptedScenarioResults(artifacts: InvestigationArtifact[]) {
-  const scenarios = artifacts.filter((artifact) => artifact.type === "ScenarioPlan").map((artifact) => artifact.data);
-  if (scenarios.length === 0) return artifacts;
-  return artifacts.filter((artifact) => artifact.type !== "ExperimentResult" || scenarios.some((scenario) => scenarioMatchesResult(scenario, artifact.data)));
+  const invariantIds = new Set(artifacts.filter((artifact) => artifact.type === "InvariantCandidate").map((artifact) => artifact.data.id).filter((id): id is string => typeof id === "string"));
+  const allScenarios = artifacts
+    .filter((artifact) => artifact.type === "ScenarioPlan")
+    .map((artifact) => artifact.data);
+  const scenarios = allScenarios.filter((scenario) => invariantIds.size === 0 || invariantIds.has(scenario.invariantId as string));
+  if (scenarios.length === 0) return allScenarios.length === 0 ? artifacts : artifacts.filter((artifact) => artifact.type !== "ScenarioPlan" && artifact.type !== "ExperimentResult");
+  return artifacts.filter((artifact) => artifact.type !== "ScenarioPlan" || scenarios.includes(artifact.data)).filter((artifact) => artifact.type !== "ExperimentResult" || scenarios.some((scenario) => scenarioMatchesResult(scenario, artifact.data)));
 }
 
 function scenarioMatchesResult(scenario: Record<string, unknown>, result: Record<string, unknown>) {
@@ -254,7 +333,7 @@ function readFinalBundleContent(content: string, trustedHeadSha?: string) {
   }
 }
 
-function normalizeWireMeasurements(value: Record<string, unknown>) {
+function normalizeWireMeasurements(value: Record<string, unknown>): Record<string, unknown> {
   const normalizeResult = (result: unknown) => {
     if (!isRecord(result)) return result;
     const normalize = (measurements: unknown) => {
@@ -270,32 +349,33 @@ function normalizeWireMeasurements(value: Record<string, unknown>) {
   };
   return {
     ...value,
+    invariants: Array.isArray(value.invariants) ? value.invariants.map((invariant) => isRecord(invariant) ? normalizeInvariantCandidate(invariant) : invariant) : value.invariants,
     experimentResult: normalizeResult(value.experimentResult),
     experimentResults: Array.isArray(value.experimentResults) ? value.experimentResults.map(normalizeResult) : value.experimentResults,
   };
 }
 
-function readTerminalEvidenceBundle(events: HarnessEvent[], trustedHeadSha?: string) {
+function readTerminalEvidenceBundle(events: HarnessEvent[]) {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]!;
     if (!isPrimaryAgentTurn(event)) continue;
     const content = primaryFinalOutput(events, index);
-    const doneOutput = isRecord(event.payload.state) && isRecord(event.payload.state.output) ? event.payload.state.output : undefined;
     const parsed = content ? parseJson(content) : undefined;
     if (!isRecord(parsed) || (parsed.decision !== "READY" && parsed.decision !== "BLOCKED")) continue;
-    const experimentResults = parsed.experimentResults ?? (parsed.experimentResult === undefined ? undefined : [parsed.experimentResult]);
-    if (!Array.isArray(parsed.invariants) || !Array.isArray(parsed.scenarios) || !Array.isArray(experimentResults)) continue;
+    const normalized = normalizeWireMeasurements(parsed);
+    const experimentResults = normalized.experimentResults ?? (normalized.experimentResult === undefined ? undefined : [normalized.experimentResult]);
+    if (!Array.isArray(normalized.invariants) || !Array.isArray(normalized.scenarios) || !Array.isArray(experimentResults)) continue;
     try {
-      const bundle = validateInvestigationArtifacts({ decision: parsed.decision, invariants: parsed.invariants, scenarios: parsed.scenarios, experimentResults });
+      const bundle = validateInvestigationArtifacts({ decision: normalized.decision as InvestigationDecision, invariants: normalized.invariants, scenarios: normalized.scenarios, experimentResults });
       return { decision: bundle.decision, fromModel: true, artifacts: [
         ...bundle.invariants.map((data) => ({ data, type: "InvariantCandidate" as const })),
         ...bundle.scenarios.map((data) => ({ data, type: "ScenarioPlan" as const })),
         ...bundle.experimentResults.map((data) => ({ data, type: "ExperimentResult" as const })),
       ] };
     } catch {
-      if (parsed.decision !== "READY" || !experimentResults.some((result) => isRecord(result) && result.verdict === "fail")) continue;
+      if (normalized.decision !== "READY" || !experimentResults.some((result) => isRecord(result) && result.verdict === "fail")) continue;
       try {
-        const bundle = validateInvestigationArtifacts({ decision: "BLOCKED", invariants: parsed.invariants, scenarios: parsed.scenarios, experimentResults });
+        const bundle = validateInvestigationArtifacts({ decision: "BLOCKED", invariants: normalized.invariants, scenarios: normalized.scenarios, experimentResults });
         return { decision: "BLOCKED" as const, fromModel: true, artifacts: [
           ...bundle.invariants.map((data) => ({ data, type: "InvariantCandidate" as const })),
           ...bundle.scenarios.map((data) => ({ data, type: "ScenarioPlan" as const })),
@@ -393,6 +473,16 @@ function hasConsistentEvidence(artifacts: InvestigationArtifact[]) {
 
 function hasFailedExperiment(artifacts: InvestigationArtifact[]) {
   return artifacts.some((artifact) => artifact.type === "ExperimentResult" && artifact.data.verdict === "fail");
+}
+
+function hasValidatedFailedExperiment(artifacts: InvestigationArtifact[]) {
+  const invariants = artifacts.filter((artifact) => artifact.type === "InvariantCandidate").map((artifact) => artifact.data);
+  const scenarios = artifacts.filter((artifact) => artifact.type === "ScenarioPlan").map((artifact) => artifact.data);
+  return artifacts.some((artifact) => {
+    if (artifact.type !== "ExperimentResult" || artifact.data.verdict !== "fail") return false;
+    const scenario = scenarios.find((candidate) => scenarioMatchesResult(candidate, artifact.data));
+    return Boolean(scenario && invariants.some((invariant) => invariant.id === scenario.invariantId && invariant.testedSha === scenario.testedSha));
+  });
 }
 
 function hasRequiredGitHubReads(events: HarnessEvent[], trustedHeadSha: string | undefined) {
@@ -563,20 +653,20 @@ function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string
 
 function classifySubagentViolation(toolName: unknown, args: unknown): "allowed" | "warning" | "hard" {
   if (toolName === "list_tools" || toolName === "get_tool_info") return "warning";
-  if (toolName === "exec") return isSafeSandboxRead(args) ? "allowed" : "hard";
+  if (toolName === "exec") return isAllowedSandboxCommand(args) ? "allowed" : "hard";
   if (toolName !== "call_tool") return "hard";
   if (!isRecord(args) || args.mcp_server !== "forgegate-github") return "hard";
   if (args.tool_name === "commit_files") return "hard";
   return "warning";
 }
 
-function isSafeSandboxRead(args: unknown) {
+function isAllowedSandboxCommand(args: unknown) {
   if (!isRecord(args) || typeof args.command !== "string") return false;
   const command = args.command.trim();
-  const parts = command.split(/\|\||&&|\|/).map((part) => part.trim());
-  if (!parts.every((part) => /^(?:cat|head|tail|wc|jq|nl|sed|echo|grep|awk|cut|sort|uniq)\b/i.test(part))) return false;
-  if (/(?:curl|wget|git|npm|pnpm|python|node|rm|mv|cp|chmod|chown|touch|tee|dd|mkfs|shutdown|reboot|\$\(|`|;|>>)/i.test(command)) return false;
-  return !/>\s*(?!\/opt\/tf\/)/i.test(command);
+  if (!command) return false;
+  // ponytail: permit normal disposable-sandbox setup/inspection; retain a small
+  // denylist for host control and direct external-repository bypasses.
+  return !/(?:curl|wget|nc\b|ssh\b|scp\b|docker\b|podman\b|kubectl\b|terraform\b|gh\s|git\s+(?:push|commit|reset|checkout|clean)|\/var\/run\/docker\.sock)/i.test(command);
 }
 
 function isAllowedSubagentRead(toolName: string, input: Record<string, unknown>, trustedHeadSha?: string) {
@@ -603,16 +693,38 @@ function isRepositoryPath(value: unknown): value is string {
 }
 
 function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string, requireExecutableScenario = false): InvestigationArtifact[] {
-  if (type !== "ExperimentResult" && type !== "InvariantCandidate" && type !== "ScenarioPlan") return [];
+  if (type !== "ExperimentResult" && type !== "InvariantCandidate" && type !== "RepositoryCapabilityMap" && type !== "ScenarioPlan") return [];
   const values = Array.isArray(value) ? value : [value];
   return values.flatMap((candidate) => {
+    if (type === "RepositoryCapabilityMap" && typeof candidate === "string") candidate = parseJson(candidate);
     if (!isRecord(candidate)) return [];
-    if (type === "InvariantCandidate" && !invariantCandidateSchema.safeParse(candidate).success) return [];
-    if (type === "ScenarioPlan" && !(requireExecutableScenario ? executableScenarioPlanSchema : scenarioPlanSchema).safeParse(candidate).success) return [];
+    const normalized = type === "InvariantCandidate" ? normalizeInvariantCandidate(candidate) : type === "ScenarioPlan" ? normalizeScenarioPlan(candidate) : type === "RepositoryCapabilityMap" ? normalizeRepositoryCapabilityMap(candidate) : candidate;
+    if (!isRecord(normalized)) return [];
+    if (type === "InvariantCandidate" && !invariantCandidateSchema.safeParse(normalized).success) return [];
+    if (type === "ScenarioPlan") {
+      const valid = scenarioPlanSchema.safeParse(normalized).success;
+      const executable = executableScenarioPlanSchema.safeParse(normalized).success;
+      if (!valid || (requireExecutableScenario && !executable)) return [];
+    }
     if (type === "ExperimentResult" && !experimentResultSchema.safeParse(candidate).success) return [];
-    if (trustedHeadSha && candidate.testedSha !== trustedHeadSha) return [];
-    return [{ data: candidate, type }];
+    if (type === "RepositoryCapabilityMap" && !repositoryCapabilityMapSchema.safeParse(normalized).success) return [];
+    if (trustedHeadSha && normalized.testedSha !== trustedHeadSha) return [];
+    return [{ data: normalized, type }];
   });
+}
+
+function normalizeInvariantCandidate(candidate: Record<string, unknown>) {
+  if (typeof candidate.confidence !== "string") return candidate;
+  const confidence = { low: 0.3, medium: 0.6, high: 0.9 }[candidate.confidence.toLowerCase() as "low" | "medium" | "high"];
+  return confidence === undefined ? candidate : { ...candidate, confidence };
+}
+
+function normalizeRepositoryCapabilityMap(candidate: Record<string, unknown>) {
+  if (!Array.isArray(candidate.operations)) return candidate;
+  return {
+    ...candidate,
+    operations: candidate.operations.filter((operation) => isRecord(operation) && Array.isArray(operation.supportedFaults) && operation.supportedFaults.some((fault) => typeof fault === "string" && fault.length > 0)),
+  };
 }
 
 function findPullRequestHeadSha(events: HarnessEvent[]) {
@@ -670,7 +782,13 @@ function parseJson(content: string): unknown {
   try {
     return JSON.parse(body) as unknown;
   } catch {
-    return undefined;
+    const withoutTrailingCommas = body.replace(/,(\s*[}\]])/g, "$1").replace(/,\s*$/, "");
+    if (withoutTrailingCommas === body) return undefined;
+    try {
+      return JSON.parse(withoutTrailingCommas) as unknown;
+    } catch {
+      return undefined;
+    }
   }
 }
 

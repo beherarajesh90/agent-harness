@@ -140,7 +140,11 @@ export function createGitHubMcpServer({
     },
     async ({ path, ref }) => {
       try {
-        return structuredJson(await getFile(path, ref));
+        const file = await getFile(path, ref);
+        if (!file || typeof file !== "object" || Array.isArray(file)) throw new Error("GitHub file read returned an invalid object");
+        const evidence = { ...(file as Record<string, unknown>) };
+        delete evidence.sha;
+        return structuredJson({ ...evidence, commitSha: ref });
       } catch {
         return { content: [{ text: "GitHub file read failed.", type: "text" }], isError: true };
       }

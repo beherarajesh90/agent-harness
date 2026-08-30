@@ -1352,7 +1352,7 @@ Status: `[x]` verified complete, `[ ]` not started, `[~]` in progress, `[?]` blo
 
 ## Current Implementation State
 
-Last repository verification: 2026-08-28.
+Last repository verification: 2026-08-30.
 
 - [x] Product, architecture, API, safety, workflow, and demo requirements are documented in this plan.
 - [x] Repository-level branch, PR, Qodo, and merge rules are recorded in `AGENTS.md`.
@@ -1368,6 +1368,8 @@ Last repository verification: 2026-08-28.
 - [x] Qwen3.5 4B responds through local Ollama and a WSL-reachable Ollama endpoint; TrueForge produced valid structured JSON, a visible `create_sub_agent` call/result, and a bounded Daytona patch/test result.
 - [x] Daytona was configured as the selected sandbox after the local fallback failed its internal PyPI dependency-install proof. TrueForge accepted the credential, provisioned a Daytona sandbox, executed `echo SANDBOX_OK && cat ...`, and returned exit code `0` with the expected output.
 - [~] Public demo repository configuration and a read-only GitHub PAT are verified through the official GitHub MCP Docker server. ForgeGate's private custom MCP service is Docker-profiled, has no host-published port, requires `GITHUB_TOKEN`, and read GitHub PR `#3` through its private Streamable HTTP boundary from the ForgeGate container. TrueForge is also registered with that MCP server and a real Qwen agent turn emitted `mcp.initialize`, `get_pull_request`, `tool.response`, and `turn.done` for PR `#3`; Qodo installation and a real Qodo review are not verified.
+- [x] ForgeGate serves a dependency-free desktop Control Room at `/`; the UI is backed by the existing investigation and SSE APIs and shows stages, event sources, tool/command summaries, artifact counts, exact-SHA references, and expected-versus-observed measurements.
+- [ ] The current worktree contains uncommitted Phase 3/UI changes and an unrelated user-owned `flow.md`; branch creation and commits are currently blocked by `.git` filesystem permission errors.
 
 ## Recurring Milestone PR Gate
 
@@ -1540,15 +1542,15 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 
 ### Harness-first UI
 
-- [ ] Implement repository/PR/SHA/elapsed-time/decision header.
-- [ ] Implement stage progression rail.
-- [ ] Implement live Agent Run panel from real normalized events.
-- [ ] Attribute visible steps to TrueForge, GitHub MCP, subagents, selected sandbox, Qodo, or human.
-- [ ] Show tool name, duration, state, and sanitized argument/result summary.
+- [x] Implement repository/PR/SHA/elapsed-time/decision header.
+- [x] Implement stage progression rail.
+- [x] Implement live Agent Run panel from real normalized events.
+- [x] Attribute visible steps to TrueForge, GitHub MCP, subagents, selected sandbox, Qodo, or human.
+- [x] Show tool name, duration, state, and sanitized argument/result summary.
 - [ ] Show subagent thread lifecycle.
 - [ ] Show sandbox creation, command, exit code, working directory, and bounded output.
-- [ ] Show invariant, scenario, expected/observed values, and evidence links.
-- [ ] Show the total number of unique scenarios discovered.
+- [x] Show invariant, scenario, expected/observed values, and evidence links.
+- [x] Show the total number of unique scenarios discovered.
 - [ ] Show duplicate scenarios rejected and the deduplication reason.
 - [ ] Show per-scenario states: `PENDING`, `RUNNING`, `PASSED`, `FAILED`, and `UNCERTAIN`.
 - [ ] Show each scenario's invariant, fault sequence, seed, expected values, observed values, and verdict.
@@ -1560,8 +1562,8 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [ ] Show the aggregate final decision and identify the scenario that caused `BLOCKED`.
 - [ ] Show patch, regression result, changed files, and exact diff summary.
 - [ ] Show Qodo review link, finding status, and agent response.
-- [ ] Show retry/failure/recovery steps.
-- [ ] Distinguish `LIVE` from `REPLAY`; never fabricate activity or hidden reasoning.
+- [x] Show retry/failure/recovery steps.
+- [x] Distinguish `LIVE` from `REPLAY`; never fabricate activity or hidden reasoning.
 
 ### Approval, states, and accessibility
 

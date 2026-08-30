@@ -46,6 +46,7 @@ const evidenceReferenceSchema = z
 export type InvariantCandidate = z.infer<typeof invariantCandidateSchema>;
 export type ScenarioPlan = z.infer<typeof scenarioPlanSchema>;
 export type ExperimentResult = z.infer<typeof experimentResultSchema>;
+export type RepositoryCapabilityMap = z.infer<typeof repositoryCapabilityMapSchema>;
 export type InvestigationDecision = "BLOCKED" | "READY" | "UNCERTAIN";
 
 const investigationDecisionSchema = z.enum(["BLOCKED", "READY", "UNCERTAIN"]);
@@ -81,11 +82,42 @@ export const invariantCandidateSchema = z
 
 const scenarioExecutionSchema = z
   .object({
-    assertions: z.array(z.string().min(1)).min(1),
+    assertions: z.union([
+      z.array(z.string().min(1)).min(1),
+      z.record(z.string(), z.unknown()).refine((assertions) => Object.keys(assertions).length > 0, "assertions must not be empty"),
+    ]).optional(),
     entrypoint: identifierSchema,
     inputs: z.record(z.string(), z.unknown()),
   })
   .strict();
+
+export const repositoryCapabilityMapSchema = z
+  .object({
+    operations: z.array(z.object({
+      entrypoint: identifierSchema,
+      inputs: z.record(z.string(), z.unknown()),
+      supportedFaults: z.array(z.string().min(1)).min(1),
+    }).strict()).min(1),
+    testedSha: shaSchema,
+  })
+  .strict();
+
+export function normalizeScenarioPlan(input: unknown): unknown {
+  if (!isRecord(input)) return input;
+  const normalized = { ...input };
+  delete normalized.mode;
+  delete normalized.repetitions;
+  if (Array.isArray(normalized.injectedFaults)) {
+    normalized.injectedFaults = normalized.injectedFaults.map((fault) => isRecord(fault) && typeof fault.fault === "string" ? fault.fault : fault);
+  }
+  if (isRecord(normalized.execution)) {
+    const execution = { ...normalized.execution };
+    if (execution.inputs === undefined && execution.parameters !== undefined) execution.inputs = execution.parameters;
+    delete execution.parameters;
+    normalized.execution = execution;
+  }
+  return normalized;
+}
 
 export const scenarioPlanSchema = z
   .object({
@@ -127,6 +159,7 @@ const finalExperimentResultSchema = experimentResultSchema.required({ scenarioId
 
 const uncertainInvestigationResponseSchema = z
   .object({
+    capabilityMap: z.string().optional(),
     decision: z.literal("UNCERTAIN"),
     experimentResult: finalExperimentResultSchema.optional(),
     experimentResults: z.array(finalExperimentResultSchema).min(1).optional(),
@@ -136,6 +169,7 @@ const uncertainInvestigationResponseSchema = z
 
 const completeInvestigationResponseSchema = z.union([
   z.object({
+    capabilityMap: z.string().optional(),
     decision: z.enum(["BLOCKED", "READY"]),
     experimentResult: finalExperimentResultSchema,
     experimentResults: z.null().optional(),
@@ -143,6 +177,7 @@ const completeInvestigationResponseSchema = z.union([
     scenarios: z.array(finalScenarioPlanSchema).min(1),
   }).strict(),
   z.object({
+    capabilityMap: z.string().optional(),
     decision: z.enum(["BLOCKED", "READY"]),
     experimentResult: z.null().optional(),
     experimentResults: z.array(finalExperimentResultSchema).min(1),
@@ -207,6 +242,7 @@ const wireFinalScenarioPlanSchema = z
 
 const investigationResponseJsonSchema = z
   .object({
+    capabilityMap: z.string(),
     decision: investigationDecisionSchema,
     // Preserve the legacy property in the strict wire shape, but make the
     // singular representation unusable. Runtime parsing remains compatible.
@@ -251,8 +287,9 @@ export function deduplicateScenarioPlans(scenarios: ScenarioPlan[], maxScenarios
       ordering: scenario.ordering.map((step) => step.trim().toLowerCase()),
       seed: scenario.seed,
     });
-    if (seen.has(fingerprint) || seen.size >= maxScenarios) return false;
-    seen.add(fingerprint);
+    const identity = scenario.scenarioId ?? fingerprint;
+    if (seen.has(identity) || seen.size >= maxScenarios) return false;
+    seen.add(identity);
     return true;
   });
 }
@@ -333,7 +370,7 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "If partial valid artifacts already exist, continue the required phases to complete the evidence bundle before finalizing UNCERTAIN; use UNCERTAIN immediately only when no usable evidence exists or recovery is exhausted.",
       "A transient sandbox startup or process-bridge failure is recoverable: retry the same sandbox command once before deciding UNCERTAIN; only stop as UNCERTAIN when the retry also fails or required evidence remains unavailable.",
       "The primary agent remains authoritative for GitHub reads, sandbox execution, evidence reconciliation, and final decisions. Subagents may use only bounded read-only forgegate-github MCP tools for supplemental evidence and must return JSON artifacts.",
-      "Subagents must not call list_tools, get_tool_info, commit_files, raw GitHub or curl access, exec, sandbox experiments, patch, or any other mutation capability.",
+      "The invariant analyst may use bounded sandbox exec for repository inspection, setup, and temporary analysis files; neither analyst may call commit_files, raw GitHub/network access, or perform GitHub mutation. The failure-mode analyst remains tool-free.",
       "Subagents receive the repository, PR URL, exact head SHA, allowed paths, and role constraints, and must fetch only approved evidence through read-only MCP calls; never pass unrestricted repository contents.",
       "After get_pull_request_files succeeds, derive the approved path list from its exact returned filenames and include that literal JSON path list, repository, and exact PR head SHA in the invariant-analyst delegated input; never invent, broaden, or omit the path list.",
       "The primary agent must independently call get_file for each changed file when there are two or fewer changed files, or at least two changed files when there are more; use the exact PR head SHA and wait for successful responses before making a final decision. Subagent get_file calls are supplemental and do not satisfy this primary read gate.",
@@ -345,7 +382,9 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "When creating invariant-analyst, explicitly state that it may call only bounded read-only forgegate-github tools; use get_file for approved repository paths at the exact PR head SHA and use lineNumberedContent from those responses for evidence locations, then stop using tools.",
       "Evidence reference sha must equal the exact PR head commit SHA in testedSha; never use a Git blob SHA, branch name, or baseline SHA.",
       "Copy the exact PR head SHA unchanged from the primary context; never count, transform, pad, truncate, or retry get_file with an alternate SHA.",
-      "The failure-mode-analyst must return all materially distinct ScenarioPlan JSON objects with invariantId, scenarioId, testedSha, seed, injectedFaults, ordering, and expectedOutcome, using only executable operations found in the repository capability map.",
+      "The failure-mode-analyst must return a raw JSON array only, never Markdown, tables, prose, explanations, or code fences. Return all materially distinct ScenarioPlan JSON objects with invariantId, scenarioId, testedSha, seed, injectedFaults, ordering, and expectedOutcome, using only executable operations found in the repository capability map. Every scenarioId must be unique; conflicting definitions for one scenarioId are rejected.",
+      "When creating failure-mode-analyst, include this exact output contract in its input: return only a raw JSON array; each object must contain scenarioId, testedSha, seed, invariantId, injectedFaults as a string array, ordering as a non-empty string array, expectedOutcome as a string, and execution with entrypoint, inputs, and assertions. Do not return Markdown, prose, tables, code fences, mode, repetitions, fault objects, or execution.parameters.",
+      "Scenario relevance rule: every scenario must target a behavior changed by the PR and include at least one supported injected fault. If the changed behavior depends on an interaction such as timeout followed by retry, combine the complete interaction in one ScenarioPlan; do not substitute a baseline/no-fault or isolated scenario that cannot exercise the change. If no PR-relevant executable fault path exists, return UNCERTAIN.",
       "Each ScenarioPlan must include execution.entrypoint, execution.inputs, and one or more execution.assertions mapped to the capability map; these fields describe executable repository behavior, not invented operations.",
       "When creating failure-mode-analyst, state exactly: You have no tools. Reason only from the supplied invariant JSON and repository capability map. It must not call list_tools, MCP, exec, shell, Python, Git, or sandbox.",
       "ScenarioPlan seed must be a non-negative integer and ordering must be a non-empty string array; validate the complete object before returning it.",
@@ -355,6 +394,7 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "Generate one temporary scenario runner from each accepted ScenarioPlan. Before each experiment, verify execution.entrypoint and inputs against the checked-out repository, compile or type-check the runner, run a bounded preflight, and require structured measurements before the full run. A runner/import/setup/preflight failure is an untestable scenario, not a product failure; repair once, then return UNCERTAIN without an ExperimentResult. Run one scenario-independent baseline on master without injected faults before checking out the exact PR head SHA, then reuse that same baseline measurement set as expected in every ExperimentResult; use PR experiment values as observed.",
       "The preflight runner must emit one raw JSON object with artifactLink, phase=preflight, status=pass, the mapped entrypoint, and non-empty numeric measurements; preserve that successful tool response as auditable evidence before running the full experiment.",
       "Use the successful master baseline preflight measurements as the sole source for ExperimentResult.expected; copy that exact measurement set into every result and never recompute, hardcode, or infer different expected values per scenario.",
+      "Use the structured result emitted by the executed runner as the authoritative source for observed measurements and verdict. If its invariant oracle reports violations, copy verdict=fail; never label a result pass because the scenario was expected to fail or because the command exited successfully.",
       "Every ExperimentResult must include a concrete preflightArtifactLink pointing to the successful preflight evidence; never use prose or a placeholder link.",
       "Represent expected and observed measurements as non-empty arrays of unique { name, value } objects in the final response.",
       "Execute every accepted ScenarioPlan exactly once with its scenarioId and seed copied unchanged into the preflighted generated runner; do not substitute a fixture, mode, or hardcoded scenario. Return UNCERTAIN when the repository cannot express or execute the scenario.",
@@ -398,4 +438,8 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
     model: { name: modelName, params: { max_tokens: 4096 } },
     skills: [],
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
