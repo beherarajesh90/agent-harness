@@ -1,7 +1,7 @@
 import Fastify, { type FastifyReply } from "fastify";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { ApprovalNotFoundError, IdempotencyConflictError, InvestigationNotFoundError } from "./investigation.js";
+import { ApprovalAlreadySubmittedError, ApprovalNotFoundError, IdempotencyConflictError, InvestigationNotFoundError } from "./investigation.js";
 import type { InvestigationSnapshot } from "./investigation.js";
 
 type InvestigationService = {
@@ -93,6 +93,7 @@ export function buildApp({
     } catch (error) {
       if (error instanceof InvestigationNotFoundError) return reply.code(404).send({ code: "NOT_FOUND", message: error.message });
       if (error instanceof ApprovalNotFoundError) return reply.code(409).send({ code: "APPROVAL_NOT_PENDING", message: error.message });
+      if (error instanceof ApprovalAlreadySubmittedError) return reply.code(409).send({ code: "APPROVAL_ALREADY_SUBMITTED", message: error.message });
       return sendServiceFailure(reply, error, "APPROVAL_FAILED", "approval could not be submitted");
     }
   });

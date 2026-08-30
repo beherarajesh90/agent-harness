@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { buildApp } from "../src/app.js";
-import { ApprovalNotFoundError, createInvestigationService, IdempotencyConflictError, InvestigationNotFoundError, projectInvestigation } from "../src/investigation.js";
+import { ApprovalAlreadySubmittedError, ApprovalNotFoundError, createInvestigationService, IdempotencyConflictError, InvestigationNotFoundError, projectInvestigation } from "../src/investigation.js";
 
 describe("investigation control plane", () => {
   it("projects newest-first TrueForge events into ordered SSE events", () => {
@@ -1358,6 +1358,7 @@ describe("investigation control plane", () => {
 
     await service.approve("session-1", "call-1", "allow");
     expect(approve).toHaveBeenCalledWith("session-1", { decision: "allow", threadId: "thread-1", toolCallId: "call-1" });
+    await expect(service.approve("session-1", "call-1", "allow")).rejects.toBeInstanceOf(ApprovalAlreadySubmittedError);
     await expect(service.approve("session-1", "stale-call", "allow")).rejects.toBeInstanceOf(ApprovalNotFoundError);
   });
 
