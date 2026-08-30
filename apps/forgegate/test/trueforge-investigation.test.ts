@@ -209,7 +209,11 @@ describe("createTrueForgeInvestigationLauncher", () => {
   });
 
   it("recognizes an invalid failure-mode output when raw thread events have no stage", async () => {
-    const createTurn = vi.fn(async () => ({ data: { id: "turn-2" } }));
+    const createTurn = vi.fn(async (_sessionId: string, _request: { input: { content: string; type: "user.message" }[] }) => {
+      void _sessionId;
+      void _request;
+      return { data: { id: "turn-2" } };
+    });
     const sha = "a".repeat(40);
     const events: { event: Record<string, unknown>; turnId: string }[] = [
       { event: { threadId: "failure-1", title: "failure-mode-analyst", type: "thread.created" }, turnId: "turn-1" },
