@@ -1511,10 +1511,10 @@ Apply this checklist to every meaningful feature/milestone branch, not every ind
 - [ ] Produce `PatchProposal` with expected SHA, files, diff, regression result, and experiment evidence.
 - [ ] Re-run regression test and adversarial scenario against the proposal.
 - [ ] Verify repaired scenario produces 1000 intents, 1000 charges, and 1000 ledger entries.
-- [ ] Implement `commit_files` policy guard.
-- [ ] Enforce repository, `forgegate/demo-` branch, exact payment-lab source/test allowlist, 10-file, and 250 KB limits.
-- [ ] Enforce expected-head-SHA check immediately before write.
-- [ ] Reject force-push, merge, workflow modification, branch deletion, and PR closure.
+- [x] Implement `commit_files` policy guard.
+- [x] Enforce repository, `forgegate/demo-` branch, exact payment-lab source/test allowlist, 10-file, and 250 KB limits.
+- [x] Enforce expected-head-SHA check immediately before write.
+- [x] Reject force-push, merge, workflow modification, branch deletion, and PR closure.
 - [ ] Render exact diff, SHA, changed files, and risk before approval.
 - [x] Implement approval API and TrueForge resume with matching tool-call ID.
 - [ ] Verify deny creates zero writes.
