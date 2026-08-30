@@ -90,6 +90,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("build a repository capability map from exact-SHA evidence");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("pass the exact validated invariant JSON and repository capability map");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Execute every accepted ScenarioPlan exactly once using a preflighted temporary runner generated from that plan");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Keep a checklist of accepted ScenarioPlan IDs");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("without injected faults");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Reuse that exact baseline measurement set as expected in every ExperimentResult");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("You have no tools. Reason only from the supplied invariant JSON and repository capability map.");
