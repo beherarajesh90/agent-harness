@@ -102,9 +102,9 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const trustedHeadSha = findPullRequestHeadSha(events);
   const baselineSha = findBaselineSha(events);
   const preflightArtifactLink = latestPreflightArtifactLink(events);
-  const deduplicated = deduplicateArtifacts(events.flatMap((event) => artifactFromPayload(event.payload, trustedHeadSha, baselineSha, event.stage, preflightArtifactLink)));
-  const artifacts = retainAcceptedScenarioResults(deduplicated.artifacts);
-  const accepted = deduplicateArtifacts(artifacts);
+  const extractedArtifacts = events.flatMap((event) => artifactFromPayload(event.payload, trustedHeadSha, baselineSha, event.stage, preflightArtifactLink));
+  const accepted = deduplicateArtifacts(retainAcceptedScenarioResults(extractedArtifacts));
+  const artifacts = accepted.artifacts;
   const rejectedFinal = hasRejectedPrimaryFinal(events, trustedHeadSha);
   const githubReadsComplete = hasRequiredGitHubReads(events, trustedHeadSha);
   const sandboxSucceeded = latestSandboxCommandSucceeded(events);
@@ -368,7 +368,7 @@ function retainAcceptedScenarioResults(artifacts: InvestigationArtifact[]) {
 }
 
 function scenarioMatchesResult(scenario: Record<string, unknown>, result: Record<string, unknown>) {
-  if (typeof scenario.scenarioId === "string") return result.scenarioId === scenario.scenarioId;
+  if (typeof scenario.scenarioId === "string") return result.scenarioId === scenario.scenarioId && result.seed === scenario.seed;
   return typeof result.scenarioId !== "string" && result.seed === scenario.seed;
 }
 
