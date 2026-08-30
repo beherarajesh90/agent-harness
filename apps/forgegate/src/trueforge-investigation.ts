@@ -26,7 +26,7 @@ const continuationPrompts = [
   "Continue with Phase DECISION. Reconcile the persisted InvariantCandidate, ScenarioPlan, and ExperimentResult artifacts. Return one complete final JSON object containing the full invariants array, full scenarios array, full experimentResults array, and decision; persisted artifacts cannot substitute for omitted fields. READY is allowed only when all scenarios have passing results and all artifacts are valid and consistent.",
 ] as const;
 const mcpRecoveryPrompt = "The previous MCP call used an invalid server or tool name. Do not call list_tools, get_tool_info, get_pr, list_changed_files, or changed_files. Use only forgegate-github tools named get_pull_request, get_pull_request_files, get_file, get_checks, get_qodo_reviews, and get_review_comments. Retry the required read now, starting with get_pull_request.";
-const githubReadRecoveryPrompt = "Required primary-agent GitHub reads are incomplete. Continue the same investigation and call every missing read through forgegate-github before generating evidence: get_pull_request, get_pull_request_files, get_file for the required changed files at the exact 40-character PR head SHA, get_checks, get_qodo_reviews, and get_review_comments. Do not finalize or run experiments until these reads have successful auditable tool responses.";
+const githubReadRecoveryPrompt = "Required primary-agent GitHub reads are incomplete. This is a bounded recovery turn, not a final turn. Continue the same investigation and call every missing read through forgegate-github before generating evidence: get_pull_request, get_pull_request_files, get_file for the required changed files at the exact 40-character PR head SHA, get_checks, get_qodo_reviews, and get_review_comments. Do not return READY, BLOCKED, or UNCERTAIN yet; do not finalize or run experiments until these reads have successful auditable tool responses.";
 const subagentRefRecoveryPrompt = "The invariant analyst used an invalid get_file ref. Retry the same allowed get_file reads now using the exact full 40-character PR head commit SHA from the primary agent context, not PR_HEAD, a branch name, or any placeholder. Do not call any other tool.";
 const sandboxRecoveryPrompt = "The previous sandbox command failed with a transient startup or process-bridge error. Retry the same sandbox command once now, then continue the investigation. Do not mark the investigation UNCERTAIN unless the retry also fails.";
 const scenarioRecoveryPrompt = "A scenario runner or preflight failed. Do not treat this as a product failure and do not emit an ExperimentResult from it. Repair the runner using only repository capabilities and exact-SHA evidence, then compile or type-check it and run a bounded preflight that emits structured measurements. If the scenario cannot be expressed, return UNCERTAIN without an ExperimentResult.";
@@ -138,7 +138,7 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
     let decisionRepairAttempted = false;
     let evidenceRecoveryAttempted = false;
     let capabilityMapRecoveryAttempted = false;
-    let githubReadRecoveryAttempted = false;
+    let githubReadRecoveryAttempts = 0;
     let scenarioCoverageRecoveryAttempted = false;
     let subagentCreationRecoveryAttempted = false;
     for (let promptIndex = 0; promptIndex < continuationPrompts.length;) {
@@ -154,8 +154,8 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
       }
       const events = await listEvents(sessionId);
       if (hasIncompletePrimaryGitHubReads(events)) {
-        if (githubReadRecoveryAttempted) return;
-        githubReadRecoveryAttempted = true;
+        if (githubReadRecoveryAttempts >= 3) return;
+        githubReadRecoveryAttempts += 1;
         turnId = (await createTurn(sessionId, { input: [{ content: githubReadRecoveryPrompt, type: "user.message" }] })).data.id;
         continue;
       }
