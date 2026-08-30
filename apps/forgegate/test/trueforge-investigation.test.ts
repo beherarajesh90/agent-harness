@@ -35,7 +35,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
       }),
     ).resolves.toEqual({ sessionId: "session-1", turnId: "turn-1" });
     expect(sessions.create).toHaveBeenCalledWith({
-      agent: { spec: expect.objectContaining({ model: { name: "ollama-local/qwen35-4b", params: { max_tokens: 4096 } } }) },
+      agent: { spec: expect.objectContaining({ model: { name: "ollama-local/qwen35-4b", params: { max_tokens: 4096, temperature: 0 } } }) },
     });
     expect(sessions.createTurn).toHaveBeenCalledWith(
       "session-1",
@@ -206,6 +206,24 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(createTurn).toHaveBeenCalledOnce();
     expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Phase EXPERIMENT");
     expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Set experimentResult to null");
+  });
+
+  it("recognizes an invalid failure-mode output when raw thread events have no stage", async () => {
+    const createTurn = vi.fn(async () => ({ data: { id: "turn-2" } }));
+    const sha = "a".repeat(40);
+    const events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { threadId: "failure-1", title: "failure-mode-analyst", type: "thread.created" }, turnId: "turn-1" },
+      { event: { threadId: "failure-1", state: { output: { content: "Here is a Markdown explanation instead of JSON." } }, type: "thread.done" }, turnId: "turn-1" },
+      { event: { artifactType: "InvariantCandidate", artifact: { confidence: 1, evidence: [{ endLine: 1, path: "src/payment-lab.ts", sha, startLine: 1 }, { endLine: 2, path: "src/payment-lab.ts", sha, startLine: 2 }], id: "i1", statement: "one charge", testedSha: sha }, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "RepositoryCapabilityMap", artifact: { operations: [{ entrypoint: "runScenarioFixture", inputs: {}, supportedFaults: ["timeout-after-charge"] }], testedSha: sha }, type: "tool.response" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Return ONLY a JSON array");
   });
 
   it("does not select DECISION for an inconsistent complete artifact set", async () => {

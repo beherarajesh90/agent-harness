@@ -448,9 +448,10 @@ function findInvalidSubagentRef(events: InvestigationEvent[]) {
 }
 
 function findInvalidInvariantOutput(events: InvestigationEvent[]) {
+  const stages = analystStages(events);
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const { event } = events[index]!;
-    if (event.type !== "thread.done" || event.stage !== "INVARIANTS" || !isSubagentThread(event.threadId)) continue;
+    if (event.type !== "thread.done" || (event.stage ?? stages.get(event.threadId ?? "")) !== "INVARIANTS" || !isSubagentThread(event.threadId)) continue;
     const state = isRecord(event.state) && isRecord(event.state.output) ? event.state.output : undefined;
     const content = state?.content;
     if (typeof content !== "string") continue;
@@ -466,9 +467,10 @@ function findInvalidInvariantOutput(events: InvestigationEvent[]) {
 }
 
 function findInvalidScenarioOutput(events: InvestigationEvent[]) {
+  const stages = analystStages(events);
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const { event } = events[index]!;
-    if (event.type !== "thread.done" || event.stage !== "HYPOTHESES" || !isSubagentThread(event.threadId)) continue;
+    if (event.type !== "thread.done" || (event.stage ?? stages.get(event.threadId ?? "")) !== "HYPOTHESES" || !isSubagentThread(event.threadId)) continue;
     const state = isRecord(event.state) && isRecord(event.state.output) ? event.state.output : undefined;
     const content = state?.content;
     if (typeof content !== "string") continue;
@@ -476,6 +478,16 @@ function findInvalidScenarioOutput(events: InvestigationEvent[]) {
     return !Array.isArray(parsed) || parsed.some((candidate) => !executableScenarioPlanSchema.safeParse(normalizeScenarioPlan(candidate)).success);
   }
   return false;
+}
+
+function analystStages(events: InvestigationEvent[]) {
+  const stages = new Map<string, "INVARIANTS" | "HYPOTHESES">();
+  for (const { event } of events) {
+    if (event.type !== "thread.created" || typeof event.threadId !== "string") continue;
+    if (typeof event.title === "string" && event.title.startsWith("invariant-analyst")) stages.set(event.threadId, "INVARIANTS");
+    if (typeof event.title === "string" && event.title.startsWith("failure-mode-analyst")) stages.set(event.threadId, "HYPOTHESES");
+  }
+  return stages;
 }
 
 function findTransientSandboxFailures(events: InvestigationEvent[], turnId: string) {
