@@ -1,4 +1,4 @@
-import { executableScenarioPlanSchema, experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, normalizeScenarioPlan, repositoryCapabilityMapSchema, scenarioPlanSchema, validateInvestigationArtifacts } from "./agent-spec.js";
+import { executableScenarioPlanSchema, experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, normalizeScenarioPlan, patchProposalSchema, repositoryCapabilityMapSchema, scenarioPlanSchema, validateInvestigationArtifacts } from "./agent-spec.js";
 import type { InvestigationDecision } from "./agent-spec.js";
 import { isDeepStrictEqual } from "node:util";
 
@@ -47,7 +47,7 @@ export type InvestigationSnapshot = {
 
 export type InvestigationArtifact = {
   data: Record<string, unknown>;
-  type: "ExperimentResult" | "InvariantCandidate" | "RepositoryCapabilityMap" | "ScenarioPlan";
+  type: "ExperimentResult" | "InvariantCandidate" | "PatchProposal" | "RepositoryCapabilityMap" | "ScenarioPlan";
 };
 
 const requiredGitHubReadTools = ["get_pull_request", "get_pull_request_files", "get_checks", "get_qodo_reviews", "get_review_comments"] as const;
@@ -284,7 +284,9 @@ function deduplicateArtifacts(artifacts: InvestigationArtifact[]) {
         ? `${artifact.type}:${data.scenarioId ?? JSON.stringify(data)}`
         : artifact.type === "RepositoryCapabilityMap"
           ? `${artifact.type}:${data.testedSha}`
-        : `${artifact.type}:${data.scenarioId ?? data.seed}:${data.testedSha}`;
+          : artifact.type === "PatchProposal"
+            ? `${artifact.type}:${data.expectedHeadSha}`
+            : `${artifact.type}:${data.scenarioId ?? data.seed}:${data.testedSha}`;
     const existing = unique.get(identity);
     if (!existing) {
       unique.set(identity, artifact);
@@ -788,7 +790,7 @@ function isRepositoryPath(value: unknown): value is string {
 }
 
 function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string, requireExecutableScenario = false): InvestigationArtifact[] {
-  if (type !== "ExperimentResult" && type !== "InvariantCandidate" && type !== "RepositoryCapabilityMap" && type !== "ScenarioPlan") return [];
+  if (type !== "ExperimentResult" && type !== "InvariantCandidate" && type !== "PatchProposal" && type !== "RepositoryCapabilityMap" && type !== "ScenarioPlan") return [];
   const values = Array.isArray(value) ? value : [value];
   return values.flatMap((candidate) => {
     if (type === "RepositoryCapabilityMap" && typeof candidate === "string") candidate = parseJson(candidate);
@@ -803,7 +805,8 @@ function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string, re
     }
     if (type === "ExperimentResult" && !experimentResultSchema.safeParse(candidate).success) return [];
     if (type === "RepositoryCapabilityMap" && !repositoryCapabilityMapSchema.safeParse(normalized).success) return [];
-    if (trustedHeadSha && normalized.testedSha !== trustedHeadSha) return [];
+    if (type === "PatchProposal" && !patchProposalSchema.safeParse(normalized).success) return [];
+    if (trustedHeadSha && (type === "PatchProposal" ? normalized.expectedHeadSha !== trustedHeadSha : normalized.testedSha !== trustedHeadSha)) return [];
     return [{ data: normalized, type }];
   });
 }

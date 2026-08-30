@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createForgeGateAgentSpec, deduplicateScenarioPlans, executableScenarioPlanSchema, experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, normalizeScenarioPlan, parsePreflightResult, scenarioPlanSchema, validateAnalystArtifacts, validateExperimentPreflight, validateInvestigationArtifacts } from "../src/agent-spec.js";
+import { createForgeGateAgentSpec, deduplicateScenarioPlans, executableScenarioPlanSchema, experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, normalizeScenarioPlan, parsePreflightResult, patchProposalSchema, scenarioPlanSchema, validateAnalystArtifacts, validateExperimentPreflight, validateInvestigationArtifacts } from "../src/agent-spec.js";
 
 describe("ForgeGate agent specification", () => {
   it("enables only the configured read-only GitHub tools", () => {
@@ -195,6 +195,20 @@ describe("ForgeGate agent specification", () => {
 
     expect(experimentResultSchema.parse(result)).toEqual(result);
     expect(experimentResultSchema.safeParse({ ...result, preflightArtifactLink: "not a link" }).success).toBe(false);
+  });
+
+  it("validates a bounded patch proposal with regression and experiment evidence", () => {
+    const proposal = {
+      diff: "@@ -1 +1 @@\n-before\n+after",
+      expectedHeadSha: "a".repeat(40),
+      experimentEvidenceLinks: ["sandbox:experiment-1"],
+      files: [{ content: "after", path: "apps/forgegate/src/payment-lab.ts" }],
+      regressionTest: { after: "pass" as const, artifactLink: "sandbox:regression", before: "fail" as const },
+    };
+
+    expect(patchProposalSchema.parse(proposal)).toEqual(proposal);
+    expect(patchProposalSchema.safeParse({ ...proposal, regressionTest: { ...proposal.regressionTest, after: "fail" } }).success).toBe(false);
+    expect(patchProposalSchema.safeParse({ ...proposal, diff: "placeholder" }).success).toBe(false);
   });
 
   it("rejects a passing result when observed measurements differ from expected", () => {

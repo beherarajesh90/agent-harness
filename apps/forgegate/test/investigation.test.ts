@@ -35,6 +35,25 @@ describe("investigation control plane", () => {
     ]);
   });
 
+  it("projects a validated patch proposal without treating it as experiment evidence", () => {
+    const snapshot = projectInvestigation("session-1", "https://github.com/acme/demo/pull/1", [{
+      event: {
+        artifactType: "PatchProposal",
+        artifact: {
+          diff: "@@ -1 +1 @@\n-before\n+after",
+          expectedHeadSha: "a".repeat(40),
+          experimentEvidenceLinks: ["sandbox:experiment-1"],
+          files: [{ content: "after", path: "apps/forgegate/src/payment-lab.ts" }],
+          regressionTest: { after: "pass", artifactLink: "sandbox:regression", before: "fail" },
+        },
+        type: "tool.response",
+      },
+      turnId: "turn-1",
+    }]);
+
+    expect(snapshot.artifacts).toEqual([expect.objectContaining({ type: "PatchProposal" })]);
+  });
+
   it("projects analyst roles and sandbox execution into truthful stages", () => {
     const snapshot = projectInvestigation("session-1", "url", [
       { event: { sequence: 1, threadId: "invariant-thread", title: "invariant-analyst", type: "thread.created" }, turnId: "turn-1" },

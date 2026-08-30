@@ -61,6 +61,7 @@ export type InvariantCandidate = z.infer<typeof invariantCandidateSchema>;
 export type ScenarioPlan = z.infer<typeof scenarioPlanSchema>;
 export type ExperimentResult = z.infer<typeof experimentResultSchema>;
 export type RepositoryCapabilityMap = z.infer<typeof repositoryCapabilityMapSchema>;
+export type PatchProposal = z.infer<typeof patchProposalSchema>;
 export type InvestigationDecision = "BLOCKED" | "READY" | "UNCERTAIN";
 
 const investigationDecisionSchema = z.enum(["BLOCKED", "READY", "UNCERTAIN"]);
@@ -170,6 +171,23 @@ export const experimentResultSchema = z
     "experiment artifact links must be concrete paths or identifiers",
   )
   .refine((result) => result.verdict === "fail" || sameMeasurements(result.expected, result.observed), "passing experiment measurements must match expected baseline");
+
+const patchFileSchema = z.object({ content: z.string(), path: z.string().min(1) }).strict();
+export const patchProposalSchema = z
+  .object({
+    diff: z.string().min(1),
+    expectedHeadSha: shaSchema,
+    experimentEvidenceLinks: z.array(z.string().min(1)).min(1),
+    files: z.array(patchFileSchema).min(1),
+    regressionTest: z.object({
+      after: z.literal("pass"),
+      artifactLink: z.string().min(1),
+      before: z.literal("fail"),
+    }).strict(),
+  })
+  .strict()
+  .refine((proposal) => proposal.experimentEvidenceLinks.every((link) => !/placeholder|unable to determine/i.test(link) && !/\s/.test(link)), "patch evidence links must be concrete")
+  .refine((proposal) => !/placeholder|unable to determine/i.test(proposal.diff), "patch diff must be concrete");
 
 const finalScenarioPlanSchema = scenarioPlanSchema.required({ scenarioId: true });
 const finalExperimentResultSchema = experimentResultSchema.required({ preflightArtifactLink: true, scenarioId: true });
@@ -409,6 +427,8 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "Use concrete sandbox artifact identifiers in ExperimentResult artifactLinks; never put an explanation or sentence in artifactLinks.",
       "Use only these exact forgegate-github tool names: get_pull_request, get_pull_request_files, get_file, get_checks, get_qodo_reviews, and get_review_comments. Do not call list_tools, get_tool_info, get_pr, list_changed_files, or changed_files.",
       "Generate one temporary scenario runner from each accepted ScenarioPlan. Before each experiment, verify execution.entrypoint and inputs against the checked-out repository, compile or type-check the runner, run a bounded preflight, and require structured measurements before the full run. A runner/import/setup/preflight failure is an untestable scenario, not a product failure; repair once, then return UNCERTAIN without an ExperimentResult. Run one scenario-independent baseline on master without injected faults before checking out the exact PR head SHA, then reuse that same baseline measurement set as expected in every ExperimentResult; use PR experiment values as observed.",
+      "When a valid experiment proves a defect, generate a failing regression test and the smallest repair in the sandbox, rerun the regression and adversarial scenario, and emit one PatchProposal artifact containing the exact PR head SHA, bounded files, exact diff, regression before=fail/after=pass proof, and concrete experiment evidence links.",
+      "Do not emit a PatchProposal unless the regression failed before the patch and passed after it and the repaired experiment passed. PatchProposal files must stay within the configured GitHub mutation allowlist; do not commit or push in this investigation turn.",
       "For every sandbox exec call, set intent with an explicit phase prefix: runner:, compile:, preflight:, or experiment:. Only runner:, compile:, and preflight: failures may trigger scenario recovery; experiment: output must be parsed as experiment evidence.",
       "The preflight runner must emit one raw JSON object with artifactLink, phase=preflight, status=pass, the mapped entrypoint, and non-empty numeric measurements; preserve that successful tool response as auditable evidence before running the full experiment.",
       "Every scenario preflight must also include the exact scenarioId and seed from its ScenarioPlan; its entrypoint must equal execution.entrypoint. Baseline preflight may omit scenarioId and seed because it is scenario-independent.",

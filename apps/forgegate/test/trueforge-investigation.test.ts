@@ -73,6 +73,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Every accepted invariant must have at least one ScenarioPlan");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("every scenario must target a behavior changed by the PR");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("combine the complete interaction in one ScenarioPlan");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("emit one PatchProposal artifact");
   });
 
   it("rejects a pull request URL outside the configured repository", async () => {
