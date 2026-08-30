@@ -206,6 +206,35 @@ describe("payment laboratory", () => {
     expect(runPaymentExperiment({ baselineEvidence: { charges: 100, intents: 100, ledgerEntries: 100 }, baselineSha: "b".repeat(40), mode: "safe", repetitions: 2, seed: 42, testedSha: "a".repeat(40) }).verdict).toBe("pass");
   });
 
+  it("executes a declared scenario and preserves its identity", () => {
+    expect(runPaymentExperiment({
+      baselineEvidence: { charges: 100, intents: 100, ledgerEntries: 100 },
+      baselineSha: "b".repeat(40),
+      repetitions: 1,
+      scenario: { injectedFaults: ["timeout-after-charge"], scenarioId: "scn-002-timeout-after-charge", seed: 43 },
+      testedSha: "a".repeat(40),
+    })).toMatchObject({
+      observed: { charges: 100, intents: 100, ledgerEntries: 100 },
+      scenarioId: "scn-002-timeout-after-charge",
+      seed: 43,
+      verdict: "pass",
+    });
+  });
+
+  it("executes a fail-before-charge scenario without aborting the batch", () => {
+    expect(runPaymentExperiment({
+      baselineEvidence: { charges: 100, intents: 100, ledgerEntries: 100 },
+      baselineSha: "b".repeat(40),
+      repetitions: 1,
+      scenario: { injectedFaults: ["fail-before-charge"], scenarioId: "scn-002-fail-before-charge", seed: 43 },
+      testedSha: "a".repeat(40),
+    })).toMatchObject({
+      observed: { charges: 97, intents: 100, ledgerEntries: 97 },
+      scenarioId: "scn-002-fail-before-charge",
+      verdict: "pass",
+    });
+  });
+
   it("uses the seed to select a deterministic unsafe fault schedule", () => {
     const first = runPaymentExperiment({ baselineEvidence: { charges: 100, intents: 100, ledgerEntries: 100 }, baselineSha: "b".repeat(40), mode: "unsafe", repetitions: 2, seed: 1, testedSha: "a".repeat(40) });
     const second = runPaymentExperiment({ baselineEvidence: { charges: 100, intents: 100, ledgerEntries: 100 }, baselineSha: "b".repeat(40), mode: "unsafe", repetitions: 2, seed: 2, testedSha: "a".repeat(40) });

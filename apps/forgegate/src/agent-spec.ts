@@ -145,7 +145,9 @@ export const investigationResponseSchema = z
 const investigationResponseJsonSchema = z
   .object({
     decision: investigationDecisionSchema,
-    experimentResult: finalExperimentResultSchema.nullable(),
+    // Preserve the legacy property in the strict wire shape, but make the
+    // singular representation unusable. Runtime parsing remains compatible.
+    experimentResult: z.null(),
     experimentResults: z.array(finalExperimentResultSchema).min(1).nullable(),
     invariants: z.array(invariantCandidateSchema).min(1).nullable(),
     scenarios: z.array(finalScenarioPlanSchema).min(1).nullable(),
@@ -168,6 +170,9 @@ export function validateAnalystArtifacts(input: { invariants: unknown; scenarios
       throw new Error("all analyst artifacts must use the same tested SHA");
     }
   }
+  if (invariants.some((invariant) => !scenarios.some((scenario) => scenario.invariantId === invariant.id))) {
+    throw new Error("every accepted invariant must have a scenario");
+  }
   return { invariants, scenarios };
 }
 
@@ -189,10 +194,10 @@ export function deduplicateScenarioPlans(scenarios: ScenarioPlan[], maxScenarios
 
 export function validateInvestigationArtifacts(input: { decision?: unknown; invariants?: unknown; scenarios?: unknown; experimentResult?: unknown; experimentResults?: unknown }) {
   const { invariants, scenarios } = validateAnalystArtifacts({ invariants: input.invariants, scenarios: input.scenarios });
-  if (input.experimentResult !== undefined && input.experimentResults !== undefined) {
+  if (input.experimentResult !== undefined && input.experimentResult !== null && input.experimentResults !== undefined && input.experimentResults !== null) {
     throw new Error("choose either experimentResult or experimentResults");
   }
-  const experimentResults = z.array(experimentResultSchema).parse(input.experimentResults ?? (input.experimentResult === undefined ? [] : [input.experimentResult]));
+  const experimentResults = z.array(experimentResultSchema).parse(input.experimentResults ?? (input.experimentResult == null ? [] : [input.experimentResult]));
   if (experimentResults.length === 0) throw new Error("experiment results are required");
   const decision = input.decision === undefined ? undefined : investigationDecisionSchema.parse(input.decision);
   const testedSha = invariants[0]?.testedSha ?? scenarios[0]?.testedSha;
@@ -259,23 +264,28 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
       "Stop as UNCERTAIN when evidence is missing, stale, or inconsistent.",
       "If partial valid artifacts already exist, continue the required phases to complete the evidence bundle before finalizing UNCERTAIN; use UNCERTAIN immediately only when no usable evidence exists or recovery is exhausted.",
       "A transient sandbox startup or process-bridge failure is recoverable: retry the same sandbox command once before deciding UNCERTAIN; only stop as UNCERTAIN when the retry also fails or required evidence remains unavailable.",
-      "The primary agent must complete all GitHub MCP reads and sandbox execution before spawning subagents. Pass the collected evidence to them; subagents must not call MCP or sandbox tools.",
-      "Subagents have no tool authority: they must not call MCP, exec, sandbox, patch, or any other tool, and must return JSON only from evidence in their input.",
+      "The primary agent remains authoritative for GitHub reads, sandbox execution, evidence reconciliation, and final decisions. Subagents may use only bounded read-only forgegate-github MCP tools for supplemental evidence and must return JSON artifacts.",
+      "Subagents must not call list_tools, get_tool_info, commit_files, raw GitHub or curl access, exec, sandbox experiments, patch, or any other mutation capability.",
+      "Subagents receive the repository, PR URL, exact head SHA, allowed paths, and role constraints, and must fetch only approved evidence through read-only MCP calls; never pass unrestricted repository contents.",
       "Create failure-mode-analyst only after invariant-analyst has completed; include the exact validated invariant JSON in the second analyst input, never a placeholder or an instruction to discover it.",
       "Use cwd / for sandbox commands; /workspace does not exist in the Daytona image. Clone into /agent-harness or another path under /. For payment-lab experiments, run pnpm install --frozen-lockfile, then pnpm --filter @forgegate/app build and use node --input-type=module to import ./apps/forgegate/dist/src/payment-lab.js. Never use pnpm exec tsx, npx ts-node, or ts-node.",
       "Spawn exactly two visible dynamic subagents: invariant-analyst and failure-mode-analyst.",
       "The invariant-analyst must return one or more InvariantCandidate JSON objects with id, statement, confidence, testedSha, and at least two distinct evidence references containing path, startLine, endLine, and the same testedSha.",
+      "When creating invariant-analyst, explicitly state that it may call only forgegate-github get_file for the two approved payment-lab paths at the exact PR head SHA; use lineNumberedContent from those MCP responses for evidence locations, then stop using tools.",
       "Evidence reference sha must equal the exact PR head commit SHA in testedSha; never use a Git blob SHA, branch name, or baseline SHA.",
       "The failure-mode-analyst must return all materially distinct ScenarioPlan JSON objects with invariantId, scenarioId, testedSha, seed, injectedFaults, ordering, and expectedOutcome.",
+      "When creating failure-mode-analyst, state exactly: You have no tools. Reason only from the supplied invariant JSON. It must not call list_tools, MCP, exec, shell, Python, Git, or sandbox.",
       "ScenarioPlan seed must be a non-negative integer and ordering must be a non-empty string array; validate the complete object before returning it.",
       "When an artifact is emitted into an event, preserve it under artifactType (InvariantCandidate, ScenarioPlan, or ExperimentResult) and artifact fields.",
       "Use the existing payment-lab:evidence identifier in ExperimentResult artifactLinks; never put an explanation or sentence in artifactLinks.",
       "Use only these exact forgegate-github tool names: get_pull_request, get_pull_request_files, get_file, get_checks, get_qodo_reviews, and get_review_comments. Do not call list_tools, get_tool_info, get_pr, list_changed_files, or changed_files.",
       "Run the baseline payment test on master before checking out the exact PR head SHA. Every ExperimentResult must record that immutable master baselineSha and use its measured counts as expected; use PR experiment counts as observed.",
+      "Run runPaymentExperiment exactly once per accepted ScenarioPlan using scenario: { scenarioId, seed, injectedFaults } copied from that plan; never substitute runUnsafeRetryFixture or mode for a planned scenario. Supported faults are timeout-after-charge, fail-before-charge, and unsafe-retry; return UNCERTAIN for an unsupported fault.",
       "Use the ScenarioPlan seed to drive a deterministic fault schedule; repeated runs with the same seed must reproduce the same observations, and different seeds must be allowed to exercise different schedules.",
       "Mark the verdict fail when the observed counts violate an accepted invariant, even if the scenario reproduces the expected failure.",
       "Do not accept prose as an artifact; validate every candidate and scenario against the ForgeGate schemas before using it.",
       "Before claiming READY, require every accepted artifact to use one testedSha, every ScenarioPlan invariantId to reference an accepted invariant, every scenario to have one ExperimentResult, and every experiment to pass.",
+      "Every accepted invariant must have at least one ScenarioPlan; if any invariant has no scenario, return UNCERTAIN.",
       "Before finalizing BLOCKED, READY, or post-experiment UNCERTAIN, include the complete persisted invariants, scenarios, and experimentResults bundle; do not omit scenarios or results.",
       "Every ExperimentResult for a ScenarioPlan with scenarioId must copy that exact scenarioId; do not rely on seed alone when scenario IDs exist.",
       "InvariantCandidate evidence objects use sha (not testedSha) and must reference apps/forgegate/src/payment-lab.ts or apps/forgegate/test/payment-lab.test.ts at the exact testedSha.",
@@ -301,11 +311,10 @@ export function createForgeGateAgentSpec(modelName: string): AgentSpec {
           "get_checks",
           "get_qodo_reviews",
           "get_review_comments",
-          "commit_files",
         ],
         name: "forgegate-github",
         preload: true,
-        requireApprovalForTools: ["commit_files"],
+        requireApprovalForTools: [],
       },
     ],
     model: { name: modelName, params: { max_tokens: 4096 } },

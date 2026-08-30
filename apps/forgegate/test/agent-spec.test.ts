@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createForgeGateAgentSpec, deduplicateScenarioPlans, experimentResultSchema, investigationResponseSchema, invariantCandidateSchema, scenarioPlanSchema, validateAnalystArtifacts, validateInvestigationArtifacts } from "../src/agent-spec.js";
 
 describe("ForgeGate agent specification", () => {
-  it("enables only the configured GitHub tools and gates commits", () => {
+  it("enables only the configured read-only GitHub tools", () => {
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b")).toMatchObject({
       config: {
         dynamicSubAgents: { enabled: true },
@@ -18,11 +18,10 @@ describe("ForgeGate agent specification", () => {
             "get_checks",
             "get_qodo_reviews",
             "get_review_comments",
-            "commit_files",
           ],
           name: "forgegate-github",
           preload: true,
-          requireApprovalForTools: ["commit_files"],
+          requireApprovalForTools: [],
         },
       ],
       model: { name: "ollama-local/qwen35-4b" },
@@ -37,6 +36,7 @@ describe("ForgeGate agent specification", () => {
     const schema = responseFormat.jsonSchema?.schema ?? {};
     expect(schema).toMatchObject({ type: "object", additionalProperties: false });
     expect(schema).not.toHaveProperty("anyOf");
+    expect(schema).toMatchObject({ properties: { experimentResult: { type: "null" } } });
     expect(schema).toMatchObject({ required: ["decision", "experimentResult", "experimentResults", "invariants", "scenarios"] });
     const hasCompleteBranch = (value: unknown): boolean => {
       if (Array.isArray(value)) return value.some(hasCompleteBranch);
@@ -56,11 +56,19 @@ describe("ForgeGate agent specification", () => {
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("payment-lab:evidence"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Run the baseline payment test on master before checking out the exact PR head SHA"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Mark the verdict fail when the observed counts violate an accepted invariant"));
-    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("primary agent must complete all GitHub MCP reads and sandbox execution before spawning subagents"));
-    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Subagents have no tool authority"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("The primary agent remains authoritative for GitHub reads, sandbox execution"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Subagents may use only bounded read-only forgegate-github MCP tools"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Subagents receive the repository, PR URL, exact head SHA, allowed paths, and role constraints"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("must fetch only approved evidence through read-only MCP calls"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("may call only forgegate-github get_file for the two approved payment-lab paths"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("When creating failure-mode-analyst"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Create failure-mode-analyst only after invariant-analyst has completed"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("pnpm --filter @forgegate/app build"));
     expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("dist/src/payment-lab.js"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("runPaymentExperiment exactly once per accepted ScenarioPlan"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("using scenario: { scenarioId, seed, injectedFaults } copied from that plan"));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("You have no tools. Reason only from the supplied invariant JSON."));
+    expect(createForgeGateAgentSpec("ollama-local/qwen35-4b").instructions).toMatchObject(expect.stringContaining("Every accepted invariant must have at least one ScenarioPlan"));
   });
 
   it("requires an invariant to cite two files at the tested SHA", () => {
@@ -152,6 +160,7 @@ describe("ForgeGate agent specification", () => {
     const experimentResult = { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 1, intents: 1, ledgerEntries: 1 }, observed: { charges: 1, intents: 1, ledgerEntries: 1 }, repetitions: 1, seed: 1, testedSha: sha, verdict: "pass" as const };
 
     expect(validateInvestigationArtifacts({ invariants: [invariant], scenarios: [scenario], experimentResult })).toMatchObject({ experimentResult });
+    expect(validateInvestigationArtifacts({ decision: "BLOCKED", invariants: [invariant], scenarios: [scenario], experimentResult: null, experimentResults: [experimentResult] })).toMatchObject({ decision: "BLOCKED" });
     expect(investigationResponseSchema.safeParse({ decision: "BLOCKED", invariants: [invariant], scenarios: [scenario], experimentResults: [experimentResult] }).success).toBe(false);
     expect(investigationResponseSchema.safeParse({ decision: "BLOCKED", invariants: [invariant], scenarios: [scenario], experimentResult, experimentResults: [experimentResult] }).success).toBe(false);
     expect(() => validateInvestigationArtifacts({ invariants: [invariant], scenarios: [scenario], experimentResult, experimentResults: [experimentResult] })).toThrow("choose either experimentResult or experimentResults");

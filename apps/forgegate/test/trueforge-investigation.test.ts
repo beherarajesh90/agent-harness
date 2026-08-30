@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { hasSubagentToolPolicyViolation } from "../src/investigation.js";
 import { createInvestigationPhaseController, createTrueForgeInvestigationLauncher } from "../src/trueforge-investigation.js";
 
 describe("createTrueForgeInvestigationLauncher", () => {
@@ -41,17 +42,21 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Use cwd / for sandbox commands; /workspace does not exist");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Evidence reference sha must equal the exact PR head commit SHA");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("The final decision response must include invariants, scenarios, experimentResults, and decision");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Use exactly one of experimentResult or experimentResults, never both");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Never pass [content omitted for brevity] to a subagent");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Pass bounded literal excerpts");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("payment-lab.ts lines 125-170");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("payment-lab.test.ts lines 110-180");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("12,000 characters");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Subagents must not call MCP, exec, sandbox, or any other tool");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Set experimentResult to null");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Subagents receive the repository, PR URL, exact head SHA");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("must fetch only approved evidence through read-only MCP calls");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("invariant-analyst delegated input must explicitly allow only forgegate-github get_file");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("failure-mode-analyst delegated input must state exactly");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).not.toContain("Pass bounded literal excerpts");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Subagents may use only bounded read-only forgegate-github MCP tools");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Create failure-mode-analyst only after invariant-analyst thread.done");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("include the exact validated invariant JSON in its input");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Never run grep -R, find, or any recursive repository scan");
-    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("timeout-after-charge and unsafe-retry");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("timeout-after-charge, fail-before-charge, and unsafe-retry");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("runPaymentExperiment exactly once per accepted ScenarioPlan");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("using scenario: { scenarioId, seed, injectedFaults } copied from that plan");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("You have no tools. Reason only from the supplied invariant JSON.");
+    expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Every accepted invariant must have at least one ScenarioPlan");
     expect(sessions.createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("pnpm exec tsx");
   });
 
@@ -124,6 +129,20 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(createTurn).not.toHaveBeenCalled();
   });
 
+  it("stops after a subagent tool-policy violation", async () => {
+    const createTurn = vi.fn(async () => ({ data: { id: "unexpected" } }));
+    const listEvents = vi.fn(async () => [
+      { event: { threadId: "analyst-1", title: "invariant-analyst", type: "thread.created" }, turnId: "turn-1" },
+      { event: { threadId: "analyst-1", toolCalls: [{ id: "exec-1", function: { arguments: JSON.stringify({ command: "nl -ba file" }), name: "exec" } }], type: "model.message" }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "BLOCKED" }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ]);
+    const controller = createInvestigationPhaseController({ createTurn, listEvents, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).not.toHaveBeenCalled();
+  });
+
   it("continues an UNCERTAIN turn when partial evidence can still be completed", async () => {
     let events: { event: Record<string, unknown>; turnId: string }[] = [
       { event: { artifactType: "ExperimentResult", artifact: { artifactLinks: ["payment-lab:evidence"], baselineSha: "b".repeat(40), expected: { charges: 100, intents: 100, ledgerEntries: 100 }, observed: { charges: 102, intents: 100, ledgerEntries: 100 }, repetitions: 1, seed: 1, testedSha: "a".repeat(40), verdict: "fail" }, type: "tool.response" }, turnId: "turn-1" },
@@ -158,7 +177,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
 
     expect(createTurn).toHaveBeenCalledOnce();
     expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Phase EXPERIMENT");
-    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Use exactly one of experimentResult or experimentResults, never both");
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Set experimentResult to null");
   });
 
   it("does not select DECISION for an inconsistent complete artifact set", async () => {
@@ -333,6 +352,34 @@ describe("createTrueForgeInvestigationLauncher", () => {
     await controller.continue("session-1", "turn-1");
 
     expect(createTurn).not.toHaveBeenCalled();
+  });
+
+  it("recovers once from a subagent get_file placeholder ref", async () => {
+    let events: { event: Record<string, unknown>; turnId: string }[] = [
+      { event: { threadId: "analyst-1", type: "tool.response", content: JSON.stringify({ error: [{ type: "text", text: "ref must be a full commit SHA at ref" }] }) }, turnId: "turn-1" },
+      { event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-1" },
+    ];
+    const createTurn = vi.fn(async (_sessionId: string, request: { input: { content: string; type: "user.message" }[] }) => {
+      void _sessionId;
+      events = [{ event: { state: { output: { content: JSON.stringify({ decision: "UNCERTAIN" }) } }, type: "turn.done" }, turnId: "turn-2" }];
+      expect(request.input[0]?.content).toContain("exact full 40-character PR head commit SHA");
+      return { data: { id: "turn-2" } };
+    });
+    const controller = createInvestigationPhaseController({ createTurn, listEvents: async () => events, pollIntervalMs: 0, maxPolls: 1 });
+
+    await controller.continue("session-1", "turn-1");
+
+    expect(createTurn).toHaveBeenCalledOnce();
+  });
+
+  it("does not classify a rejected subagent placeholder ref as a hard violation", () => {
+    const sha = "a".repeat(40);
+    expect(hasSubagentToolPolicyViolation([
+      { event: { content: JSON.stringify({ head: { sha } }), type: "tool.response" }, turnId: "turn-1" },
+      { event: { threadId: "analyst-1", title: "invariant-analyst", type: "thread.created" }, turnId: "turn-1" },
+      { event: { threadId: "analyst-1", toolCalls: [{ id: "read-1", function: { arguments: JSON.stringify({ path: "apps/forgegate/src/payment-lab.ts", ref: "PR_HEAD" }), name: "get_file" } }], type: "model.message" }, turnId: "turn-1" },
+      { event: { content: JSON.stringify({ error: [{ type: "text", text: "ref must be a full commit SHA at ref" }] }), threadId: "analyst-1", toolCallId: "read-1", type: "tool.response" }, turnId: "turn-1" },
+    ])).toBe(false);
   });
 
   it("retries one transient sandbox startup failure before accepting UNCERTAIN", async () => {

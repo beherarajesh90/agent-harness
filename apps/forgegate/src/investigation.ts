@@ -41,6 +41,7 @@ export type InvestigationSnapshot = {
   stage: Stage;
   status: Status;
   turnId: string;
+  warnings?: string[];
 };
 
 export type InvestigationArtifact = {
@@ -50,7 +51,6 @@ export type InvestigationArtifact = {
 
 const requiredGitHubReadTools = ["get_pull_request", "get_pull_request_files", "get_checks", "get_qodo_reviews", "get_review_comments"] as const;
 const requiredEvidencePaths = ["apps/forgegate/src/payment-lab.ts", "apps/forgegate/test/payment-lab.test.ts"] as const;
-
 type TrueForgeEventItem = { event: Record<string, unknown>; turnId: string };
 type InvestigationRecord = { pullRequestUrl: string; turnId: string };
 type LaunchResult = { sessionId: string; turnId: string };
@@ -92,18 +92,27 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
   const rejectedFinal = hasRejectedPrimaryFinal(events, trustedHeadSha);
   const githubReadsComplete = hasRequiredGitHubReads(events, trustedHeadSha);
   const sandboxSucceeded = latestSandboxCommandSucceeded(events);
-  const subagentToolUse = hasSubagentToolUse(events);
-  const reportedDecision = findFinalDecision(events, trustedHeadSha, artifacts, accepted.hasConflicts || rejectedFinal || !githubReadsComplete || !sandboxSucceeded || subagentToolUse);
+  const subagentToolPolicy = classifySubagentToolUse(events, trustedHeadSha);
+  const subagentToolViolation = subagentToolPolicy.warning || subagentToolPolicy.hard;
+  const terminalBundle = readTerminalEvidenceBundle(events, trustedHeadSha);
+  const terminalArtifacts = terminalBundle?.artifacts.length ? terminalBundle.artifacts : artifacts;
+  const terminalAccepted = deduplicateArtifacts(terminalArtifacts);
+  const safeForDecision = githubReadsComplete && sandboxSucceeded && !subagentToolViolation && Boolean(trustedHeadSha);
+  const reportedDecision = terminalBundle?.fromModel && !safeForDecision
+    ? undefined
+    : terminalBundle?.decision ?? findFinalDecision(events, trustedHeadSha, artifacts, accepted.hasConflicts || rejectedFinal || !githubReadsComplete || !sandboxSucceeded || subagentToolViolation);
   const last = events.at(-1);
   const terminal = last ? isPrimaryAgentTurn(last) : false;
   const state = last?.payload.state as { status?: string } | undefined;
-  const artifactTypes = new Set(artifacts.map((artifact) => artifact.type));
   const requiredArtifactTypes: InvestigationArtifact["type"][] = ["InvariantCandidate", "ScenarioPlan", "ExperimentResult"];
-  const completeEvidence = !accepted.hasConflicts && !rejectedFinal && githubReadsComplete && sandboxSucceeded && !subagentToolUse && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts);
-  const reconciledFailure = hasRejectedCompleteEvidenceFinal(events, trustedHeadSha) && !accepted.hasConflicts && githubReadsComplete && sandboxSucceeded && !subagentToolUse && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => artifactTypes.has(type)) && hasConsistentEvidence(artifacts) && hasFailedExperiment(artifacts);
-  const decision = reportedDecision ?? (reconciledFailure ? "BLOCKED" : undefined);
+  const terminalArtifactTypes = new Set(terminalArtifacts.map((artifact) => artifact.type));
+  const completeEvidence = !terminalAccepted.hasConflicts && (Boolean(terminalBundle) || !rejectedFinal) && githubReadsComplete && sandboxSucceeded && !subagentToolViolation && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => terminalArtifactTypes.has(type)) && hasConsistentEvidence(terminalArtifacts);
+  const reconciledFailure = (terminalBundle?.decision === "BLOCKED" || hasRejectedCompleteEvidenceFinal(events, trustedHeadSha)) && !terminalAccepted.hasConflicts && githubReadsComplete && sandboxSucceeded && !subagentToolViolation && Boolean(trustedHeadSha) && requiredArtifactTypes.every((type) => terminalArtifactTypes.has(type)) && hasConsistentEvidence(terminalArtifacts) && hasFailedExperiment(terminalArtifacts);
+  const evidenceDecision = terminal && completeEvidence && reportedDecision === "UNCERTAIN" && hasFailedExperiment(terminalArtifacts) ? "BLOCKED" : undefined;
+  const decision = evidenceDecision ?? reportedDecision ?? (reconciledFailure ? "BLOCKED" : undefined);
   const subagentMcpFailure = hasSubagentMcpFailure(events);
-  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure || subagentToolUse ? "UNCERTAIN" : terminal ? (completeEvidence || reconciledFailure) && decision ? decision : "UNCERTAIN" : "RUNNING";
+  const status = state?.status === "cancelled" ? "CANCELLED" : state?.status === "error" ? "ERROR" : subagentMcpFailure || subagentToolViolation ? "UNCERTAIN" : terminal ? (completeEvidence || reconciledFailure) && decision ? decision : "UNCERTAIN" : "RUNNING";
+  const warnings = subagentToolPolicy.warning ? ["SUBAGENT_TOOL_POLICY_VIOLATION"] : subagentToolPolicy.hard ? ["SUBAGENT_HARD_TOOL_VIOLATION"] : [];
 
   return {
     artifacts,
@@ -114,6 +123,7 @@ export function projectInvestigation(sessionId: string, pullRequestUrl: string, 
     stage: last?.stage ?? "CONTEXT",
     status,
     turnId: last?.turnId ?? "",
+    ...(warnings.length ? { warnings } : {}),
   };
 }
 
@@ -223,7 +233,11 @@ function scenarioMatchesResult(scenario: Record<string, unknown>, result: Record
 
 function readFinalBundle(payload: Record<string, unknown>, trustedHeadSha?: string) {
   const output = isRecord(payload.state) && isRecord(payload.state.output) ? payload.state.output : undefined;
-  const parsed = typeof output?.content === "string" ? parseJson(output.content) : undefined;
+  return typeof output?.content === "string" ? readFinalBundleContent(output.content, trustedHeadSha) : undefined;
+}
+
+function readFinalBundleContent(content: string, trustedHeadSha?: string) {
+  const parsed = parseJson(content);
   if (!isRecord(parsed)) return undefined;
   const parsedResponse = investigationResponseSchema.safeParse(parsed);
   if (!parsedResponse.success) return undefined;
@@ -245,14 +259,50 @@ function readFinalBundle(payload: Record<string, unknown>, trustedHeadSha?: stri
   }
 }
 
+function readTerminalEvidenceBundle(events: HarnessEvent[], trustedHeadSha?: string) {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]!;
+    if (!isPrimaryAgentTurn(event)) continue;
+    const content = primaryFinalOutput(events, index);
+    const doneOutput = isRecord(event.payload.state) && isRecord(event.payload.state.output) ? event.payload.state.output : undefined;
+    if (typeof doneOutput?.content === "string") continue;
+    const parsed = content ? parseJson(content) : undefined;
+    if (!isRecord(parsed) || (parsed.decision !== "READY" && parsed.decision !== "BLOCKED")) continue;
+    const experimentResults = parsed.experimentResults ?? (parsed.experimentResult === undefined ? undefined : [parsed.experimentResult]);
+    if (!Array.isArray(parsed.invariants) || !Array.isArray(parsed.scenarios) || !Array.isArray(experimentResults)) continue;
+    try {
+      const bundle = validateInvestigationArtifacts({ decision: parsed.decision, invariants: parsed.invariants, scenarios: parsed.scenarios, experimentResults });
+      return { decision: bundle.decision, fromModel: true, artifacts: [
+        ...bundle.invariants.map((data) => ({ data, type: "InvariantCandidate" as const })),
+        ...bundle.scenarios.map((data) => ({ data, type: "ScenarioPlan" as const })),
+        ...bundle.experimentResults.map((data) => ({ data, type: "ExperimentResult" as const })),
+      ] };
+    } catch {
+      if (parsed.decision !== "READY" || !experimentResults.some((result) => isRecord(result) && result.verdict === "fail")) continue;
+      try {
+        const bundle = validateInvestigationArtifacts({ decision: "BLOCKED", invariants: parsed.invariants, scenarios: parsed.scenarios, experimentResults });
+        return { decision: "BLOCKED" as const, fromModel: true, artifacts: [
+          ...bundle.invariants.map((data) => ({ data, type: "InvariantCandidate" as const })),
+          ...bundle.scenarios.map((data) => ({ data, type: "ScenarioPlan" as const })),
+          ...bundle.experimentResults.map((data) => ({ data, type: "ExperimentResult" as const })),
+        ] };
+      } catch {
+        continue;
+      }
+    }
+  }
+  return undefined;
+}
+
 function findFinalDecision(events: HarnessEvent[], trustedHeadSha: string | undefined, artifacts: InvestigationArtifact[], hasArtifactConflicts: boolean): InvestigationDecision | undefined {
   if (hasArtifactConflicts) return undefined;
-  for (const event of [...events].reverse()) {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]!;
     if (!isPrimaryAgentTurn(event)) continue;
-    const bundle = readFinalBundle(event.payload, trustedHeadSha);
+    const content = primaryFinalOutput(events, index);
+    const bundle = readFinalBundle(event.payload, trustedHeadSha) ?? (content ? readFinalBundleContent(content, trustedHeadSha) : undefined);
     if (bundle?.decision) return bundle.decision;
-    const output = isRecord(event.payload.state) && isRecord(event.payload.state.output) ? event.payload.state.output : undefined;
-    const parsed = typeof output?.content === "string" ? parseJson(output.content) : undefined;
+    const parsed = content ? parseJson(content) : undefined;
     if (!isRecord(parsed) || (parsed.decision !== "BLOCKED" && parsed.decision !== "READY")) continue;
     try {
       validateInvestigationArtifacts({
@@ -279,24 +329,38 @@ function isPrimaryAgentThread(event: HarnessEvent) {
 
 function hasRejectedPrimaryFinal(events: HarnessEvent[], trustedHeadSha: string | undefined) {
   let rejected = false;
-  for (const event of events) {
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index]!;
     if (!isPrimaryAgentTurn(event)) continue;
-    const output = isRecord(event.payload.state) && isRecord(event.payload.state.output) ? event.payload.state.output : undefined;
-    const parsed = typeof output?.content === "string" ? parseJson(output.content) : undefined;
+    const content = primaryFinalOutput(events, index);
+    const parsed = content ? parseJson(content) : undefined;
     if (!isRecord(parsed) || !["BLOCKED", "READY", "UNCERTAIN"].includes(parsed.decision as string)) continue;
-    rejected = readFinalBundle(event.payload, trustedHeadSha) === undefined;
+    rejected = content === undefined || readFinalBundleContent(content, trustedHeadSha) === undefined;
   }
   return rejected;
 }
 
 function hasRejectedCompleteEvidenceFinal(events: HarnessEvent[], trustedHeadSha: string | undefined) {
-  return events.some((event) => {
+  return events.some((event, index) => {
     if (!isPrimaryAgentTurn(event)) return false;
-    const output = isRecord(event.payload.state) && isRecord(event.payload.state.output) ? event.payload.state.output : undefined;
-    const parsed = typeof output?.content === "string" ? parseJson(output.content) : undefined;
+    const content = primaryFinalOutput(events, index);
+    const parsed = content ? parseJson(content) : undefined;
     const hasResults = isRecord(parsed) && ((Array.isArray(parsed.experimentResults) && parsed.experimentResults.length > 0) || isRecord(parsed.experimentResult));
-    return isRecord(parsed) && (parsed.decision === "READY" || parsed.decision === "BLOCKED") && Array.isArray(parsed.invariants) && parsed.invariants.length > 0 && Array.isArray(parsed.scenarios) && parsed.scenarios.length > 0 && hasResults && readFinalBundle(event.payload, trustedHeadSha) === undefined;
+    return isRecord(parsed) && (parsed.decision === "READY" || parsed.decision === "BLOCKED") && Array.isArray(parsed.invariants) && parsed.invariants.length > 0 && Array.isArray(parsed.scenarios) && parsed.scenarios.length > 0 && hasResults && (content === undefined || readFinalBundleContent(content, trustedHeadSha) === undefined);
   });
+}
+
+function primaryFinalOutput(events: HarnessEvent[], turnDoneIndex: number) {
+  const turnDone = events[turnDoneIndex]!;
+  const doneOutput = isRecord(turnDone.payload.state) && isRecord(turnDone.payload.state.output) ? turnDone.payload.state.output : undefined;
+  if (typeof doneOutput?.content === "string") return doneOutput.content;
+  for (let index = turnDoneIndex - 1; index >= 0; index -= 1) {
+    const event = events[index]!;
+    if (event.turnId !== turnDone.turnId) continue;
+    if (event.type === "turn.done") break;
+    if (isPrimaryAgentThread(event) && event.type === "model.message" && typeof event.payload.content === "string") return event.payload.content;
+  }
+  return undefined;
 }
 
 function hasConsistentEvidence(artifacts: InvestigationArtifact[]) {
@@ -326,7 +390,7 @@ function hasRequiredGitHubReads(events: HarnessEvent[], trustedHeadSha: string |
   for (const event of events) {
     if (!isPrimaryAgentThread(event) || event.type !== "tool.response" || typeof event.payload.toolCallId !== "string") continue;
     const call = calls.get(event.payload.toolCallId);
-    if (!call || !isSuccessfulToolResponse(event.payload)) continue;
+    if (!call || !isSuccessfulToolResponse(event.payload, call.toolName)) continue;
     if (call.toolName === "get_file") {
       if (trustedHeadSha && call.input.ref === trustedHeadSha && typeof call.input.path === "string") completedFiles.add(call.input.path);
       continue;
@@ -342,29 +406,42 @@ function primaryGithubToolCalls(events: HarnessEvent[]) {
   let sawToolCallMetadata = false;
   let sawForgeGateCall = false;
   for (const event of events) {
-    const usage = isRecord(event.payload.usage) ? event.payload.usage : undefined;
-    const toolCalls = usage?.toolCalls;
+    const toolCalls = readToolCalls(event.payload);
     if (!Array.isArray(toolCalls)) continue;
-    sawToolCallMetadata = true;
     if (!isPrimaryAgentThread(event)) continue;
+    sawToolCallMetadata = true;
     for (const call of toolCalls) {
-      if (!isRecord(call) || typeof call.id !== "string" || !isRecord(call.function) || call.function.name !== "call_tool") continue;
+      if (!isRecord(call) || typeof call.id !== "string" || !isRecord(call.function) || typeof call.function.name !== "string") continue;
       const args = typeof call.function.arguments === "string" ? parseJson(call.function.arguments) : call.function.arguments;
-      if (!isRecord(args) || args.mcp_server !== "forgegate-github" || typeof args.tool_name !== "string" || !isRecord(args.input)) continue;
-      sawForgeGateCall = true;
-      calls.set(call.id, { input: args.input, toolName: args.tool_name });
+      if (call.function.name === "call_tool") {
+        if (!isRecord(args) || args.mcp_server !== "forgegate-github" || typeof args.tool_name !== "string" || !isRecord(args.input)) continue;
+        sawForgeGateCall = true;
+        calls.set(call.id, { input: args.input, toolName: args.tool_name });
+      } else if (githubToolNames.includes(call.function.name as typeof githubToolNames[number]) && isRecord(args)) {
+        sawForgeGateCall = true;
+        calls.set(call.id, { input: args, toolName: call.function.name });
+      }
     }
   }
   return { calls, sawForgeGateCall, sawToolCallMetadata };
 }
 
-function isSuccessfulToolResponse(payload: Record<string, unknown>) {
+const githubToolNames = [...requiredGitHubReadTools, "get_file"] as const;
+
+function readToolCalls(payload: Record<string, unknown>) {
+  if (Array.isArray(payload.toolCalls)) return payload.toolCalls;
+  const usage = isRecord(payload.usage) ? payload.usage : undefined;
+  return usage?.toolCalls;
+}
+
+function isSuccessfulToolResponse(payload: Record<string, unknown>, toolName?: string) {
   if (payload.isError === true) return false;
   if (typeof payload.content !== "string") return false;
   const parsed = parseJson(payload.content);
   if (!isRecord(parsed) || "error" in parsed) return false;
   if ("success" in parsed) return parsed.success === true;
-  return isRecord(payload.structuredContent);
+  if (isRecord(payload.structuredContent)) return true;
+  return typeof toolName === "string" && githubToolNames.includes(toolName as typeof githubToolNames[number]);
 }
 
 function latestSandboxCommandSucceeded(events: HarnessEvent[]) {
@@ -377,16 +454,94 @@ function latestSandboxCommandSucceeded(events: HarnessEvent[]) {
   return true;
 }
 
-function hasSubagentToolUse(events: HarnessEvent[]) {
-  return events.some((event) => {
-    if (isPrimaryAgentThread(event)) return false;
-    if (event.type === "tool.response" && typeof event.payload.toolCallId === "string") return true;
+export function hasSubagentToolPolicyViolation(events: TrueForgeEventItem[]) {
+  const projected = events.map((item, index) => toHarnessEvent("controller", item, index + 1));
+  const policy = classifySubagentToolUse(projected, findPullRequestHeadSha(projected));
+  return policy.warning || policy.hard;
+}
+
+function classifySubagentToolUse(events: HarnessEvent[], trustedHeadSha?: string) {
+  const calls = new Map<string, "allowed" | "warning" | "hard">();
+  const roles = new Map<string, "invariant" | "failure">();
+  let warning = false;
+  let hard = false;
+  for (const event of events) {
+    if (event.type === "thread.created" && event.threadId) {
+      if (event.payload.title === "invariant-analyst") roles.set(event.threadId, "invariant");
+      if (event.payload.title === "failure-mode-analyst") roles.set(event.threadId, "failure");
+    }
+    if (isPrimaryAgentThread(event)) continue;
+    const role = event.threadId ? roles.get(event.threadId) : undefined;
     const usage = isRecord(event.payload.usage) ? event.payload.usage : undefined;
-    if (Array.isArray(usage?.toolCalls) && usage.toolCalls.length > 0) return true;
-    if (event.type !== "tool.response" || typeof event.payload.content !== "string") return false;
+    const toolCalls = Array.isArray(event.payload.toolCalls) ? event.payload.toolCalls : usage?.toolCalls;
+    if (Array.isArray(toolCalls)) {
+      for (const call of toolCalls) {
+        if (!isRecord(call) || typeof call.id !== "string" || !isRecord(call.function)) {
+          hard = true;
+          continue;
+        }
+        const args = typeof call.function.arguments === "string" ? parseJson(call.function.arguments) : call.function.arguments;
+        const invariantAnalyst = role === "invariant" || event.stage === "INVARIANTS";
+        const recoverableRef = invariantAnalyst && (
+          call.function.name === "get_file"
+            ? isRecoverableSubagentRef("get_file", args, trustedHeadSha)
+            : call.function.name === "call_tool" && isRecord(args) && args.mcp_server === "forgegate-github" && isRecoverableSubagentRef(args.tool_name, args.input, trustedHeadSha)
+        );
+        const allowed = invariantAnalyst && (
+          call.function.name === "get_file"
+            ? isRecord(args) && isAllowedSubagentRead("get_file", args, trustedHeadSha)
+            : call.function.name === "call_tool"
+              && isRecord(args)
+              && args.mcp_server === "forgegate-github"
+              && args.tool_name === "get_file"
+              && isRecord(args.input)
+              && isAllowedSubagentRead(args.tool_name, args.input, trustedHeadSha)
+        );
+        const violation = allowed || recoverableRef ? "allowed" : classifySubagentViolation(call.function.name, args);
+        calls.set(call.id, violation);
+        if (violation === "warning") warning = true;
+        if (violation === "hard") hard = true;
+      }
+    }
+    if (event.type !== "tool.response") continue;
+    if (typeof event.payload.toolCallId === "string") {
+      const violation = calls.get(event.payload.toolCallId);
+      if (!violation) {
+        hard = true;
+        continue;
+      }
+      if (violation === "warning") warning = true;
+      if (violation === "hard") hard = true;
+      continue;
+    }
+    if (typeof event.payload.content !== "string") continue;
     const response = parseJson(event.payload.content);
-    return isRecord(response) && isRecord(response.response) && typeof response.response.exitCode === "number";
-  });
+    if (isRecord(response) && isRecord(response.response) && typeof response.response.exitCode === "number") hard = true;
+  }
+  return { warning, hard };
+}
+
+function classifySubagentViolation(toolName: unknown, args: unknown): "warning" | "hard" {
+  if (toolName === "list_tools" || toolName === "get_tool_info") return "warning";
+  if (toolName !== "call_tool") return "hard";
+  if (!isRecord(args) || args.mcp_server !== "forgegate-github") return "hard";
+  if (args.tool_name === "commit_files") return "hard";
+  return "warning";
+}
+
+function isAllowedSubagentRead(toolName: string, input: Record<string, unknown>, trustedHeadSha?: string) {
+  if (toolName === "get_file") return Boolean(trustedHeadSha && input.ref === trustedHeadSha && requiredEvidencePaths.includes(input.path as (typeof requiredEvidencePaths)[number]));
+  if (toolName === "get_checks") return Boolean(trustedHeadSha && input.ref === trustedHeadSha);
+  return true;
+}
+
+function isRecoverableSubagentRef(toolName: unknown, input: unknown, trustedHeadSha?: string) {
+  return toolName === "get_file"
+    && Boolean(trustedHeadSha)
+    && isRecord(input)
+    && requiredEvidencePaths.includes(input.path as (typeof requiredEvidencePaths)[number])
+    && typeof input.ref === "string"
+    && !/^[a-f0-9]{40}$/.test(input.ref);
 }
 
 function readArtifact(type: unknown, value: unknown, trustedHeadSha?: string): InvestigationArtifact[] {
@@ -407,7 +562,7 @@ function findPullRequestHeadSha(events: HarnessEvent[]) {
   if (sawToolCallMetadata && !sawForgeGateCall) return undefined;
   for (const event of events) {
     if (!isPrimaryAgentThread(event) || event.type !== "tool.response" || typeof event.payload.content !== "string") continue;
-    if (sawToolCallMetadata && (typeof event.payload.toolCallId !== "string" || calls.get(event.payload.toolCallId)?.toolName !== "get_pull_request" || !isSuccessfulToolResponse(event.payload))) continue;
+    if (sawToolCallMetadata && (typeof event.payload.toolCallId !== "string" || calls.get(event.payload.toolCallId)?.toolName !== "get_pull_request" || !isSuccessfulToolResponse(event.payload, "get_pull_request"))) continue;
     const response = parseJson(event.payload.content);
     if (isRecord(response) && isRecord(response.head) && typeof response.head.sha === "string" && /^[a-f0-9]{40}$/.test(response.head.sha)) {
       return response.head.sha;
@@ -556,7 +711,7 @@ function toHarnessEvent(sessionId: string, item: TrueForgeEventItem, sequence: n
     payload: sanitizePayload(event),
     sequence: trueForgeSequence,
     sessionId,
-    source: typeof event.threadId === "string" && event.threadId !== "main" && type.startsWith("tool.") ? "SUBAGENT" : source,
+    source: typeof event.threadId === "string" && event.threadId !== "main" ? "SUBAGENT" : source,
     stage: stageFor(event),
     ...(typeof event.threadId === "string" ? { threadId: event.threadId } : {}),
     turnId: item.turnId,

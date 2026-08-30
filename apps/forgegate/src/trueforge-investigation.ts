@@ -1,5 +1,5 @@
 import { createForgeGateAgentSpec, validateInvestigationArtifacts } from "./agent-spec.js";
-import { projectInvestigation } from "./investigation.js";
+import { hasSubagentToolPolicyViolation, projectInvestigation } from "./investigation.js";
 
 type TrueForgeSessions = {
   create: (request: { agent: { spec: ReturnType<typeof createForgeGateAgentSpec> } }) => Promise<{ data: { id: string } }>;
@@ -20,12 +20,13 @@ type PhaseControllerOptions = {
 const continuationPrompts = [
   "Continue with Phase INVARIANTS. Spawn the invariant-analyst now, wait for its completed output, validate every InvariantCandidate against the ForgeGate schema, and preserve each accepted artifact.",
   "Continue with Phase HYPOTHESES. Pass the validated invariant artifacts to the failure-mode-analyst, wait for its completed output, validate every ScenarioPlan, and preserve each accepted artifact. ScenarioPlan ordering must be a non-empty string[]; do not return a single string. ScenarioPlan seed must be a non-negative integer; do not return a string seed.",
-  "Continue with Phase EXPERIMENT and EVIDENCE. Resolve master to its immutable SHA and measure its baseline counts before checking out the exact PR SHA. Run every validated unique ScenarioPlan in the disposable sandbox and return one schema-valid ExperimentResult per scenario with baselineSha, scenarioId, repetitions, expected baseline counts, observed PR counts, verdict, and the existing payment-lab:evidence identifier as the artifact link only.",
+  "Continue with Phase EXPERIMENT and EVIDENCE. Resolve master to its immutable SHA and measure its baseline counts before checking out the exact PR SHA. Run runPaymentExperiment exactly once per accepted ScenarioPlan with that plan's scenarioId, seed, and injectedFaults; never substitute runUnsafeRetryFixture for a planned scenario. Return one schema-valid ExperimentResult per scenario with baselineSha, scenarioId, repetitions, expected baseline counts, observed PR counts, verdict, and the existing payment-lab:evidence identifier as the artifact link only. Return UNCERTAIN for an unsupported fault instead of running another scenario.",
   "Continue with Phase DECISION. Reconcile the persisted InvariantCandidate, ScenarioPlan, and ExperimentResult artifacts. Return one complete final JSON object containing the full invariants array, full scenarios array, full experimentResults array, and decision; persisted artifacts cannot substitute for omitted fields. READY is allowed only when all scenarios have passing results and all artifacts are valid and consistent.",
 ] as const;
 const mcpRecoveryPrompt = "The previous MCP call used an invalid server or tool name. Do not call list_tools, get_tool_info, get_pr, list_changed_files, or changed_files. Use only forgegate-github tools named get_pull_request, get_pull_request_files, get_file, get_checks, get_qodo_reviews, and get_review_comments. Retry the required read now, starting with get_pull_request.";
+const subagentRefRecoveryPrompt = "The invariant analyst used an invalid get_file ref. Retry the same allowed get_file reads now using the exact full 40-character PR head commit SHA from the primary agent context, not PR_HEAD, a branch name, or any placeholder. Do not call any other tool.";
 const sandboxRecoveryPrompt = "The previous sandbox command failed with a transient startup or process-bridge error. Retry the same sandbox command once now, then continue the investigation. Do not mark the investigation UNCERTAIN unless the retry also fails.";
-const decisionRepairInstruction = "Final response rejected: the evidence exists, but the decision bundle is incomplete. Return one complete JSON object containing the full invariants, scenarios, and experimentResults arrays plus decision. Use exactly one of experimentResult or experimentResults, never both. Copy the exact persisted evidence below; do not summarize, omit, or alter any array. Do not emit another partial BLOCKED or READY response.";
+const decisionRepairInstruction = "Final response rejected: the evidence exists, but the decision bundle is incomplete. Return one complete JSON object containing the full invariants, scenarios, and experimentResults arrays plus decision. Set experimentResult to null; use experimentResults as the only result representation. Copy the exact persisted evidence below; do not summarize, omit, or alter any array. Do not emit another partial BLOCKED or READY response.";
 
 export function createTrueForgeInvestigationLauncher({
   modelName,
@@ -60,23 +61,27 @@ export function createTrueForgeInvestigationLauncher({
             "Do not fetch plan.md, list the repository root recursively, or request oversized responses. Read only apps/forgegate/src/payment-lab.ts and apps/forgegate/test/payment-lab.test.ts at the exact PR head SHA.",
             "Never run grep -R, find, or any recursive repository scan. Use direct file reads or a bounded search over only the two allowed payment-lab paths.",
             "Checklist: read PR metadata; read changed files; read payment-lab source and tests at the exact PR head SHA; inspect checks/reviews/comments; run the baseline payment test on master before checking out the exact PR head SHA; then delegate both analysts and reconcile their outputs.",
-            "The primary agent performs every GitHub MCP read and every sandbox action before delegation. Pass that collected evidence to the analysts; subagents must return JSON artifacts only and must not call MCP or sandbox tools.",
-            "Subagents must not call MCP, exec, sandbox, or any other tool; they must reason only from the evidence in their input and return JSON artifacts.",
-            "Never pass [content omitted for brevity] to a subagent. Include the complete relevant source/test snippets and exact line references, or omit the delegation and return UNCERTAIN.",
-            "Pass bounded literal excerpts rather than whole files: payment-lab.ts lines 125-170 and payment-lab.test.ts lines 110-180, with each excerpt labeled by path and line number; keep the combined subagent evidence input under 12,000 characters.",
+            "The primary agent remains authoritative for GitHub reads, sandbox execution, evidence reconciliation, and final decisions. Subagents may use only bounded read-only forgegate-github MCP tools for supplemental evidence and must return JSON artifacts.",
+            "Subagents must not call commit_files, raw GitHub or curl access, exec, sandbox experiments, patch, or any other mutation capability.",
+            "The invariant-analyst delegated input must explicitly allow only forgegate-github get_file for the two approved payment-lab paths at the exact PR head SHA; it must use lineNumberedContent from those MCP responses for evidence locations, then stop using tools.",
+            "The failure-mode-analyst delegated input must state exactly: You have no tools. Reason only from the supplied invariant JSON. It must not call list_tools, MCP, exec, shell, Python, Git, or sandbox.",
+            "Subagents receive the repository, PR URL, exact head SHA once discovered, allowed paths, and role constraints, and must fetch only approved evidence through read-only MCP calls; never pass unrestricted repository contents.",
             "Create failure-mode-analyst only after invariant-analyst thread.done; include the exact validated invariant JSON in its input. Never launch both analysts concurrently or ask the failure-mode analyst to discover missing invariant output.",
             "Use cwd / for sandbox commands; /workspace does not exist in the Daytona image. Clone into /agent-harness or another path under /.",
             "For payment-lab experiments, run pnpm install --frozen-lockfile, then pnpm --filter @forgegate/app build from /agent-harness and use node --input-type=module to import ./apps/forgegate/dist/src/payment-lab.js. Never use pnpm exec tsx, npx ts-node, or ts-node.",
+            "Run runPaymentExperiment exactly once per accepted ScenarioPlan using scenario: { scenarioId, seed, injectedFaults } copied from that plan; never substitute runUnsafeRetryFixture or mode for a planned scenario. Supported faults are timeout-after-charge, fail-before-charge, and unsafe-retry; return UNCERTAIN for an unsupported fault.",
             "Evidence reference sha must equal the exact PR head commit SHA, which is testedSha; never use a Git blob SHA, branch name, or baseline SHA for evidence.",
             "Spawn exactly two visible dynamic subagents:",
             "- invariant-analyst: return InvariantCandidate JSON objects with at least two exact-SHA repository evidence references.",
             "- failure-mode-analyst: wait for the accepted invariant JSON from invariant-analyst, then return every materially distinct deterministic ScenarioPlan JSON object tied to it.",
-            "For the payment-lab MVP, every executable failure scenario must include timeout-after-charge and unsafe-retry; do not invent delay, omitted-ledger, amount-mutation, webhook, or concurrency faults that the fixture cannot execute.",
+            "For the payment-lab MVP, supported scenario faults are timeout-after-charge, fail-before-charge, and unsafe-retry; do not invent delay, omitted-ledger, amount-mutation, webhook, or concurrency faults that the fixture cannot execute.",
             "After both analysts finish, deduplicate and bound the ScenarioPlans, then run every accepted unique ScenarioPlan in the sandbox with the independent payment oracle and record one ExperimentResult per scenario.",
             "Use payment-lab:evidence as the ExperimentResult artifact link; never put an explanation or sentence in artifactLinks.",
             "Resolve master to its immutable SHA and run its baseline before PR checkout. Every ExperimentResult must include baselineSha for that master commit, use its measured counts as expected, and use PR-head adversarial counts as observed; mark verdict fail when the observed counts violate an accepted invariant.",
+            "Run runPaymentExperiment exactly once per accepted ScenarioPlan using scenario: { scenarioId, seed, injectedFaults } copied from that plan; never substitute runUnsafeRetryFixture or mode for a planned scenario. Supported faults are timeout-after-charge, fail-before-charge, and unsafe-retry; return UNCERTAIN for an unsupported fault.",
             "The final response must be a JSON object with a decision field. The final decision response must include invariants, scenarios, experimentResults, and decision; persisted artifacts cannot substitute for omitted fields. For READY or BLOCKED include complete consistent evidence; for UNCERTAIN include only evidence actually obtained and omit unavailable fields. Never invent missing artifacts.",
-            "Use exactly one of experimentResult or experimentResults, never both. Prefer experimentResults for the complete final bundle.",
+            "Every accepted invariant must have at least one ScenarioPlan; if any invariant has no scenario, return UNCERTAIN.",
+            "Set experimentResult to null and use experimentResults as the only result representation; never return a singular experimentResult.",
             "Completion predicate: do not emit a final response until all required reads, two analyst outputs, baseline, adversarial experiment, schema validation, and decision are present; after every tool response issue the next required tool call.",
             "Validate both artifact types against the ForgeGate schemas; reject prose-only or stale-SHA artifacts.",
             "Artifact contract: evidence objects use sha (not testedSha); ScenarioPlan injectedFaults is string[] and expectedOutcome is a string; return raw JSON without markdown fences.",
@@ -103,6 +108,7 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
   async function continueInvestigation(sessionId: string, initialTurnId: string) {
     let turnId = initialTurnId;
     let mcpRecoveryAttempted = false;
+    let subagentRefRecoveryAttempted = false;
     let sandboxRecoveryAttempted = false;
     let experimentRecoveryAttempts = 0;
     let decisionRepairAttempted = false;
@@ -113,6 +119,14 @@ export function createInvestigationPhaseController({ createTurn, listEvents, pol
       if (isTerminalTurn(completed.event)) return;
       const events = await listEvents(sessionId);
       if (hasRepeatedRejectedDecision(events)) return;
+      const invalidSubagentRef = findInvalidSubagentRef(events);
+      if (invalidSubagentRef) {
+        if (subagentRefRecoveryAttempted) return;
+        subagentRefRecoveryAttempted = true;
+        turnId = (await createTurn(sessionId, { input: [{ content: subagentRefRecoveryPrompt, type: "user.message" }] })).data.id;
+        continue;
+      }
+      if (hasSubagentToolPolicyViolation(events)) return;
       const invalidMcpToolCall = findInvalidMcpToolCall(events);
       if (invalidMcpToolCall) {
         if (isSubagentThread(invalidMcpToolCall.event.threadId) || mcpRecoveryAttempted) return;
@@ -271,7 +285,7 @@ function incompleteExperimentPrompt(events: InvestigationEvent[]) {
     .map((scenario) => scenario.scenarioId)
     .filter((scenarioId): scenarioId is string => typeof scenarioId === "string");
   const missing = missingIds.length > 0 ? ` Missing scenario IDs: ${missingIds.join(", ")}.` : ` ${scenarios.length - results.length} scenario result(s) are still missing.`;
-  return `${continuationPrompts[2]}${missing} Return one result per missing scenario and copy each exact scenarioId into its ExperimentResult. Use exactly one of experimentResult or experimentResults, never both; prefer experimentResults.`;
+  return `${continuationPrompts[2]}${missing} Return one result per missing scenario in experimentResults and copy each exact scenarioId. Set experimentResult to null; never return a singular experimentResult.`;
 }
 
 function scenarioMatchesResult(scenario: Record<string, unknown>, result: Record<string, unknown>) {
@@ -281,6 +295,10 @@ function scenarioMatchesResult(scenario: Record<string, unknown>, result: Record
 
 function findInvalidMcpToolCall(events: InvestigationEvent[]) {
   return events.find(({ event }) => event.type === "tool.response" && typeof event.content === "string" && /Tool call failed: Tool |MCP server ['\"].*not found/i.test(event.content));
+}
+
+function findInvalidSubagentRef(events: InvestigationEvent[]) {
+  return events.find(({ event }) => isSubagentThread(event.threadId) && event.type === "tool.response" && typeof event.content === "string" && /ref must be a full commit SHA/i.test(event.content));
 }
 
 function findTransientSandboxFailures(events: InvestigationEvent[], turnId: string) {

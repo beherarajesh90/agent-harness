@@ -24,7 +24,7 @@ describe("GitHub MCP server", () => {
   it("serves separate stateless HTTP requests", async () => {
     const getPullRequest = vi.fn(async (pullNumber: number) => ({ number: pullNumber }));
     const getPullRequestFiles = vi.fn(async (pullNumber: number) => ({ complete: true, files: [{ pullNumber }], truncated: false }));
-    const getFile = vi.fn(async (path: string, ref: string) => ({ content: "source", path, ref }));
+    const getFile = vi.fn(async (path: string, ref: string) => ({ content: "source", lineNumberedContent: "1 | source", path, ref }));
     const getChecks = vi.fn(async (ref: string) => ({ check_runs: [{ ref }] }));
     const getQodoReviews = vi.fn(async (pullNumber: number) => ({ complete: true, reviews: [{ pullNumber, reviewer: "qodo" }], truncated: false }));
     const getReviewComments = vi.fn(async (pullNumber: number) => ({ complete: true, comments: [{ body: "review", pullNumber }], truncated: false }));
@@ -70,7 +70,7 @@ describe("GitHub MCP server", () => {
     await expect(
       client.callTool({ arguments: { path: "apps/forgegate/src/payment-lab.ts", ref: "a".repeat(40), repository: "beherarajesh90/agent-harness" }, name: "get_file" }),
     ).resolves.toMatchObject({
-      content: [{ text: JSON.stringify({ content: "source", path: "apps/forgegate/src/payment-lab.ts", ref: "a".repeat(40) }), type: "text" }],
+      content: [{ text: JSON.stringify({ content: "source", lineNumberedContent: "1 | source", path: "apps/forgegate/src/payment-lab.ts", ref: "a".repeat(40) }), type: "text" }],
     });
     await expect(
       client.callTool({ arguments: { ref: "a".repeat(40), repository: "beherarajesh90/agent-harness" }, name: "get_checks" }),

@@ -34,9 +34,16 @@ export type ExperimentResult = {
   expected: PaymentEvidence;
   observed: PaymentEvidence;
   repetitions: number;
+  scenarioId?: string;
   seed: number;
   testedSha: string;
   verdict: "pass" | "fail";
+};
+
+export type PaymentScenario = {
+  injectedFaults: string[];
+  scenarioId?: string;
+  seed: number;
 };
 
 class ProviderTimeoutError extends Error {}
@@ -233,24 +240,57 @@ export function createPaymentLaboratory(options: PaymentLaboratoryOptions = {}) 
 }
 
 export function runUnsafeRetryFixture(seed?: number) {
-  const faultCount = seed === undefined ? 2 : ((seed + 1) % 3) + 1;
-  const unsafeIntentIds = new Set(
-    seed === undefined
-      ? ["pi-001", "pi-002"]
-      : Array.from({ length: faultCount }, (_, index) => `pi-${String(((seed * 31 + index * 17) % 100) + 1).padStart(3, "0")}`),
+  return runScenarioFixture({
+    injectedFaults: ["timeout-after-charge", "unsafe-retry"],
+    seed: seed ?? 42,
+    ...(seed === undefined ? { affectedIntentIds: new Set(["pi-001", "pi-002"]) } : {}),
+  });
+}
+
+export function runScenarioFixture({
+  affectedIntentIds: configuredIntentIds,
+  injectedFaults,
+  seed,
+}: Pick<PaymentScenario, "injectedFaults" | "seed"> & { affectedIntentIds?: ReadonlySet<string> }) {
+  const faults = new Set(injectedFaults.map((fault) => fault.trim().toLowerCase().replaceAll("_", "-").replaceAll(" ", "-")));
+  const faultAliases = new Map([
+    ["timeoutafterchargeforintentids", "timeout-after-charge"],
+    ["failbeforechargeforintentids", "fail-before-charge"],
+  ]);
+  for (const fault of [...faults]) {
+    const canonical = faultAliases.get(fault.replaceAll("-", ""));
+    if (canonical) {
+      faults.delete(fault);
+      faults.add(canonical);
+    }
+  }
+  const supportedFaults = new Set(["timeout-after-charge", "fail-before-charge", "unsafe-retry"]);
+  const unsupportedFault = [...faults].find((fault) => !supportedFaults.has(fault));
+  if (unsupportedFault) throw new Error(`unsupported payment fault: ${unsupportedFault}`);
+
+  const faultCount = ((seed + 1) % 3) + 1;
+  const affectedIntentIds = configuredIntentIds ?? new Set(
+    Array.from({ length: faultCount }, (_, index) => `pi-${String(((seed * 31 + index * 17) % 100) + 1).padStart(3, "0")}`),
   );
   const laboratory = createPaymentLaboratory({
-    faultSchedule: { timeoutAfterChargeForIntentIds: unsafeIntentIds },
-    unsafeRetryForIntentIds: unsafeIntentIds,
+    ...(faults.has("timeout-after-charge") || faults.has("fail-before-charge")
+      ? {
+          faultSchedule: {
+            ...(faults.has("timeout-after-charge") ? { timeoutAfterChargeForIntentIds: affectedIntentIds } : {}),
+            ...(faults.has("fail-before-charge") ? { failBeforeChargeForIntentIds: affectedIntentIds } : {}),
+          },
+        }
+      : {}),
+    ...(faults.has("unsafe-retry") ? { unsafeRetryForIntentIds: affectedIntentIds } : {}),
   });
 
   for (let index = 1; index <= 100; index += 1) {
     const intentId = `pi-${String(index).padStart(3, "0")}`;
-    laboratory.processPayment({
-      amount: 500,
-      idempotencyKey: `checkout-${index}`,
-      intentId,
-    });
+    try {
+      laboratory.processPayment({ amount: 500, idempotencyKey: `checkout-${index}`, intentId });
+    } catch (error) {
+      if (!faults.has("fail-before-charge")) throw error;
+    }
   }
 
   return laboratory.evaluateInvariants();
@@ -276,16 +316,20 @@ export function runPaymentExperiment({
   baselineSha,
   mode,
   repetitions,
-  seed,
+  scenario,
+  seed: requestedSeed,
   testedSha,
 }: {
   baselineEvidence: PaymentEvidence;
   baselineSha: string;
-  mode: "safe" | "unsafe";
+  mode?: "safe" | "unsafe";
   repetitions: number;
-  seed: number;
+  scenario?: PaymentScenario;
+  seed?: number;
   testedSha: string;
 }): ExperimentResult {
+  const seed = scenario?.seed ?? requestedSeed;
+  if (seed === undefined) throw new Error("scenario or seed is required");
   if (!/^[a-f0-9]{40}$/.test(baselineSha)) throw new Error("baselineSha must be a commit SHA");
   if (!Number.isInteger(repetitions) || repetitions < 1) throw new Error("repetitions must be a positive integer");
   if (!Number.isInteger(seed) || seed < 0) throw new Error("seed must be a non-negative integer");
@@ -294,7 +338,13 @@ export function runPaymentExperiment({
     throw new Error("baselineEvidence must contain non-negative integer counts");
   }
 
-  const run = mode === "unsafe" ? () => runUnsafeRetryFixture(seed) : runSafeFixture;
+  if (!scenario && !mode) throw new Error("scenario or mode is required");
+  if (scenario && scenario.seed !== seed) throw new Error("seed must match scenario seed");
+  const run = scenario
+    ? () => runScenarioFixture(scenario)
+    : mode === "unsafe"
+      ? () => runUnsafeRetryFixture(seed)
+      : runSafeFixture;
   const observed = run();
   for (let repetition = 1; repetition < repetitions; repetition += 1) {
     const next = run();
@@ -307,6 +357,7 @@ export function runPaymentExperiment({
     expected: baselineEvidence,
     observed: { charges: observed.charges, intents: observed.intents, ledgerEntries: observed.ledgerEntries },
     repetitions,
+    ...(scenario?.scenarioId ? { scenarioId: scenario.scenarioId } : {}),
     seed,
     testedSha,
     verdict: observed.verdict as ExperimentResult["verdict"],
