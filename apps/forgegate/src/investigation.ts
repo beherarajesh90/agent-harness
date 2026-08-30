@@ -381,6 +381,7 @@ function readFinalBundle(payload: Record<string, unknown>, trustedHeadSha?: stri
 function normalizeInvariantStatement(statement: string) {
   return statement
     .replace(/[“”„‟‘’‚‛"']/g, '"')
+    .replace(/[\"']/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }

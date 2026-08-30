@@ -983,6 +983,7 @@ describe("investigation control plane", () => {
       { event: { content: JSON.stringify({ head: { sha } }), sequence: 1, type: "tool.response" }, turnId: "turn-1" },
       { event: { artifactType: "InvariantCandidate", artifact: invariant, sequence: 2, type: "tool.response" }, turnId: "turn-1" },
       { event: { artifactType: "InvariantCandidate", artifact: typographyVariant, sequence: 3, type: "tool.response" }, turnId: "turn-1" },
+      { event: { artifactType: "InvariantCandidate", artifact: { ...invariant, statement: "Every\u00a0settled\u00a0intent has one charge." }, sequence: 4, type: "tool.response" }, turnId: "turn-1" },
     ]);
 
     expect(snapshot.artifacts.filter((artifact) => artifact.type === "InvariantCandidate")).toHaveLength(1);
