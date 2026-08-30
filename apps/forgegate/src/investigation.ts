@@ -61,6 +61,7 @@ type InvestigationGateway = {
   getMetadata?: (sessionId: string) => Promise<InvestigationRecord | undefined>;
   listEvents: (sessionId: string) => Promise<TrueForgeEventItem[]>;
   launch: (input: { pullRequestUrl: string; requestFingerprint?: string }) => Promise<LaunchResult>;
+  retry?: (sessionId: string) => Promise<{ turnId: string }>;
 };
 
 export class IdempotencyConflictError extends Error {
@@ -74,6 +75,13 @@ export class InvestigationNotFoundError extends Error {
   constructor() {
     super("investigation not found");
     this.name = "InvestigationNotFoundError";
+  }
+}
+
+export class InvestigationRetryNotAllowedError extends Error {
+  constructor() {
+    super("only an uncertain investigation can be retried");
+    this.name = "InvestigationRetryNotAllowedError";
   }
 }
 
@@ -959,6 +967,16 @@ export function createInvestigationService(gateway: InvestigationGateway) {
       if (!record) throw new InvestigationNotFoundError();
       await gateway.cancel(sessionId);
       return get(sessionId);
+    },
+    async retry(sessionId: string) {
+      const record = await resolveRecord(sessionId);
+      if (!record) throw new InvestigationNotFoundError();
+      const snapshot = projectInvestigation(sessionId, record.pullRequestUrl, await gateway.listEvents(sessionId));
+      if (snapshot.status !== "UNCERTAIN") throw new InvestigationRetryNotAllowedError();
+      if (!gateway.retry) throw new Error("investigation retry is unavailable");
+      const result = await gateway.retry(sessionId);
+      records.set(sessionId, { pullRequestUrl: record.pullRequestUrl, turnId: result.turnId });
+      return { sessionId, turnId: result.turnId, status: "QUEUED" as const };
     },
     async create(pullRequestUrl: string, key?: string) {
       const normalizedPullRequestUrl = normalizePullRequestUrl(pullRequestUrl);

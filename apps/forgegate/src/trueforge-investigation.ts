@@ -271,6 +271,17 @@ export function createTrueForgeApprovalResumer(sessions: Pick<TrueForgeSessions,
   });
 }
 
+export function createTrueForgeInvestigationRetrier({ createTurn, listEvents, onControllerError }: { createTurn: TrueForgeSessions["createTurn"]; listEvents: (sessionId: string) => Promise<InvestigationEvent[]>; onControllerError?: (error: unknown) => void }) {
+  const controller = createInvestigationPhaseController({ createTurn, listEvents });
+  return async (sessionId: string) => {
+    const turn = await createTurn(sessionId, {
+      input: [{ content: "User requested a bounded retry. Continue this same investigation from persisted evidence at the next incomplete phase: required GitHub reads, analyst evidence, scenario generation, scenario experiments, or decision reconciliation. Keep status UNCERTAIN until the missing phase is completed. Do not redefine accepted artifacts; preserve valid evidence, execute only missing accepted scenarios, and return one complete compact JSON decision bundle when eligible.", type: "user.message" }],
+    });
+    void controller.continue(sessionId, turn.data.id).catch(onControllerError ?? ((error: unknown) => console.error("ForgeGate retry controller failed", error)));
+    return { turnId: turn.data.id };
+  };
+}
+
 function isSubagentCreationError(event: Record<string, unknown>) {
   const state = event.state;
   if (!isRecord(state) || state.status !== "error" || typeof state.message !== "string") return false;

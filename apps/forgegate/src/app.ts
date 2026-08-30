@@ -1,7 +1,7 @@
 import Fastify, { type FastifyReply } from "fastify";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { ApprovalAlreadySubmittedError, ApprovalNotFoundError, IdempotencyConflictError, InvestigationNotFoundError } from "./investigation.js";
+import { ApprovalAlreadySubmittedError, ApprovalNotFoundError, IdempotencyConflictError, InvestigationNotFoundError, InvestigationRetryNotAllowedError } from "./investigation.js";
 import type { InvestigationSnapshot } from "./investigation.js";
 
 type InvestigationService = {
@@ -9,6 +9,7 @@ type InvestigationService = {
   cancel: (sessionId: string) => Promise<InvestigationSnapshot>;
   create: (pullRequestUrl: string, idempotencyKey?: string) => Promise<{ sessionId: string; turnId: string }>;
   get: (sessionId: string) => Promise<InvestigationSnapshot>;
+  retry?: (sessionId: string) => Promise<{ sessionId: string; turnId: string; status: "QUEUED" }>;
 };
 
 export function buildApp({
@@ -66,6 +67,18 @@ export function buildApp({
         return reply.code(404).send({ code: "NOT_FOUND", message: error.message });
       }
       return sendServiceFailure(reply, error, "INVESTIGATION_READ_FAILED", "investigation could not be read");
+    }
+  });
+
+  app.post<{ Params: { sessionId: string } }>("/api/investigations/:sessionId/retry", async (request, reply) => {
+    if (!investigationService) return reply.code(503).send({ code: "UNAVAILABLE", message: "investigation service unavailable" });
+    try {
+      if (!investigationService.retry) return reply.code(503).send({ code: "UNAVAILABLE", message: "retry service unavailable" });
+      return reply.code(202).send(await investigationService.retry(request.params.sessionId));
+    } catch (error) {
+      if (error instanceof InvestigationNotFoundError) return reply.code(404).send({ code: "NOT_FOUND", message: error.message });
+      if (error instanceof InvestigationRetryNotAllowedError) return reply.code(409).send({ code: "RETRY_NOT_ALLOWED", message: error.message });
+      return sendServiceFailure(reply, error, "INVESTIGATION_RETRY_FAILED", "investigation could not be retried");
     }
   });
 

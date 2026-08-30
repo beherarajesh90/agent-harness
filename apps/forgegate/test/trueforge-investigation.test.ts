@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { hasSubagentToolPolicyViolation } from "../src/investigation.js";
-import { createInvestigationPhaseController, createTrueForgeApprovalResumer, createTrueForgeInvestigationLauncher } from "../src/trueforge-investigation.js";
+import { createInvestigationPhaseController, createTrueForgeApprovalResumer, createTrueForgeInvestigationLauncher, createTrueForgeInvestigationRetrier } from "../src/trueforge-investigation.js";
 
 describe("createTrueForgeInvestigationLauncher", () => {
   it("resumes a native approval with the exact tool call context", async () => {
@@ -13,6 +13,17 @@ describe("createTrueForgeInvestigationLauncher", () => {
     expect(createTurn).toHaveBeenCalledWith("session-1", {
       input: [{ approval: { status: "allow" }, threadId: "thread-1", toolCallId: "call-1", type: "user.tool_approval" }],
     });
+  });
+
+  it("retries the next incomplete phase without limiting recovery to experiments", async () => {
+    const createTurn = vi.fn(async (_sessionId: string, _request: { input: { content: string; type: "user.message" }[] }) => ({ data: { id: "turn-2" } }));
+    const retry = createTrueForgeInvestigationRetrier({
+      createTurn,
+      listEvents: async () => [{ event: { state: { status: "cancelled" }, type: "turn.done" }, turnId: "turn-2" }],
+    });
+
+    await expect(retry("session-1")).resolves.toEqual({ turnId: "turn-2" });
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("required GitHub reads, analyst evidence, scenario generation, scenario experiments, or decision reconciliation");
   });
 
   it("creates an agent-backed session and instructs two visible analysts", async () => {
