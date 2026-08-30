@@ -227,7 +227,7 @@ describe("createTrueForgeInvestigationLauncher", () => {
     await controller.continue("session-1", "turn-1");
 
     expect(createTurn).toHaveBeenCalledOnce();
-    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Evidence consistency failed");
+    expect(createTurn.mock.calls[0]?.[1].input[0]?.content).toContain("Phase EXPERIMENT");
     expect(createTurn.mock.calls[0]?.[1].input[0]?.content).not.toContain("Phase DECISION");
   });
 
